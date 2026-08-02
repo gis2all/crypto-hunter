@@ -136,6 +136,8 @@ def rows_of(tweets: Sequence[dict]) -> list[TweetRow]:
             retweets=_int(metrics.get('retweets')),
             replies=_int(metrics.get('replies')),
             views=_int(metrics.get('views')),
+            urls=tuple(str(link.get('expandedUrl') or link.get('url') or '')
+                       for link in (tweet.get('urls') or []) if isinstance(link, dict)),
         ))
     return out
 

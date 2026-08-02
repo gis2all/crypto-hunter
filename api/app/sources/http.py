@@ -69,6 +69,10 @@ MIN_INTERVAL: dict[str, float] = {
     "api.gopluslabs.io": 0.3,
     "sourcify.dev": 0.3,
     "api.dexscreener.com": 0.25,
+    # GitHub's unauthenticated API allows 60 requests an hour. A 新机会 scan reads a handful of
+    # organisations and remembers each answer for an hour (`opportunity/scan.py` GITHUB_TTL), so
+    # this interval is what keeps a scan from spending that budget on retries.
+    "api.github.com": 1.0,
     # The board pages `dexscreener_rank` reads, not the API: a sweep asks for six of them
     # back to back, and they are the site's own HTML rather than a published feed.
     "dexscreener.com": 0.5,

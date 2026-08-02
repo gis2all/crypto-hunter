@@ -67,6 +67,10 @@ class TweetRow:
     retweets: int = 0
     replies: int = 0
     views: int = 0
+    #: The links the post carries, already expanded by the client (`expandedUrl`), so a `t.co`
+    #: resolves to the site it points at. Kept on the row because the 新机会 module traces a lead
+    #: through them: a post's own links are its first candidate official home (2026-10-19).
+    urls: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
