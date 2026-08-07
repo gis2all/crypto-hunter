@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, config
 from .api.v1.router import api_router
+from .opportunity import watchlist as opportunity_watchlist
 from .pipeline import schedule
 from .sources import browser
 from .store import db
@@ -23,6 +24,9 @@ from .store import db
 async def lifespan(app: FastAPI):
     del app
     db.init_db()
+    # The watchlist seed fills the table once, on the first start, and never again: after that
+    # the table is the truth, deletions included (see `opportunity/watchlist.py`).
+    opportunity_watchlist.ensure_seeded()
     schedule.start()
     try:
         yield

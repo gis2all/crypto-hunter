@@ -379,12 +379,19 @@ class JobStageOut(BaseModel):
     The four states are the ones a round's step list draws too (pending / run / done /
     failed), so the two panels cannot disagree about what a stopped stage looks like.
     `seconds` is filled the moment the stage ends and stays empty until then.
+
+    `done` / `total` are the **inside** of a running stage: how many of its units it has got
+    through. A scan's collect stage is six minutes of X calls and its classify stage is sixty
+    questions; without these two numbers the page can only say "running" for minutes on end,
+    which is what "it looks stuck" meant (user, 2026-10-18).
     """
 
     key: str
     label: str
     state: str                       # pending | run | done | failed
     seconds: float | None = None
+    done: int | None = None
+    total: int | None = None
 
 
 class JobOut(BaseModel):
@@ -600,3 +607,179 @@ class LexiconOut(BaseModel):
 
 class ErrorOut(BaseModel):
     detail: str
+
+
+# ---------------------------------------------------------------- 新机会（外部发现）
+
+class OpportunityStepOut(BaseModel):
+    """One participation step, with the page it was read from."""
+
+    ordinal: int
+    title: str | None = None
+    body: str
+    source_url: str | None = None
+    source_at: str | None = None
+
+
+class OpportunityItemOut(BaseModel):
+    """One entry: an activity with steps, or a project with a sentence.
+
+    Everything a reader needs is here, steps included - the list prints them under the entry,
+    and a second request to read the instructions for something already on screen would be a
+    round trip for text this query already has.
+    """
+
+    slug: str
+    kind: str
+    category: str | None = None
+    title: str
+    organizer: str | None = None
+    official_url: str | None = None
+    summary: str | None = None
+    trust: str
+    trust_basis: str | None = None
+    #: 这条条目是从哪类来源读到的（生态与来源类型都随条目存下来，页面按它们筛选）。
+    ecosystem: str | None = None
+    source_type: str | None = None
+    risk: str | None = None
+    #: The barriers as the reader sees them; the column holds a comma-joined list.
+    barrier: list[str] = []
+    maturity: str | None = None
+    started_at: str | None = None
+    deadline: str | None = None
+    status: str
+    #: 读者自己的决定：active / archived / deleted。与 `status` 是两件事（见 store/schema.sql）。
+    user_state: str = "active"
+    #: Why it is not promoted, in the reader's words (empty once it is).
+    reason: str | None = None
+    #: 热度：来源帖自身互动量换算的 0-100，与它读成人话的那一档。没有来源帖的材料是 None，
+    #: 而 `heat_band` 会写「未判定」—— 一个材料的互动量没问到，不等于它没人看。
+    heat: float | None = None
+    heat_band: str = "未判定"
+    heat_basis: str | None = None
+    discovered_at: str
+    source_kind: str | None = None
+    source_ref: str | None = None
+    extract_version: str | None = None
+    steps: list[OpportunityStepOut] = []
+
+
+class OpportunitySourceOut(BaseModel):
+    """One watchlist row: what a scan looks at, and what verified it."""
+
+    target: str
+    kind: str
+    ecosystem: str
+    cluster: str | None = None
+    enabled: bool
+    #: A `query` row's own three numbers: how far back it looks, how long one slice is, and how
+    #: many posts one request asks for. An `official` row carries the defaults and ignores them.
+    window_hours: int = 24
+    slice_hours: int = 4
+    max_results: int = 40
+    note: str | None = None
+    added_at: str
+
+
+class OpportunityScanOut(BaseModel):
+    """One scan, as the page polls it: the stages it walks and what each one found."""
+
+    id: str
+    status: str
+    stage: str | None = None
+    stages: list["JobStageOut"] = []
+    counters: dict = {}
+    error: str | None = None
+    started_at: str
+    finished_at: str | None = None
+
+
+class OpportunityFilterOptionOut(BaseModel):
+    """One row of the filter panel. `value` is empty for 全部."""
+
+    value: str
+    label: str
+    #: Only the status group carries counts: those three numbers used to live in the page's
+    #: header, and a filter panel that hides them would lose the reading that was there.
+    count: int | None = None
+
+
+class OpportunityFilterOut(BaseModel):
+    """One group in the panel. A group with fewer than two real choices is not sent at all."""
+
+    key: str
+    title: str
+    options: list[OpportunityFilterOptionOut]
+
+
+class OpportunitySortOut(BaseModel):
+    """One sort key and the two directions it reads in, as (value, label) pairs."""
+
+    value: str
+    label: str
+    dirs: list[tuple[str, str]]
+
+
+class OpportunitySettingOut(BaseModel):
+    """One knob on the 设定 tab: what it is called, what it is now, and what it does."""
+
+    key: str
+    label: str
+    value: float
+    min: float
+    max: float
+    hint: str
+    kind: str
+
+
+class OpportunitySettingGroupOut(BaseModel):
+    key: str
+    title: str
+    fields: list[OpportunitySettingOut] = []
+
+
+class OpportunitySettingBlockOut(BaseModel):
+    key: str
+    title: str
+    columns: int = 1
+    groups: list[OpportunitySettingGroupOut] = []
+
+
+class OpportunitySettingsOut(BaseModel):
+    fields: list[OpportunitySettingOut] = []
+    blocks: list[OpportunitySettingBlockOut] = []
+    dirty_hint: str = ""
+
+
+class OpportunitySettingsIn(BaseModel):
+    values: dict = {}
+
+
+class OpportunityScanRowOut(BaseModel):
+    """One past scan, as the 归档 tab and the time strip read it."""
+
+    id: str
+    status: str
+    started_at: str
+    finished_at: str | None = None
+    counters: dict = {}
+
+
+class OpportunityStateIn(BaseModel):
+    """What the reader is setting one entry to."""
+
+    user_state: str
+
+
+class OpportunityListOut(BaseModel):
+    """The page's single read: the entries, how many sit in each state, and the last scan."""
+
+    items: list[OpportunityItemOut] = []
+    counts: dict = {}
+    scan: OpportunityScanOut | None = None
+    #: The panel, built by the backend: which groups exist, what each option is called, and
+    #: which sort keys are offered. The frontend renders them without recognising any of them.
+    filters: list[OpportunityFilterOut] = []
+    sorts: list[OpportunitySortOut] = []
+    #: The page's own copy - 口径、两个列表的标题与空态、trust 的说法、未晋升池的说明。
+    form: dict = {}
