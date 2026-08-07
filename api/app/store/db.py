@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -38,7 +39,40 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 9 added `favorites.kept`: the row is now either a card the reader collected or a record a
 #: CA search left behind. A search writes its card with kept = 0, so a token can be searched
 #: and then collected without a second row for it; the shelf reads `kept = 1` only.
-SCHEMA_VERSION = 10
+#: 10 added 新机会's six tables (watchlist, raw material, entries, steps, scans). They are new
+#: tables, so `schema.sql` alone was enough for a database that had never seen them - but not
+#: for one that had: the entry table gained `heat` / `heat_basis` a scan later, and that is
+#: what `_ADDED_COLUMNS` is for.
+#: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
+#: live on the watchlist row rather than on the entry - so they are copied in at write time and
+#: backfilled once for the rows that predate them.
+SCHEMA_VERSION = 11
+
+
+def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
+    """Copy each entry's ecosystem and source type off the watchlist row it came from.
+
+    The path is three hops and every one of them is a stored fact rather than a guess: an entry
+    keeps the post's URL as `source_ref`, a post knows which watchlist target found it, and that
+    target knows its own ecosystem and kind. Rows whose material is gone (a source that was
+    deleted, a page that was replaced) keep NULL - which the page reads as 未判定, the same as
+    anywhere else.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(opportunities)")}
+    if not {"source_kind", "source_ref"} <= columns:
+        # A table that predates those columns has no entries this could fill, and asking anyway
+        # is an error rather than an empty answer.
+        return 0
+    cursor = conn.execute(
+        "UPDATE opportunities SET"
+        " ecosystem = (SELECT s.ecosystem FROM opportunity_sources s"
+        "              WHERE s.target = (SELECT p.source_target FROM opportunity_posts p"
+        "                                WHERE p.url = opportunities.source_ref)),"
+        " source_type = (SELECT s.kind FROM opportunity_sources s"
+        "                WHERE s.target = (SELECT p.source_target FROM opportunity_posts p"
+        "                                  WHERE p.url = opportunities.source_ref))"
+        " WHERE source_kind = 'post' AND ecosystem IS NULL AND source_ref IS NOT NULL")
+    return cursor.rowcount or 0
 
 
 def now_iso() -> str:
@@ -75,7 +109,27 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("tokens", "peak_market_cap_usd", "REAL"),
                   ("tokens", "peak_market_cap_at", "TEXT"),
                   ("favorites", "config_id", "TEXT"),
-                  ("favorites", "kept", "INTEGER NOT NULL DEFAULT 1"))
+                  ("favorites", "kept", "INTEGER NOT NULL DEFAULT 1"),
+                  #: 新机会的两列：热度与它旁边的原始数字。加在这里而不是只写进 schema.sql，
+                  #: 是因为线上那份库的表是在这两列存在之前建的 —— `CREATE TABLE IF NOT EXISTS`
+                  #: 对已存在的表什么也不做，第一次真跑就是这样在抽取阶段撞上的。
+                  ("opportunities", "heat", "REAL"),
+                  ("opportunities", "heat_basis", "TEXT"),
+                  ("opportunities", "ecosystem", "TEXT"),
+                  ("opportunities", "user_state", "TEXT NOT NULL DEFAULT 'active'"),
+                  ("opportunities", "user_state_at", "TEXT"),
+                  ("opportunity_sources", "window_hours", "INTEGER NOT NULL DEFAULT 24"),
+                  ("opportunity_sources", "slice_hours", "INTEGER NOT NULL DEFAULT 4"),
+                  ("opportunity_sources", "max_results", "INTEGER NOT NULL DEFAULT 40"),
+                  ("opportunity_posts", "score", "REAL"),
+                  ("opportunity_posts", "rules_json", "TEXT"),
+                  ("opportunity_posts", "urls_json", "TEXT"),
+                  ("opportunity_posts", "project_name", "TEXT"),
+                  ("opportunity_posts", "trace_level", "TEXT"),
+                  ("opportunity_posts", "trace_json", "TEXT"),
+                  ("opportunity_posts", "traced_at", "TEXT"),
+                  ("opportunities", "source_type", "TEXT"),
+                  ("opportunity_sources", "last_read_at", "TEXT"))
 
 #: Columns an earlier shape carried. Nothing reads them, a fresh database never creates
 #: them, and leaving them behind on an old one is a table that lies about what the code
@@ -137,6 +191,13 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     if was < 3:
         stamped = _backfill_dex_url(conn)
         log.info("snapshots: wrote a DexScreener page into %d rows that predate the field", stamped)
+    if was < 11:
+        # Keyed on the version rather than on the column being fresh: the column and the value
+        # arrive together, and a database that already has the column may still have rows that
+        # were written before anything filled it.
+        filled = _backfill_opportunity_sources(conn)
+        if filled:
+            log.info("opportunities: filled ecosystem / source_type on %d rows", filled)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if own:
         conn.close()
@@ -368,7 +429,6 @@ def forget_config(chain_id: str, config_id: str) -> dict[str, int]:
     finally:
         conn.close()
     return sizes
-
 
 
 def favorites() -> list[dict]:
@@ -634,3 +694,516 @@ def job_latest() -> dict | None:
     finally:
         conn.close()
     return None if row is None else _job_out(row)
+
+
+# ============================================================================================
+# 新机会（api/app/opportunity/）。SQL 住在这里的理由与上面每一节相同：数据模型只有一处，
+# 功能模块不自己拼语句。原始材料（posts）只增不改，条目与 watchlist 可编辑。
+# ============================================================================================
+
+
+def opportunity_sources() -> list[dict]:
+    """The whole watchlist, in the order it was added."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM opportunity_sources ORDER BY kind, target").fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_sources_enabled() -> list[dict]:
+    """The rows a scan will read, least recently read first.
+
+    One scan reads a bounded number of sources (`opportunity/scan.py` MAX_SOURCES), because a
+    hundred timelines at the X throttle is minutes of sleeping and a rate limit waiting to
+    happen. Ordering by `last_read_at` is what makes the bound a rotation rather than a
+    starvation: the rows the last scan did not reach are the ones this scan starts with.
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM opportunity_sources WHERE enabled = 1"
+            " ORDER BY COALESCE(last_read_at, '') ASC, kind, target").fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_source_touched(target: str) -> None:
+    """Record that a scan read this source, whatever it found."""
+    conn = connect()
+    try:
+        conn.execute("UPDATE opportunity_sources SET last_read_at = ? WHERE target = ?",
+                     (now_iso(), target))
+    finally:
+        conn.close()
+
+
+def opportunity_source_put(rows: list[dict]) -> int:
+    """Add watchlist rows, ignoring the ones already there. Returns how many went in."""
+    if not rows:
+        return 0
+    written = 0
+    conn = connect()
+    try:
+        for row in rows:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO opportunity_sources"
+                " (target, kind, ecosystem, cluster, enabled, window_hours, slice_hours,"
+                "  max_results, note, added_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (row["target"], row["kind"], row.get("ecosystem") or "multi",
+                 row.get("cluster"), 1 if row.get("enabled", True) else 0,
+                 int(row.get("window_hours") or 24), int(row.get("slice_hours") or 4),
+                 int(row.get("max_results") or 40), row.get("note"), row["added_at"]),
+            )
+            written += cursor.rowcount or 0
+    finally:
+        conn.close()
+    return written
+
+
+def opportunity_post_put(row: dict) -> bool:
+    """Store one post. False when it was already there - the same post arrives every scan.
+
+    `classified` and `extracted_at` are not in the insert list on purpose: a post already read
+    keeps the reading it was given, and a re-scan must not blank it back to "not asked".
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO opportunity_posts"
+            " (tweet_id, handle, author_name, text, lang, metrics_json, score, rules_json,"
+            "  urls_json, posted_at, url, source_target, first_seen_scan)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (row["tweet_id"], row["handle"], row.get("author_name"), row["text"], row.get("lang"),
+             json.dumps(row.get("metrics") or {}, ensure_ascii=False), row.get("score"),
+             row.get("rules_json"), json.dumps(list(row.get("urls") or []), ensure_ascii=False),
+             row.get("posted_at"), row.get("url"),
+             row.get("source_target"), row.get("first_seen_scan")),
+        )
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
+def opportunity_trace_queue(limit: int = 40) -> list[dict]:
+    """Leads waiting to be traced, best score first.
+
+    A lead is a post that was classified as an activity or a project, came from a **query** row
+    (an account we do not watch - one of ours is authoritative already), and has not been traced
+    yet. Ordered by the free gate's score: the trace is the expensive step, so the leads it reads
+    first are the ones the gate thought most promising.
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT p.tweet_id AS ref, p.handle, p.text, p.url, p.urls_json, p.project_name,"
+            " p.source_target, p.classified FROM opportunity_posts p"
+            " JOIN opportunity_sources s ON s.target = p.source_target"
+            " WHERE p.trace_level IS NULL AND s.kind = 'query'"
+            " AND p.classified IN ('activity', 'project')"
+            # 有名字的先溯：名字是二次搜索的输入，没名字的线索只能靠帖里的链接与账号，
+            # 而社区帖基本两样都没有（2026-10-19 实测：没名字的线索一条 5 秒、全 C）。
+            " ORDER BY (p.project_name IS NULL), COALESCE(p.score, 0) DESC, p.posted_at DESC"
+            " LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_name_put(ref: str, name: str) -> None:
+    """Store the project name the classification pass read.
+
+    It is the merge key for topics and the query for the trace's second search, so dropping it -
+    which is what the first version did - leaves both of them with nothing to work from.
+    """
+    if not str(name or "").strip():
+        return
+    conn = connect()
+    try:
+        conn.execute("UPDATE opportunity_posts SET project_name = ? WHERE tweet_id = ?",
+                     (str(name).strip(), ref))
+    finally:
+        conn.close()
+
+
+def opportunity_trace_put(tweet_id: str, level: str, payload: dict) -> None:
+    """Record one lead's trace: its level and everything that was read to decide it.
+
+    Written once per lead per scan that traced it. A later scan may trace it again (a project
+    without a home today may have one tomorrow), and the newer verdict replaces the older one -
+    the pages come with it, so what is stored always describes the same reading.
+    """
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE opportunity_posts SET trace_level = ?, trace_json = ?, traced_at = ?"
+            " WHERE tweet_id = ?",
+            (level, json.dumps(payload, ensure_ascii=False), now_iso(), tweet_id))
+    finally:
+        conn.close()
+
+
+def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[dict]:
+    """Material waiting for one of the two model passes, newest first.
+
+    Posts only. The module read pages as well until 2026-10-18, when the user narrowed it to
+    one source - X - and the page reader and its table went with the rest (see
+    `opportunity/README.md` · 发现). A post never changes, so its verdict is kept; the cap is on
+    material rather than on a table, because a pass that means to read twelve things reads
+    twelve.
+    """
+    conn = connect()
+    try:
+        if unclassified:
+            rows = conn.execute(
+                "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
+                " posted_at AS at, url, source_target, metrics_json, score, trace_level,"
+                " trace_json FROM opportunity_posts"
+                # 按免费闸的分排序，不按时间：每轮只问 60 条，按时间排会让**旧的但高分**的帖子
+                # 永远排不上（2026-10-19 实测：重建后 DarkHorse 的两条高分帖被饿死，用户发现
+                # "之前发现过、现在看不到"）。闸已经给每条打过分，这 60 个名额应该花在最好的上面。
+                " WHERE classified IS NULL"
+                " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
+                " posted_at AS at, url, source_target, metrics_json, project_name,"
+                " trace_level, trace_json"
+                " FROM opportunity_posts"
+                " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
+                " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        item = dict(row)
+        # The heat of an entry is its source post's own engagement, so the numbers travel with
+        # the material.
+        item["metrics"] = json.loads(item.pop("metrics_json") or "{}")
+        out.append(item)
+    return out
+
+
+def opportunity_mark(ref: str, source_kind: str, *, classified: str | None = None,
+                     extracted: bool = False) -> None:
+    """Write one material's verdict, or that the expensive pass has read it."""
+    table = "opportunity_posts"
+    key = "tweet_id" if source_kind == "post" else "url"
+    sets, values = [], []
+    if classified is not None:
+        sets += ["classified = ?", "classified_at = ?"]
+        values += [classified, now_iso()]
+    if extracted:
+        sets.append("extracted_at = ?")
+        values.append(now_iso())
+    if not sets:
+        return
+    conn = connect()
+    try:
+        conn.execute("UPDATE %s SET %s WHERE %s = ?" % (table, ", ".join(sets), key),
+                     (*values, ref))
+    finally:
+        conn.close()
+
+
+def opportunity_put(entry: dict, steps: list[dict]) -> None:
+    """Write one entry and its steps. One transaction, because a half-written step list is a
+    set of instructions nobody can follow.
+
+    `discovered_at` is the exception to "a re-scan rewrites what it can re-derive": it keeps
+    the earliest value the row ever had, because it is this project's own observation and the
+    list is sorted by it.
+    """
+    conn = connect()
+    try:
+        conn.execute("BEGIN")
+        conn.execute(
+            "INSERT INTO opportunities (slug, kind, category, title, organizer, official_url,"
+            " summary, trust, trust_basis, ecosystem, source_type, risk, barrier, maturity,"
+            " started_at, deadline, status, reason, heat, heat_basis, discovered_at, source_kind,"
+            " source_ref, extract_version, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(slug) DO UPDATE SET"
+            " kind = excluded.kind, category = excluded.category, title = excluded.title,"
+            " organizer = excluded.organizer, official_url = excluded.official_url,"
+            " summary = excluded.summary, trust = excluded.trust,"
+            " trust_basis = excluded.trust_basis, ecosystem = excluded.ecosystem,"
+            " source_type = excluded.source_type, risk = excluded.risk,"
+            " barrier = excluded.barrier, maturity = excluded.maturity,"
+            " started_at = excluded.started_at, deadline = excluded.deadline,"
+            " status = excluded.status, reason = excluded.reason,"
+            " heat = excluded.heat, heat_basis = excluded.heat_basis,"
+            " source_kind = excluded.source_kind, source_ref = excluded.source_ref,"
+            " extract_version = excluded.extract_version, updated_at = excluded.updated_at",
+            (entry["slug"], entry["kind"], entry.get("category"), entry["title"],
+             entry.get("organizer"), entry.get("official_url"), entry.get("summary"),
+             entry.get("trust") or "unjudged", entry.get("trust_basis"),
+             entry.get("ecosystem"), entry.get("source_type"), entry.get("risk"),
+             entry.get("barrier"), entry.get("maturity"), entry.get("started_at"),
+             entry.get("deadline"), entry.get("status") or "candidate", entry.get("reason"),
+             entry.get("heat"), entry.get("heat_basis"), entry["discovered_at"],
+             entry.get("source_kind"), entry.get("source_ref"),
+             entry.get("extract_version"), now_iso()),
+        )
+        conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (entry["slug"],))
+        for index, step in enumerate(steps or []):
+            conn.execute(
+                "INSERT INTO opportunity_steps (slug, ordinal, title, body, source_url, source_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (entry["slug"], index, step.get("title"), step["body"], step.get("source_url"),
+                 step.get("source_at")),
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def opportunity_items(status: str | None = None, kind: str | None = None,
+                      limit: int = 200) -> list[dict]:
+    """Every entry with its steps, newest discovery first.
+
+    The un-promoted rows come back too: "why is this not on the list" is a question the page
+    has to be able to answer, and a query that only ever returns successes cannot.
+    """
+    conn = connect()
+    try:
+        where, values = [], []
+        if status:
+            where.append("status = ?")
+            values.append(status)
+        if kind:
+            where.append("kind = ?")
+            values.append(kind)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        rows = conn.execute(
+            "SELECT * FROM opportunities%s ORDER BY discovered_at DESC, slug LIMIT ?"
+            % clause, (*values, limit)).fetchall()
+        items = [dict(row) for row in rows]
+        if items:
+            marks = ",".join("?" for _ in items)
+            steps = conn.execute(
+                "SELECT * FROM opportunity_steps WHERE slug IN (%s) ORDER BY slug, ordinal"
+                % marks, tuple(item["slug"] for item in items)).fetchall()
+            grouped: dict[str, list[dict]] = {}
+            for step in steps:
+                grouped.setdefault(step["slug"], []).append(dict(step))
+            for item in items:
+                item["steps"] = grouped.get(item["slug"], [])
+    finally:
+        conn.close()
+    return items
+
+
+def opportunity_retire(slug: str, reason: str) -> None:
+    """Take one entry off the list without deleting it, and say why.
+
+    Only the status moves: the row keeps its steps, its sources and its heat, because "this
+    ended" is a fact about a thing that existed, not a reason to forget it.
+    """
+    conn = connect()
+    try:
+        conn.execute("UPDATE opportunities SET status = 'retired', reason = ?, updated_at = ?"
+                     " WHERE slug = ?", (reason, now_iso(), slug))
+    finally:
+        conn.close()
+
+
+#: What the reader may set. `active` is the default a fresh entry gets.
+USER_STATES = ("active", "archived", "deleted")
+
+
+def opportunity_user_state(slug: str, state: str) -> bool:
+    """归档 / 删除 / 恢复 one entry. False when the slug is not one of ours.
+
+    Only these three columns move: the pipeline's own reading (`status`, `reason`, the steps) is
+    left exactly as it was, because "I archived it" must not erase "why it was not on the list".
+    """
+    if state not in USER_STATES:
+        raise ValueError("unknown user_state %r" % (state,))
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET user_state = ?, user_state_at = ?, updated_at = ?"
+            " WHERE slug = ?", (state, now_iso(), now_iso(), slug))
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
+def opportunity_heat_inputs() -> list[dict]:
+    """Every entry that has a source post, with that post's own numbers.
+
+    Heat is derived, not judged: it is a function of one stored post's metrics and the current
+    scale. So when the scale moves, the existing rows are recomputed rather than left holding a
+    number the code no longer produces - which is the difference between a derived column and a
+    recorded one.
+    """
+    conn = connect()
+    try:
+        # Joined on the post's **url**, because that is what an entry keeps as `source_ref`: a
+        # reader clicks through to the post, so the column holds a link rather than a row key.
+        rows = conn.execute(
+            "SELECT o.slug AS slug, p.metrics_json AS metrics_json FROM opportunities o"
+            " JOIN opportunity_posts p ON p.url = o.source_ref"
+            " WHERE o.source_kind = 'post'").fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        out.append({"slug": row["slug"],
+                    "metrics": json.loads(row["metrics_json"] or "{}")})
+    return out
+
+
+def opportunity_set_heat(slug: str, value: float | None, basis: str | None) -> None:
+    conn = connect()
+    try:
+        conn.execute("UPDATE opportunities SET heat = ?, heat_basis = ? WHERE slug = ?",
+                     (value, basis, slug))
+    finally:
+        conn.close()
+
+
+def opportunity_item(slug: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM opportunities WHERE slug = ?", (slug,)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        steps = conn.execute(
+            "SELECT * FROM opportunity_steps WHERE slug = ? ORDER BY ordinal", (slug,)).fetchall()
+        item["steps"] = [dict(step) for step in steps]
+    finally:
+        conn.close()
+    return item
+
+
+def opportunity_counts() -> dict[str, int]:
+    """How many entries sit in each state, for the page's own header."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT status, kind, count(*) AS n FROM opportunities GROUP BY status, kind").fetchall()
+        posts = conn.execute("SELECT count(*) AS n FROM opportunity_posts").fetchone()
+        sources = conn.execute("SELECT count(*) AS n FROM opportunity_sources").fetchone()
+    finally:
+        conn.close()
+    out = {"posts": posts["n"], "sources": sources["n"]}
+    for row in rows:
+        out["%s:%s" % (row["status"], row["kind"])] = row["n"]
+    return out
+
+
+def opportunity_scans(limit: int = 20) -> list[dict]:
+    """The scans so far, newest first: the 归档 tab and the time strip read this."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, status, stage, started_at, finished_at, counters_json, error"
+            " FROM opportunity_scans ORDER BY started_at DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["counters"] = json.loads(item.pop("counters_json") or "{}")
+        out.append(item)
+    return out
+
+
+def opportunity_queues(limit: int = 6) -> dict:
+    """What is still waiting, in three piles: not classified, classified but not extracted, and
+    leads whose trace found no official home.
+
+    This is the answer to "I saw this project earlier, where is it" - the rebuild and the caps mean
+    a post can sit in a queue for scans, and a queue nobody can see is a queue that looks like a
+    loss (user, 2026-10-19).
+    """
+    conn = connect()
+    try:
+        waiting = conn.execute(
+            "SELECT count(*) AS n FROM opportunity_posts WHERE classified IS NULL").fetchone()["n"]
+        top_waiting = conn.execute(
+            "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score"
+            " FROM opportunity_posts WHERE classified IS NULL"
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+        pending = conn.execute(
+            "SELECT count(*) AS n FROM opportunity_posts"
+            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL").fetchone()["n"]
+        top_pending = conn.execute(
+            "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score, project_name"
+            " FROM opportunity_posts"
+            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+        failed = conn.execute(
+            "SELECT count(*) AS n FROM opportunity_posts WHERE trace_level = 'C'").fetchone()["n"]
+    finally:
+        conn.close()
+    return {
+        "unclassified": {"count": waiting, "top": [dict(row) for row in top_waiting]},
+        "unextracted": {"count": pending, "top": [dict(row) for row in top_pending]},
+        "trace_failed": {"count": failed},
+    }
+
+
+def opportunity_scan_put(job: dict) -> dict:
+    """Write one scan row, whole. The page polls this and nothing else."""
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO opportunity_scans"
+            " (id, status, stage, stages_json, counters_json, error, started_at, finished_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (job["id"], job["status"], job.get("stage"),
+             json.dumps(job.get("stages") or [], ensure_ascii=False),
+             json.dumps(job.get("counters") or {}, ensure_ascii=False), job.get("error"),
+             job["started_at"], job.get("finished_at")),
+        )
+    finally:
+        conn.close()
+    return job
+
+
+def _scan_out(row) -> dict:
+    scan = dict(row)
+    scan["stages"] = json.loads(scan.pop("stages_json") or "[]")
+    scan["counters"] = json.loads(scan.pop("counters_json") or "{}")
+    return scan
+
+
+def opportunity_scan_get(scan_id: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM opportunity_scans WHERE id = ?", (scan_id,)).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _scan_out(row)
+
+
+def opportunity_scan_latest() -> dict | None:
+    """The newest scan, so a page that did not start one still shows the last result."""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM opportunity_scans ORDER BY started_at DESC, id DESC LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _scan_out(row)
+
+
+# ============================================================================================
+# 新机会 v2（2026-10-20）：实体 / 机会 / 源 / 关注规则 / 材料 / 证据 / 建设扩展。
+# 旧的 opportunity_* 函数继续服务旧页面，直到切换项把它们删掉。
+# ============================================================================================
+
+
+def _stable_id(prefix: str, key: str) -> str:
+    return prefix + "_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
