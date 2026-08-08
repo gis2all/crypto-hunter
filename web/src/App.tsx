@@ -7,6 +7,7 @@ import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
 import { OverviewPanel } from "./features/overview/OverviewPanel";
 import { FavoritesView } from "./features/favorites/FavoritesView";
 import { LookupView } from "./features/lookup/LookupView";
+import { OpportunityView } from "./features/opportunity/OpportunityView";
 import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
 import { batchToMarkdown, TopBar, type View } from "./features/report/TopBar";
@@ -75,12 +76,14 @@ export default function App() {
     const kept = readPref(viewKey(startChain)) ?? readPref(LEGACY_VIEW_KEY);
     return kept === "params" ? "params" : "report";
   });
-  // 雷达, 收藏, 搜索 or 系统设置. All four are places, not tabs: the last three are scoped by
-  // neither the selected chain nor a set of settings, so none of them can live under
-  // 报告 / 设定 - see Rail's Place.
+  // 雷达, 收藏, 搜索, 新机会 or 系统设置. All five are places, not tabs: the last four are
+  // scoped by neither the selected chain nor a set of settings, so none of them can live under
+  // 报告 / 设定 - see Rail's Place. 新机会 belongs here for the same reason an activity does:
+  // it belongs to no chain, so there is nothing for a chain selector to scope.
   const [place, setPlace] = useState<Place>(() => {
     const kept = readPref(PLACE_KEY);
-    return kept === "favorites" || kept === "lookup" || kept === "system" ? kept : "radar";
+    return kept === "favorites" || kept === "lookup" || kept === "system"
+      || kept === "opportunity" ? kept : "radar";
   });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
@@ -310,6 +313,11 @@ export default function App() {
           // a chain this app does not screen, and its foot still has to name the one it has
           // an id for.
           <LookupView chains={chains.data ?? []} />
+        ) : place === "opportunity" ? (
+          // 新机会: what the outside world is offering, found by this app's own scans. No chain
+          // list and no set of settings is passed, because neither scopes an activity - the
+          // page's own read carries everything it draws.
+          <OpportunityView />
         ) : (
           <>
           <TopBar
