@@ -834,6 +834,9 @@ div.pgroup>.pset{margin-top:auto}
    user), so what is left on it is the bulk fold, the box and 导出. */
 #view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
   gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
+#view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar{border-bottom-color:transparent}
+#view-favorites .fav-bar::after,#view-lookup .fav-bar::after,#view-system .fav-bar::after{content:"";position:absolute;
+  left:16px;right:16px;bottom:0;height:1px;background:var(--border)}
 .fav-title{display:flex;align-items:center;gap:7px}
 .fav-title b{font-size:15px;font-weight:600}
 .fav-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
@@ -877,7 +880,7 @@ div.pgroup>.pset{margin-top:auto}
    Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
    and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
    row rather than a chip that has to fit inside the one above it. */
-#view-favorites .fav-body,#view-lookup .look-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+#view-favorites .fav-body,#view-lookup .look-body,#view-opportunity .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
 .fav-side{display:flex;flex-direction:column;width:320px}
 .fav-side .look-h{margin:10px 0 6px}
 .fav-cards{grid-column:2/-1;min-width:0}
@@ -927,7 +930,7 @@ div.pgroup>.pset{margin-top:auto}
   color:var(--muted)}
 /* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
    the columns under it rather than flush against the window. */
-#view-lookup>.note-bar{margin:12px 16px}
+#view-lookup>.note-bar,#view-opportunity>.note-bar{margin:12px 16px}
 /* The wall: one card per address this page has read, standing where a radar's own card
    section stands. There is no head over the cards - it used to be a thin strip carrying the
    chain's name and a worded 重新搜索, with no ground, no frame and no padding, so 8px over
@@ -954,3 +957,142 @@ div.pgroup>.pset{margin-top:auto}
 /* 清空 is the same two-press arm 中止 uses - the first press says how many go - but it stands
    in a drawer, so it cannot wear the RunPanel's `.rp-h .btn.arm` selector. */
 .btn.lk-clear.arm{border-color:var(--danger-border);background:var(--danger-bg);color:var(--danger-fg)}
+
+/* ---------- 新机会 (features/opportunity/OpportunityView.tsx) ----------
+
+   A Place of its own, so it wears the shelf's own strip on top (above) and the page's own
+   `.grid` under it: the two lists are card walls, the same width as a report card, because an
+   entry is read the same way a card is. Two things are this page's own - the entry card (an
+   activity carries instructions, which a report card never does) and the two folds at the
+   bottom, which are tables because a pool and a watchlist are read as rows. */
+
+/* The entry card: same frame, ground and radius as a report card, and a column so the foot
+   sits at the bottom whatever the steps above it do. */
+/* 这一页的卡片**拉伸到行高**，与全站那条 `align-items:start`（app.css 的 2026-09-26 决定：
+   "让每张卡在自己的内容处结束"）不同，理由只有一条：**这里的正文是固定高度的块**，所以拉伸
+   多出来的空间落在页脚之前（页脚是 `margin-top:auto`），读起来是卡片底部的留白，而不是当初
+   那条插在正文中间的空带。折叠态下同排卡片因此完全等高（user, 2026-10-18）。 */
+#view-opportunity .fav-body .grid{align-items:stretch}
+.opp-card{display:flex;flex-direction:column;gap:8px;padding:12px 14px;min-width:0}
+/* The name and its chips, on their own line: a long title plus four chips wraps, and a wrapped
+   row reads as a second heading. */
+.opp-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.opp-title{font-size:13.5px;line-height:1.35;min-width:0}
+/* The readings about the entry, one line: where it came from, when it was found, and the two
+   badges at the far end. The badges are a group so they wrap together or not at all. */
+.opp-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--mono);
+  font-size:10.5px;color:var(--muted)}
+.opp-meta a{color:var(--accent-fg);display:inline-flex;align-items:center;gap:3px}
+/* The badges lead the meta line: they are the two readings a scanning reader wants first, and
+   left-aligned they wrap into the same block instead of a row of their own on the right. */
+.opp-badges{display:inline-flex;align-items:center;gap:5px}
+.opp-sum{margin:0;font-size:12.5px;line-height:1.6;color:var(--fg-2)}
+/* The steps: numbered by their own ordinal, each one a line the reader can follow, with the
+   page it came from beside it. */
+.opp-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;
+  line-height:1.55}
+.opp-steps li{color:var(--fg-2)}
+.opp-steps b{color:var(--fg);font-weight:600;margin-right:4px}
+.opp-steps a{color:var(--accent-fg);margin-left:6px;display:inline-flex;align-items:center;gap:3px}
+/* 门槛与分类的标签行用既有的 `.srow-v chips`，不另立容器：`.chips .chip` 才是那个
+   20px、居中的标签（proto.css），裸 `.chip` 是顶对齐的 26px 盒子。 */
+
+/* 卡片正文：**整张卡唯一可变的那一块**（一句"是什么" + 步骤 + 风险），固定高度，超出由
+   右下角的「展开」打开 —— 报告卡的结论就是这套（`Card.tsx` Verdict / `.verdict-wrap`），
+   这里沿用同一套类与同一个按钮外观，只换一个行数变量。
+   为什么是 height 而不是 -webkit-line-clamp：正文里有一个 <ol> 与几个 <p>，而 clamp 只对
+   单一内联流是精确的；固定高度对两者都精确，而且"固定高度"本来就是这条需求的原话
+   （user, 2026-10-18）。 */
+:root{--opp-body-lines:7}
+.opp-body-wrap{position:relative}
+.opp-body{height:calc(var(--opp-body-lines) * 1.72em);overflow:hidden;display:flex;
+  flex-direction:column;gap:8px}
+.opp-body-wrap.full .opp-body{height:auto;overflow:visible}
+/* 被切在半条步骤上时，底部渐隐提示"下面还有"；只有真的被切了才画（`.cut` 由测量给出）。 */
+.opp-body-wrap.cut::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1.72em;
+  pointer-events:none;background:linear-gradient(transparent,var(--surface))}
+/* 展开按钮与结论那一颗共用外观：同一个 .verdict-more 规则，两个选择器。 */
+.verdict-more,.opp-body-more{position:absolute;right:0;bottom:0;display:flex;align-items:center;
+  height:1.72em;padding-left:16px;background:linear-gradient(to right,transparent,var(--surface) 16px)}
+.opp-body-wrap.full .opp-body-more{position:static;justify-content:flex-end;height:auto;
+  padding:3px 0 0;background:none}
+.verdict-more button,.opp-body-more button{display:inline-flex;align-items:center;gap:3px;
+  padding:0 5px;border:0;background:none;color:var(--accent-fg);font-family:var(--sans);
+  font-size:11.5px;line-height:1;cursor:pointer}
+.verdict-more button:hover,.opp-body-more button:hover{background:var(--surface-warm)}
+.verdict-more button:focus-visible,.opp-body-more button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.verdict-more button>.ico,.opp-body-more button>.ico{transition:transform .12s ease}
+.verdict-more button[aria-expanded=true]>.ico,.opp-body-more button[aria-expanded=true]>.ico{transform:rotate(180deg)}
+.opp-risk{margin:0;font-size:12px;line-height:1.55;color:var(--warn-fg)}
+/* The foot: where the reading came from and which prompt wrote it, in the card-src voice. */
+.opp-foot{margin-top:auto;padding-top:8px;border-top:1px solid var(--hair);display:flex;
+  align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;
+  color:var(--muted)}
+.opp-foot a{color:var(--accent-fg)}
+/* 归档 / 删除：两个图标按钮，压在页脚右端。样式沿用页脚里那些小链接的尺寸，不另造一套。 */
+.opp-acts{margin-left:auto;display:inline-flex;align-items:center;gap:2px}
+.opp-acts button{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border:0;background:none;color:var(--muted);cursor:pointer}
+.opp-acts button:hover{background:var(--surface-warm);color:var(--fg-2)}
+.opp-acts button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+
+/* The toolbar: the trust filter on the left, the counts at the far end. A **row**, not a column
+   - the first cut reused `.fav-opts`, which is a column for the shelf's side panel, so four
+   peers became four full-width rows and the page opened with what looked like a broken table
+   (measured: 1293px × 4). The filter itself wears `.tabs` / `.tab` (proto.css), the same
+   segmented control the radar wears for 报告 / 设定: one control for one choice, and no second
+   visual language invented for it (the standalone pills it first wore were a new shape *and* a
+   new colour rule - user, 2026-10-18). */
+.opp-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 16px 0}/* The counts line that used to sit in the toolbar moved into the panel's 状态 rows (they are the
+   same three numbers), and what is left of it - how much material has been read - sits under the
+   watchlist fold where the material lives. */
+.opp-tally{margin:12px 16px 24px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.opp-opt-count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+/* 不在列表上的条目自己说明为什么（未晋升 / 已结束的原因）。 */
+.opp-reason{margin:0;font-size:11.5px;color:var(--muted)}
+/* The list heading is the page's own hierarchy: the two lists are what the page is, so their
+   titles are the only text on it that is not a reading. */
+.opp-list{margin:16px 16px 0}
+.opp-list-title{margin:0 0 8px;font-size:12.5px;font-weight:600;color:var(--fg);
+  display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+/* The hint rides beside its heading rather than under it: a heading and a sentence are one line
+   of reading. */
+.opp-hint{margin:0;font-size:11.5px;font-weight:400;color:var(--muted)}
+/* The two folds at the bottom: a pool and a watchlist are rows, so they are tables. */
+.opp-fold{margin:16px;border-top:1px solid var(--hair);padding-top:10px}
+.opp-fold summary{cursor:pointer;font-size:12px;color:var(--fg-2)}
+.opp-fold .opp-hint{margin-left:0;display:block;margin-top:6px}
+.opp-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px}
+.opp-table th{text-align:left;font-weight:400;color:var(--muted);font-size:10.5px;
+  letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid var(--hair)}
+.opp-table td{padding:5px 8px;border-bottom:1px solid var(--hair);color:var(--fg-2);
+  vertical-align:top}
+.opp-table tr:last-child td{border-bottom:0}
+/* 阶段内的进度（`12/60`），画在阶段名后面：它是"还在动"的唯一证据。等宽数字，免得跳动。 */
+.rst-n{margin-left:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+/* 时间轮次条：每一轮一格，点一格只看那一轮新增的。与雷达那条批次头同源（时间 + 读数），
+   只是这里排成一行可以点。 */
+.opp-strip{display:flex;gap:6px;flex-wrap:wrap;margin:10px 16px 0}
+.opp-round{display:inline-flex;align-items:baseline;gap:7px;padding:5px 9px;
+  border:1px solid var(--border);background:var(--surface);color:var(--fg-2);cursor:pointer}
+.opp-round:hover{border-color:var(--accent);color:var(--fg)}
+.opp-round.on{border-color:var(--accent);background:var(--accent-tint);color:var(--accent-fg)}
+.opp-round b{font-size:11.5px;font-weight:600}
+.opp-round span{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.opp-round em{font-family:var(--mono);font-size:10.5px;font-style:normal;color:var(--muted)}
+
+/* 排队中：三堆东西，每堆一张表。它是"我见过的东西去哪了"的答案，所以标题里带条数。 */
+.opp-queues{display:flex;flex-direction:column;gap:14px}
+.opp-pile .opp-table{margin-top:0}
+.opp-pile-score{width:52px;font-family:var(--mono);color:var(--muted)}
+
+/* 设定页：一行一个旋钮，左边名字与说明、右边输入框与范围。 */
+.opp-settings{margin:0;max-width:none}
+.opp-settings .note-bar{margin:0 0 12px}
+.opp-settings .blk-cols{grid-template-columns:minmax(0,1fr)}
+.opp-settings .prow{align-items:center}
+.opp-settings .prow>label{white-space:nowrap;min-width:120px;flex:0 0 auto}
+.opp-settings .prow .field{flex:1 1 auto;padding-left:0;justify-content:flex-end;align-items:center}
+.opp-settings .prow input.num{width:88px;height:var(--ctrl-h);padding:0 6px}
+.opp-settings .prow .unit{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap}

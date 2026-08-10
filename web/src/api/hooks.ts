@@ -268,3 +268,80 @@ export function useCollectFavorite() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
   });
 }
+
+/** 新机会: one read for the whole page, polled while a scan is running.
+ *
+ *  The scan's progress is part of this answer rather than a query of its own: the page draws
+ *  the two lists and the stage list from the same row, and a second key would let them
+ *  disagree about which scan they are describing. Nothing is scoped by chain or by set of
+ *  settings - an activity belongs to neither. */
+export function useOpportunity() {
+  return useQuery({
+    queryKey: ["opportunity"],
+    queryFn: api.getOpportunity,
+    refetchInterval: (query) =>
+      (query.state.data?.scan?.status ?? "idle") === "running" ? RUNNING_MS : false,
+  });
+}
+
+/** The watchlist. Not polled: it changes when an operator changes it, not when a scan runs. */
+export function useOpportunitySources() {
+  return useQuery({
+    queryKey: ["opportunity-sources"],
+    queryFn: api.listOpportunitySources,
+    staleTime: 60_000,
+  });
+}
+
+/** Start a scan. The answer is the scan row, written into the cache on the way past so the
+ *  panel has something to draw before `useOpportunity`'s next poll lands - and the page's own
+ *  read is invalidated, because the row it is holding is now one scan behind. */
+export function useOpportunitySettings() {
+  return useQuery({ queryKey: ["opportunity", "settings"], queryFn: api.getOpportunitySettings });
+}
+
+export function useSaveOpportunitySettings() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (values: Record<string, number>) => api.saveOpportunitySettings(values),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["opportunity"] }),
+  });
+}
+
+export function useOpportunityScans() {
+  return useQuery({ queryKey: ["opportunity", "scans"], queryFn: () => api.listOpportunityScans() });
+}
+
+export function useOpportunityQueues() {
+  return useQuery({
+    queryKey: ["opportunity", "queues"],
+    queryFn: api.getOpportunityQueues,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useSetOpportunityState() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, state }: { slug: string; state: string }) =>
+      api.setOpportunityState(slug, state),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["opportunity"] }),
+  });
+}
+
+export function useCancelOpportunityScan() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) => api.cancelOpportunityScan(scanId),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["opportunity"] }),
+  });
+}
+
+
+export function useStartOpportunityScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.startOpportunityScan(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["opportunity"] }),
+  });
+}

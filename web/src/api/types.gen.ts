@@ -524,6 +524,205 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Opportunities
+         * @description Everything the page draws, in one read.
+         *
+         *     The un-promoted rows come back with the promoted ones and are told apart by `status`: a
+         *     page that only ever received successes could not answer "why is this not on the list", and
+         *     that question is the whole reason the gate records a reason.
+         */
+        get: operations["list_opportunities_api_v1_opportunity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Settings
+         * @description The knobs this module runs on, as the 设定 tab draws them.
+         */
+        get: operations["read_settings_api_v1_opportunity_settings_get"];
+        /**
+         * Save Settings
+         * @description Save what the page sent. Unknown keys are ignored rather than stored.
+         */
+        put: operations["save_settings_api_v1_opportunity_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Scans
+         * @description Every scan so far, newest first: the 归档 tab and the strip under the bar.
+         */
+        get: operations["list_scans_api_v1_opportunity_scans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/queues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Queues
+         * @description What is still waiting: 未分类 / 未抽取 / 溯源失败，各带条数与分数最高的几条。
+         */
+        get: operations["read_queues_api_v1_opportunity_queues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/items/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Item State
+         * @description 归档 / 删除 / 恢复 one entry, by hand.
+         *
+         *     The one write this page has, and it is the reader's own: 归档 is "I know about this and it is
+         *     not a priority", 删除 is "I do not want it" (soft - the row and its evidence stay). Neither
+         *     touches the pipeline's reading, so the card keeps saying why it is not on the list.
+         */
+        patch: operations["set_item_state_api_v1_opportunity_items__slug__patch"];
+        trace?: never;
+    };
+    "/api/v1/opportunity/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sources
+         * @description The watchlist as it stands: what a scan will read next time.
+         */
+        get: operations["list_sources_api_v1_opportunity_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Scan
+         * @description Start one scan and answer with the row to poll.
+         *
+         *     A second scan is refused while one is running rather than queued: two scans read the same
+         *     timelines, the X throttle serialises them anyway, and the second one would only pay twice
+         *     for the same material.
+         */
+        post: operations["start_scan_api_v1_opportunity_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/scans/{scan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Scan
+         * @description Ask the running scan to stop. Idempotent, and never an error for a scan that just ended.
+         *
+         *     The page may have been polling a row that finished between the click and this call, and "it
+         *     is not running any more" is the answer the reader wanted - so a cancel for an unknown or
+         *     finished scan answers `cancelled: false` with the reason rather than a 404. The scan stops at
+         *     the next X call rather than at the end of one, which is what makes it worth having: the thing
+         *     being waited on is usually a rate limit.
+         */
+        post: operations["cancel_scan_api_v1_opportunity_scans__scan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Scan */
+        get: operations["read_scan_api_v1_opportunity_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/form": {
         parameters: {
             query?: never;
@@ -1276,6 +1475,11 @@ export interface components {
          *     The four states are the ones a round's step list draws too (pending / run / done /
          *     failed), so the two panels cannot disagree about what a stopped stage looks like.
          *     `seconds` is filled the moment the stage ends and stays empty until then.
+         *
+         *     `done` / `total` are the **inside** of a running stage: how many of its units it has got
+         *     through. A scan's collect stage is six minutes of X calls and its classify stage is sixty
+         *     questions; without these two numbers the page can only say "running" for minutes on end,
+         *     which is what "it looks stuck" meant (user, 2026-10-18).
          */
         JobStageOut: {
             /** Key */
@@ -1286,6 +1490,10 @@ export interface components {
             state: string;
             /** Seconds */
             seconds?: number | null;
+            /** Done */
+            done?: number | null;
+            /** Total */
+            total?: number | null;
         };
         /**
          * LabelIn
@@ -1423,6 +1631,344 @@ export interface components {
              * @default
              */
             tone: string;
+        };
+        /**
+         * OpportunityFilterOptionOut
+         * @description One row of the filter panel. `value` is empty for 全部.
+         */
+        OpportunityFilterOptionOut: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Count */
+            count?: number | null;
+        };
+        /**
+         * OpportunityFilterOut
+         * @description One group in the panel. A group with fewer than two real choices is not sent at all.
+         */
+        OpportunityFilterOut: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Options */
+            options: components["schemas"]["OpportunityFilterOptionOut"][];
+        };
+        /**
+         * OpportunityItemOut
+         * @description One entry: an activity with steps, or a project with a sentence.
+         *
+         *     Everything a reader needs is here, steps included - the list prints them under the entry,
+         *     and a second request to read the instructions for something already on screen would be a
+         *     round trip for text this query already has.
+         */
+        OpportunityItemOut: {
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+            /** Category */
+            category?: string | null;
+            /** Title */
+            title: string;
+            /** Organizer */
+            organizer?: string | null;
+            /** Official Url */
+            official_url?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Trust */
+            trust: string;
+            /** Trust Basis */
+            trust_basis?: string | null;
+            /** Ecosystem */
+            ecosystem?: string | null;
+            /** Source Type */
+            source_type?: string | null;
+            /** Risk */
+            risk?: string | null;
+            /**
+             * Barrier
+             * @default []
+             */
+            barrier: string[];
+            /** Maturity */
+            maturity?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Deadline */
+            deadline?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * User State
+             * @default active
+             */
+            user_state: string;
+            /** Reason */
+            reason?: string | null;
+            /** Heat */
+            heat?: number | null;
+            /**
+             * Heat Band
+             * @default 未判定
+             */
+            heat_band: string;
+            /** Heat Basis */
+            heat_basis?: string | null;
+            /** Discovered At */
+            discovered_at: string;
+            /** Source Kind */
+            source_kind?: string | null;
+            /** Source Ref */
+            source_ref?: string | null;
+            /** Extract Version */
+            extract_version?: string | null;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["OpportunityStepOut"][];
+        };
+        /**
+         * OpportunityListOut
+         * @description The page's single read: the entries, how many sit in each state, and the last scan.
+         */
+        OpportunityListOut: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["OpportunityItemOut"][];
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: unknown;
+            };
+            scan?: components["schemas"]["OpportunityScanOut"] | null;
+            /**
+             * Filters
+             * @default []
+             */
+            filters: components["schemas"]["OpportunityFilterOut"][];
+            /**
+             * Sorts
+             * @default []
+             */
+            sorts: components["schemas"]["OpportunitySortOut"][];
+            /**
+             * Form
+             * @default {}
+             */
+            form: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * OpportunityScanOut
+         * @description One scan, as the page polls it: the stages it walks and what each one found.
+         */
+        OpportunityScanOut: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage?: string | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["JobStageOut"][];
+            /**
+             * Counters
+             * @default {}
+             */
+            counters: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error?: string | null;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /**
+         * OpportunityScanRowOut
+         * @description One past scan, as the 归档 tab and the time strip read it.
+         */
+        OpportunityScanRowOut: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Counters
+             * @default {}
+             */
+            counters: {
+                [key: string]: unknown;
+            };
+        };
+        /** OpportunitySettingBlockOut */
+        OpportunitySettingBlockOut: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * Columns
+             * @default 1
+             */
+            columns: number;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["OpportunitySettingGroupOut"][];
+        };
+        /** OpportunitySettingGroupOut */
+        OpportunitySettingGroupOut: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: components["schemas"]["OpportunitySettingOut"][];
+        };
+        /**
+         * OpportunitySettingOut
+         * @description One knob on the 设定 tab: what it is called, what it is now, and what it does.
+         */
+        OpportunitySettingOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
+            /** Min */
+            min: number;
+            /** Max */
+            max: number;
+            /** Hint */
+            hint: string;
+            /** Kind */
+            kind: string;
+        };
+        /** OpportunitySettingsIn */
+        OpportunitySettingsIn: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /** OpportunitySettingsOut */
+        OpportunitySettingsOut: {
+            /**
+             * Fields
+             * @default []
+             */
+            fields: components["schemas"]["OpportunitySettingOut"][];
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["OpportunitySettingBlockOut"][];
+            /**
+             * Dirty Hint
+             * @default
+             */
+            dirty_hint: string;
+        };
+        /**
+         * OpportunitySortOut
+         * @description One sort key and the two directions it reads in, as (value, label) pairs.
+         */
+        OpportunitySortOut: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Dirs */
+            dirs: [
+                string,
+                string
+            ][];
+        };
+        /**
+         * OpportunitySourceOut
+         * @description One watchlist row: what a scan looks at, and what verified it.
+         */
+        OpportunitySourceOut: {
+            /** Target */
+            target: string;
+            /** Kind */
+            kind: string;
+            /** Ecosystem */
+            ecosystem: string;
+            /** Cluster */
+            cluster?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Window Hours
+             * @default 24
+             */
+            window_hours: number;
+            /**
+             * Slice Hours
+             * @default 4
+             */
+            slice_hours: number;
+            /**
+             * Max Results
+             * @default 40
+             */
+            max_results: number;
+            /** Note */
+            note?: string | null;
+            /** Added At */
+            added_at: string;
+        };
+        /**
+         * OpportunityStateIn
+         * @description What the reader is setting one entry to.
+         */
+        OpportunityStateIn: {
+            /** User State */
+            user_state: string;
+        };
+        /**
+         * OpportunityStepOut
+         * @description One participation step, with the page it was read from.
+         */
+        OpportunityStepOut: {
+            /** Ordinal */
+            ordinal: number;
+            /** Title */
+            title?: string | null;
+            /** Body */
+            body: string;
+            /** Source Url */
+            source_url?: string | null;
+            /** Source At */
+            source_at?: string | null;
         };
         /** PillOut */
         PillOut: {
@@ -2722,6 +3268,293 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemovedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_opportunities_api_v1_opportunity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_opportunity_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySettingsOut"];
+                };
+            };
+        };
+    };
+    save_settings_api_v1_opportunity_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunitySettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scans_api_v1_opportunity_scans_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityScanRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_queues_api_v1_opportunity_queues_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_item_state_api_v1_opportunity_items__slug__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunityStateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_v1_opportunity_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySourceOut"][];
+                };
+            };
+        };
+    };
+    start_scan_api_v1_opportunity_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityScanOut"];
+                };
+            };
+        };
+    };
+    cancel_scan_api_v1_opportunity_scans__scan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_scan_api_v1_opportunity_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityScanOut"];
                 };
             };
             /** @description Validation Error */
