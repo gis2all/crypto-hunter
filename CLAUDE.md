@@ -52,12 +52,13 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 
 # 5. 代码结构
 
-- `api/app/api/v1/`：唯一 HTTP 层（`chains`、`runs`、`lexicon`、`settings`、`favorites`、`lookup`、`system`、`health`），页面文案在 `forms.py`。见该目录 `README.md`。
+- `api/app/api/v1/`：唯一 HTTP 层（`chains`、`runs`、`lexicon`、`settings`、`favorites`、`lookup`、`opportunity`、`system`、`health`），页面文案在 `forms.py`。见该目录 `README.md`。
 - `api/app/pipeline/`：一轮的编排（`collect`、`decide`、`states`、`progress`、`run`、`schedule`、`write`）。见 `README.md`。
 - `api/app/core/`：纯逻辑（`filters`、`funnel`、`scoring`、`models`、`parse`、`caliber`），不得有 IO；「0 是否算读数」只由 `parse.py` 与 `sources/base.py` 决定。
 - `api/app/sources/`：一个源一个适配器，跨链的放根目录，只服务一条链的放 `<chain>/`。见 `README.md` 与该链 `SOURCES.md`。
 - `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
 - `api/app/search/`：挖链（识别、发现、抓取、引擎）。见 `README.md`。
+- `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、分类 / 溯源 / 主题 / 抽取四次模型调用、晋升门槛、读者自己的归档与删除。与一轮的编排无关，不写 `runs`。见 `README.md`。
 - `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
@@ -65,7 +66,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
 - `web/src/features/`：一个页面一个目录；`web/src/components/` 存放通用件；`web/src/styles/` 是视觉的唯一出处。见两份 `README.md`。
-- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
+- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）；`opportunity.example.yaml` 是新机会那条流水线九个旋钮的模板，本机那份 `opportunity.yaml` 由设定页保存时创建，只写被改过的键，删掉即回默认。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
 - `data/`：`crypto-hunter.db` 与 `raw/`（每轮原始响应与 HTTP 缓存），不入库。
 
 # 6. 术语
@@ -100,6 +101,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 | 新增或修改数据表 | `api/app/store/README.md` | `api/app/store/schema.sql` 与 `store/db.py` |
 | 修改收藏页 | `web/src/features/README.md` · 收藏页 | `api/app/api/v1/favorites.py`、`report/assemble.py` 与 `web/src/features/favorites/` |
 | 修改 CA 搜索 | `web/src/features/README.md` · CA 搜索 | `api/app/lookup.py`、`api/app/api/v1/lookup.py` 与 `web/src/features/lookup/` |
+| 修改新机会（watchlist、扫描、分类与抽取、溯源、主题、晋升门槛、用户状态、页面与设定） | `api/app/opportunity/README.md` | `api/app/opportunity/`、`api/app/api/v1/opportunity.py` 与 `web/src/features/opportunity/`；watchlist 种子在 `opportunity/seeds/watchlist.yaml`，旋钮在 `opportunity/settings.py` 的 `FIELDS` 与 `config/opportunity.example.yaml` |
 | 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py` 与 `web/src/features/system/` |
 | 第 8 节（边界与待决）中的待决事项 | 先与用户确认 | 第 8 节 |
 
@@ -135,8 +137,8 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 
 # 10. 文档约定
 
-- 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
-- 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md`。
+- 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/opportunity/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
+- 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md` 与 `api/app/opportunity/prompts/`。
 - 规则不编号：定位一条规则用模块文档的小节名，`rg` 搜小节名或规则里的关键词即可；跨文档引用写「见 `<模块>/README.md` · 小节名」，同文档内写「见本文件 · 小节名」。
 - 模块引用用短名：`sources/` 到 `api/v1/` 在 `api/app/` 下，`features/` 与 `styles/` 在 `web/src/` 下。
 - 维护范围：分层、契约、运行方式、数据模型、视觉规则发生变化时更新本文件；改动代码的那一次同步修改对应模块文档；口径变化时直接改写原条目，不追加「某天起改为…」。
