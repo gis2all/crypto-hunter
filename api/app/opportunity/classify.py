@@ -1,9 +1,10 @@
-"""The cheap pass: is this material an activity, a project, or neither.
+"""Manual fallback: classify one material at a time as activity, project, or neither.
 
-It runs on material that already survived the free word gate, and its answer is what decides
-whether the expensive pass ever sees the material. A verdict that cannot be read is recorded as
-`other` rather than retried - "we could not tell" is a reading, and a scan that retried every
-unreadable answer would spend its budget on the least promising material it has.
+The scan job no longer calls this module; it uses `group.py`, which reads the whole pending
+batch in one full-text call. The per-post path stays as a manual fallback for inspecting one
+material. A verdict that cannot be read is recorded as `other` rather than retried - "we could
+not tell" is a reading, and a pass that retried every unreadable answer would spend its budget
+on the least promising material it has.
 """
 
 from __future__ import annotations
@@ -19,9 +20,9 @@ from .schema import CLASSIFY_VERSION, MaterialVerdict, read_verdict
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
-#: How many materials one scan will classify. A cap rather than a queue: a scan that ran until it
-#: had classified everything would spend a round's worth of tokens on the first wide timeline it
-#: met, and the material it did not reach stays unclassified for the next scan.
+#: The fallback pass's own cap. The scan job no longer uses it (it calls \`group.run\`, whose cap is
+#: \`group.DEFAULT_LIMIT\`): a manual per-post pass that ran until it had classified everything would
+#: spend a round's worth of tokens on the first wide timeline it met.
 #:
 #: 150 since 2026-10-19. The queue is ordered by the gate's score, and after the rebuild there were
 #: ~400 posts waiting: at 60 a scan a high-scoring post could sit three scans deep (the user asked

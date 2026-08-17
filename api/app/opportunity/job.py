@@ -6,10 +6,11 @@ own worker, and the reason this module carries its own single thread rather than
 scheduler's. The two can overlap, which is what the per-host pacers and this module's own X
 throttle are for.
 
-Five stages, and they are the pipeline's own vocabulary: read the watchlist, gather material,
-classify it, extract and store, then sweep (retire what the material said was over, and recompute
-heat). The page draws them from the scan row it is polling, so a scan that dies on the third stage
-keeps the first two stages' readings and says where it stopped.
+Six stages, and they are the pipeline's own vocabulary: read the watchlist, gather material, group
+it into project candidates, trace their official homes, extract and store, then sweep (retire what
+the material said was over, and recompute heat). The page draws them from the scan row it is
+polling, so a scan that dies on the third stage keeps the first two stages' readings and says where
+it stopped.
 
 **Cancel.** The reader can stop a scan, and it stops at the next X call rather than at the end of
 one: the flag is polled inside the subprocess loop (`xread.run`), so a scan that is waiting on a
@@ -27,7 +28,7 @@ from uuid import uuid4
 
 from ..llm import client as llm
 from ..store import db
-from . import classify, extract, lifecycle, scan as scanner, trace, watchlist
+from . import extract, group, lifecycle, scan as scanner, trace, watchlist
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -35,7 +36,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 STAGES = (
     ("sources", "读 watchlist"),
     ("collect", "抓材料"),
-    ("classify", "分类"),
+    ("classify", "分组"),
     ("trace", "溯源到官方家"),
     ("extract", "抽取与落库"),
     ("sweep", "生命周期"),
@@ -58,11 +59,9 @@ def _blank_stages() -> list[dict]:
 def start() -> dict:
     """Queue one scan and answer with the row the page watches.
 
-    Seeding happens here rather than at import time: a scan is the first thing that needs a
-    watchlist, and doing it on the way in keeps the table's one-time fill out of the startup
-    path of every process that never runs a scan.
+    Seeding happens inside the sources stage rather than here: the page should count the
+    one-time fill as part of reading the watchlist, not hide it before the scan starts.
     """
-    watchlist.ensure_seeded()
     job = {
         "id": uuid4().hex[:12],
         "status": "running",
@@ -109,7 +108,7 @@ def drive(job: dict) -> None:
         now = time.monotonic()
         for stage in job["stages"]:
             if stage["state"] == "run":
-                stage["state"], stage["seconds"] = "done", round(now - mark, 1)
+                stage["state"], stage["seconds"] = "done", round(now - mark, 2)
             if stage["key"] == key:
                 stage["state"] = "run"
         mark = now
@@ -122,7 +121,7 @@ def drive(job: dict) -> None:
         now = time.monotonic()
         for stage in job["stages"]:
             if stage["state"] == "run":
-                stage["state"], stage["seconds"] = "done", round(now - mark, 1)
+                stage["state"], stage["seconds"] = "done", round(now - mark, 2)
         job.update(status="cancelled", stage=None, finished_at=db.now_iso())
         db.opportunity_scan_put(job)
         log.info("opportunity: scan %s cancelled after %s", job["id"], job["counters"])
@@ -142,7 +141,7 @@ def drive(job: dict) -> None:
     now = time.monotonic()
     for stage in job["stages"]:
         if stage["state"] == "run":
-            stage["state"], stage["seconds"] = "done", round(now - mark, 1)
+            stage["state"], stage["seconds"] = "done", round(now - mark, 2)
     job.update(status="done", stage=None, finished_at=db.now_iso())
     db.opportunity_scan_put(job)
     log.info("opportunity: scan %s done %s", job["id"], job["counters"])
@@ -153,6 +152,7 @@ def run(job: dict, say) -> None:
     counters = job["counters"]
 
     say("sources")
+    watchlist.ensure_seeded()
     sources = watchlist.enabled()
     counters["watchlist"] = len(sources)
     counters["accounts"] = len([row for row in sources if row["kind"] == "official"])
@@ -172,14 +172,14 @@ def run(job: dict, say) -> None:
 
     if not llm.configured():
         # 没配模型时仍然抓材料：材料本身有用，而"没配"必须写在扫描行上，不能表现成"什么都没发现"。
-        counters["note"] = "未配置模型：只抓材料，未分类、未抽取"
+        counters["note"] = "未配置模型：只抓材料，未分组、未抽取"
         return
 
     say("classify")
-    counters["classify"] = classify.run(
+    counters["classify"] = group.run(
         tell=lambda done, total: _tick(job, "classify", done, total))
 
-    # 溯源在分类之后：名字是分类那一步给出的（模型读完整条帖），而第一版把它放在抓材料
+    # 溯源在分组之后：名字是分组那一步给出的（模型读完整条帖），而第一版把它放在抓材料
     # 阶段用正则猜名字，八条线索全猜错、全部溯源失败（2026-10-19 实测）。
     say("trace")
     counters["trace"] = trace.run(

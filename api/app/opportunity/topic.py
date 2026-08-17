@@ -26,9 +26,11 @@ log = logging.getLogger("crypto-hunter.opportunity")
 
 #: How many posts one topic may gather. A project with more than this many posts in the queue is
 #: being talked about a lot; the cap keeps one loud project from filling the prompt.
-MAX_POSTS_PER_TOPIC = 8
+MAX_POSTS_PER_TOPIC = 10
 
-#: How many topics one extraction pass reads, and how many posts it looks at to find them.
+#: How many topics one extraction pass reads by default, and the floor for the post scan. The
+#: real scan is raised by `materials()` when the requested topic cap needs more posts; otherwise
+#: a 200-topic cap would silently read only 120 posts and stop at a few dozen topics.
 TOPICS_PER_PASS = 12
 SCAN_POSTS = 120
 
@@ -80,7 +82,7 @@ def merge(materials: list[dict]) -> list[dict]:
             "source_target": head.get("source_target") or "",
             "trace_level": head.get("trace_level") or "",
             "trace_json": head.get("trace_json") or "",
-            "consumed": [row["ref"] for row in kept],
+            "consumed": [row["ref"] for row in posts],
             "posts": len(kept),
             "score": max(float(row.get("score") or 0) for row in kept),
             "text": _topic_text(kept),
@@ -105,6 +107,9 @@ def _topic_text(posts: list[dict]) -> str:
 
 def materials(limit: int = TOPICS_PER_PASS, scan: int = SCAN_POSTS) -> list[dict]:
     """The topics waiting for extraction, as one material each, official pages attached."""
+    # `limit` is a topic count; one topic may consume up to MAX_POSTS_PER_TOPIC posts in the
+    # prompt. Read enough posts that the topic cap is not blocked by the old 120-post floor.
+    scan = max(int(scan), int(limit) * MAX_POSTS_PER_TOPIC)
     rows = db.opportunity_materials(unclassified=False, limit=scan)
     topics = merge(rows)[:limit]
     for topic in topics:

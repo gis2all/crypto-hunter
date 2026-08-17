@@ -830,6 +830,37 @@ def opportunity_name_put(ref: str, name: str) -> None:
         conn.close()
 
 
+def opportunity_group_put(assignments: list[dict], irrelevant: list[str]) -> None:
+    """Write a completed batch grouping in one transaction.
+
+    The grouping stage has already validated that every post has a decision. Either all of
+    those decisions land, or none does: a half-written group map would make the next scan
+    treat the remaining posts as ungrouped while the page showed a partial project.
+    """
+    stamp = now_iso()
+    conn = connect()
+    try:
+        conn.execute("BEGIN")
+        for row in assignments:
+            conn.execute(
+                "UPDATE opportunity_posts SET classified = ?, classified_at = ?,"
+                " project_name = ? WHERE tweet_id = ? AND classified IS NULL",
+                (row["kind"], stamp, row["name"], row["ref"]),
+            )
+        for ref in irrelevant:
+            conn.execute(
+                "UPDATE opportunity_posts SET classified = 'other', classified_at = ?,"
+                " project_name = NULL WHERE tweet_id = ? AND classified IS NULL",
+                (stamp, ref),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def opportunity_trace_put(tweet_id: str, level: str, payload: dict) -> None:
     """Record one lead's trace: its level and everything that was read to decide it.
 
