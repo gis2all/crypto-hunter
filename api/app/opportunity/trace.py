@@ -56,11 +56,11 @@ _WORD = re.compile(r"[a-z0-9]{3,}")
 
 
 def name_guess(text: str) -> str:
-    """A cheap guess at the project's name, for the second search.
+    """A fallback guess at the project's name, for the second search.
 
-    The extraction pass will eventually hand the real name over (it reads the post anyway); until
-    then this takes the first quoted phrase, else the first run of two or three capitalised words.
-    A guess that is wrong costs one wasted search, which is why it is allowed to be a guess.
+    The grouping pass normally hands the real name over. When a caller has no name, this takes
+    the first quoted phrase, else the first run of two or three capitalised words. A guess that
+    is wrong costs one wasted search, which is why it is allowed to be a guess.
     """
     body = str(text or "")
     quoted = _QUOTED.search(body)
@@ -213,9 +213,10 @@ def read_site(url: str, *, fetch=None, raw: bool = False) -> str:
 def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
     """One lead as its official home, or as the reason it has none.
 
-    `lead` is a material row (text, handle, url, urls). `known` is the watchlist's own official
-    handles. `search` is the second X search, injected so a test can answer without the network:
-    it takes a query and returns rows with a `handle` attribute.
+    `lead` is a material row (text, handle, url, urls, name). `name` is the project name the
+    grouping pass read; when it is absent this falls back to `name_guess`. `known` is the
+    watchlist's own official handles. `search` is the second X search, injected so a test can
+    answer without the network: it takes a query and returns rows with a `handle` attribute.
     """
     author = str(lead.get("handle") or "").lstrip("@").lower()
     if author and author in {name.lstrip("@").lower() for name in known}:
@@ -225,7 +226,8 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
 
     pointers = candidates(str(lead.get("text") or ""), handle=author, urls=lead.get("urls") or ())
     # 名字为空时不用发帖人兜底（那比的是另一个问题）：B 改看"这个账号是不是帖子自己提到的"。
-    name = pointers["name"]
+    # 分组已经读过整条帖子，它给的项目名比从正文里猜的可靠；只有调用方没给名字时才退回猜测。
+    name = str(lead.get("name") or "").strip() or pointers["name"]
     site = pointers["sites"][0] if pointers["sites"] else ""
     site_host = (urlsplit(site).hostname or "") if site else ""
     site_texts = [read_site(site, fetch=fetch)] if site else []
@@ -322,7 +324,8 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
         if cancel is not None and cancel.is_set():
             raise RuntimeError("scan cancelled")
         lead = {"text": material["text"], "handle": material["handle"],
-                "urls": json.loads(material.get("urls_json") or "[]")}
+                "urls": json.loads(material.get("urls_json") or "[]"),
+                "name": material.get("project_name") or ""}
         try:
             answer = trace_lead(lead, known=known or set(),
                                 fetch=fetch, search=search)
