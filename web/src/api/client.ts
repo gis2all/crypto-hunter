@@ -311,7 +311,7 @@ export const saveOpportunitySettings = (values: Record<string, number>) =>
 export const listOpportunityScans = (limit = 20) =>
   request<OpportunityScanRow[]>("/opportunity/scans?limit=" + limit);
 
-/** 还在排队的东西：未分类 / 未抽取 / 溯源失败。 */
+/** 还在排队的东西：未分组 / 未抽取 / 溯源失败。 */
 export const getOpportunityQueues = () =>
   request<{
     unclassified: { count: number; top: { ref: string; handle: string; text: string; score: number }[] };

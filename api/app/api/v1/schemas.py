@@ -381,9 +381,10 @@ class JobStageOut(BaseModel):
     `seconds` is filled the moment the stage ends and stays empty until then.
 
     `done` / `total` are the **inside** of a running stage: how many of its units it has got
-    through. A scan's collect stage is six minutes of X calls and its classify stage is sixty
-    questions; without these two numbers the page can only say "running" for minutes on end,
-    which is what "it looks stuck" meant (user, 2026-10-18).
+    through. A scan's collect stage is six minutes of X calls, while its grouping stage is one
+    full-text call over every pending post (plus at most one repair call); without these two
+    numbers the page can only say "running" for minutes on end, which is what "it looks stuck"
+    meant (user, 2026-10-18).
     """
 
     key: str

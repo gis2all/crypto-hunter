@@ -1626,7 +1626,7 @@
      "opportunity"
     ],
     "summary": "Read Queues",
-    "description": "What is still waiting: 未分类 / 未抽取 / 溯源失败，各带条数与分数最高的几条。",
+    "description": "What is still waiting: 未分组 / 未抽取 / 溯源失败，各带条数与分数最高的几条。",
     "operationId": "read_queues_api_v1_opportunity_queues_get",
     "parameters": [
      {
@@ -3519,7 +3519,7 @@
      "state"
     ],
     "title": "JobStageOut",
-    "description": "One row of a search's step list: what the stage is called and where it has got to.\n\nThe four states are the ones a round's step list draws too (pending / run / done /\nfailed), so the two panels cannot disagree about what a stopped stage looks like.\n`seconds` is filled the moment the stage ends and stays empty until then.\n\n`done` / `total` are the **inside** of a running stage: how many of its units it has got\nthrough. A scan's collect stage is six minutes of X calls and its classify stage is sixty\nquestions; without these two numbers the page can only say \"running\" for minutes on end,\nwhich is what \"it looks stuck\" meant (user, 2026-10-18)."
+    "description": "One row of a search's step list: what the stage is called and where it has got to.\n\nThe four states are the ones a round's step list draws too (pending / run / done /\nfailed), so the two panels cannot disagree about what a stopped stage looks like.\n`seconds` is filled the moment the stage ends and stays empty until then.\n\n`done` / `total` are the **inside** of a running stage: how many of its units it has got\nthrough. A scan's collect stage is six minutes of X calls, while its grouping stage is one\nfull-text call over every pending post (plus at most one repair call); without these two\nnumbers the page can only say \"running\" for minutes on end, which is what \"it looks stuck\"\nmeant (user, 2026-10-18)."
    },
    "LabelIn": {
     "properties": {

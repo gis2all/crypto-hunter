@@ -106,7 +106,7 @@ def list_scans(limit: int = Query(20, ge=1, le=200)) -> list[dict]:
 
 @router.get("/queues")
 def read_queues(limit: int = Query(6, ge=1, le=50)) -> dict:
-    """What is still waiting: 未分类 / 未抽取 / 溯源失败，各带条数与分数最高的几条。"""
+    """What is still waiting: 未分组 / 未抽取 / 溯源失败，各带条数与分数最高的几条。"""
     return db.opportunity_queues(limit=limit)
 
 

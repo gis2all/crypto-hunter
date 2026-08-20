@@ -601,7 +601,7 @@ export interface paths {
         };
         /**
          * Read Queues
-         * @description What is still waiting: 未分类 / 未抽取 / 溯源失败，各带条数与分数最高的几条。
+         * @description What is still waiting: 未分组 / 未抽取 / 溯源失败，各带条数与分数最高的几条。
          */
         get: operations["read_queues_api_v1_opportunity_queues_get"];
         put?: never;
@@ -1477,9 +1477,10 @@ export interface components {
          *     `seconds` is filled the moment the stage ends and stays empty until then.
          *
          *     `done` / `total` are the **inside** of a running stage: how many of its units it has got
-         *     through. A scan's collect stage is six minutes of X calls and its classify stage is sixty
-         *     questions; without these two numbers the page can only say "running" for minutes on end,
-         *     which is what "it looks stuck" meant (user, 2026-10-18).
+         *     through. A scan's collect stage is six minutes of X calls, while its grouping stage is one
+         *     full-text call over every pending post (plus at most one repair call); without these two
+         *     numbers the page can only say "running" for minutes on end, which is what "it looks stuck"
+         *     meant (user, 2026-10-18).
          */
         JobStageOut: {
             /** Key */

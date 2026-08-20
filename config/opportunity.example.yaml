@@ -4,7 +4,7 @@
 sources_per_scan: 40
 calls_per_scan: 40
 x_interval: 5.0
-classify_per_scan: 150
+classify_per_scan: 1000
 extract_per_scan: 40
 traces_per_scan: 8
 window_hours: 24
