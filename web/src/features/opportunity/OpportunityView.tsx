@@ -31,7 +31,6 @@ import {
   ListChecks,
   LoaderCircle,
   Play,
-  RefreshCw,
   Save,
   SlidersHorizontal,
   Trash2,
@@ -117,6 +116,17 @@ function stamp(value: string | null | undefined): string {
   return value.slice(0, 16).replace("T", " ");
 }
 
+/** A stage under half a second is real work, not zero: show it as <1s instead of 0:00. */
+function stageTime(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) {
+    return "—";
+  }
+  if (seconds > 0 && seconds < 0.5) {
+    return "<1s";
+  }
+  return mmss(Math.round(seconds));
+}
+
 /** 热度的一档，读成 pill 的颜色。未判定与静默都压暗：一个是没问到，一个是没人看，
  *  两者都不该抢眼。 */
 function heatTone(band: string): string {
@@ -173,6 +183,10 @@ function ScanPanel({ scan, open, form }: {
           + ` · X 调用 ${collect.queries ?? 0}`;
     }
     if (key === "classify") {
+      if (classify.groups !== undefined) {
+        return `分组 ${classify.groups} · 无关 ${classify.irrelevant ?? 0}`
+          + ` · 待定 ${classify.uncertain ?? 0}`;
+      }
       return classify.asked === undefined ? "—" : `问了 ${classify.asked} 条`;
     }
     if (key === "extract") {
@@ -231,9 +245,7 @@ function ScanPanel({ scan, open, form }: {
             ) : null}
             <span className="rst-r">{result(stage.key)}</span>
             <em className="rst-t">
-              {stage.seconds === null || stage.seconds === undefined
-                ? "—"
-                : mmss(Math.round(stage.seconds))}
+              {stageTime(stage.seconds)}
             </em>
           </li>
         ))}
@@ -520,12 +532,6 @@ export function OpportunityView() {
   const sortNow = sorts.find((option) => option.value === sortKey) ?? sorts[0];
   const dirs = sortNow?.dirs ?? [];
 
-  const run = () => {
-    setError("");
-    setPanelOpen(true);
-    scanNow.mutate(undefined, { onError: (exc) => setError(errorText(exc)) });
-  };
-
   const runSettings = () => {
     setError("");
     void settings.commit().then((saved) => {
@@ -580,13 +586,6 @@ export function OpportunityView() {
                 spellCheck={false}
                 onChange={(event) => setSearch(event.target.value)}
               />
-              <button type="button" className="btn" disabled={running || scanNow.isPending}
-                onClick={run}>
-                {running || scanNow.isPending
-                  ? <Icon as={LoaderCircle} size={14} className="spin" />
-                  : <Icon as={RefreshCw} size={14} />}
-                {running ? "扫描中…" : "开始扫描"}
-              </button>
             </>
           ) : (
             <>
@@ -745,8 +744,8 @@ export function OpportunityView() {
                 </span>
               </div>
               {([
-                ["unclassified", "未分类", "抓到了，还没问模型它是什么"],
-                ["unextracted", "未抽取", "已经分类，还没排到抽取（每轮有限额）"],
+                ["unclassified", "未分组", "抓到了，还没交给模型分组"],
+                ["unextracted", "未抽取", "已经分组，还没排到抽取（每轮有限额）"],
               ] as const).map(([key, title, lead]) => {
                 const pile = queues.data?.[key];
                 return (
@@ -799,7 +798,7 @@ export function OpportunityView() {
                   + (queues.data?.unextracted.count ?? 0)}）
               </summary>
               <p className="opp-hint">
-                已抓到、还没走完分析：未分类 {queues.data?.unclassified.count ?? 0} ·
+                已抓到、还没走完分析：未分组 {queues.data?.unclassified.count ?? 0} ·
                 未抽取 {queues.data?.unextracted.count ?? 0} ·
                 溯源失败 {queues.data?.trace_failed.count ?? 0}。
                 切到「排队中」看分数最高的那几条。
