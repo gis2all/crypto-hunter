@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.llm import client as llm
-from app.opportunity import (classify, extract, heat, job, lifecycle, model, promote, rules,
+from app.opportunity import (extract, group, heat, job, lifecycle, model, promote, rules,
                              scan, schema, trace, trust, watchlist, xread)
 from app.opportunity.schema import Entry, Step
 from app.store import db
@@ -461,6 +462,11 @@ def _fake_llm(monkeypatch, *, verdict="activity", entries=None, fail=False):
         calls.append(purpose)
         if fail:
             raise llm.LLMUnavailable("no gateway in a test")
+        if purpose.startswith("opportunity_group"):
+            ids = re.findall(r"\[(p\d+)\]", str(messages[-1].get("content") or ""))
+            return {"groups": [{"name": "Spout Finance", "handle": "spoutfi",
+                                "urls": [], "kind": verdict, "ids": ids}],
+                    "irrelevant": [], "uncertain": []}
         if purpose.startswith("opportunity_classify"):
             return {"kind": verdict,
                     "category": "测试网" if verdict == "activity" else "新协议",
@@ -572,14 +578,16 @@ def test_a_source_that_does_not_answer_is_a_count_not_a_crash(isolated_db, monke
     assert stored["counters"]["collect"]["failed"], "没答的源要写进计数，不能只进日志"
 
 
-def test_a_material_the_model_could_not_be_asked_about_stays_unclassified(isolated_db,
-                                                                         monkeypatch):
+def test_a_grouping_failure_fails_the_stage_and_writes_nothing(isolated_db, monkeypatch):
+    """分组必须一轮覆盖全部帖子；模型没答时整站失败，不能留下半张分组表。"""
     monkeypatch.setattr(scan, "XEngine", _FakeEngine)
     _fake_llm(monkeypatch, fail=True)
     started = job.start()
     job.drive(started)
     stored = db.opportunity_scan_get(started["id"])
-    assert stored["counters"]["classify"]["unreadable"] == 1
+    assert stored["status"] == "failed"
+    stage = {row["key"]: row for row in stored["stages"]}["classify"]
+    assert stage["state"] == "failed"
     conn = db.connect()
     try:
         row = conn.execute("SELECT classified FROM opportunity_posts WHERE tweet_id = 'Pix-1'"
@@ -682,22 +690,24 @@ def test_the_tables_are_part_of_the_schema(isolated_db):
             "opportunity_steps", "opportunity_scans"} <= names
 
 
-def test_the_classification_cap_leaves_the_rest_for_the_next_scan(isolated_db, monkeypatch):
+def test_the_grouping_cap_is_a_hard_limit_not_a_queue(isolated_db, monkeypatch):
+    """分组超过上限时整站失败，而不是先写一部分、剩下的下一轮再说。"""
     monkeypatch.setattr(scan, "XEngine", _FakeEngine)
-    _fake_llm(monkeypatch)
-    monkeypatch.setattr(classify, "MAX_CLASSIFY", 1)
+    db.opportunity_source_put(_one_source("Beta", kind="official"))
+    monkeypatch.setattr(group.settings, "value",
+                        lambda key, default=None: 1 if key == "classify_per_scan" else default)
     started = job.start()
     job.drive(started)
     stored = db.opportunity_scan_get(started["id"])
-    assert stored["counters"]["classify"]["asked"] == 1
+    assert stored["status"] == "failed"
+    assert "超过" in (stored["error"] or "")
     conn = db.connect()
     try:
         waiting = conn.execute("SELECT count(*) AS n FROM opportunity_posts"
                                " WHERE classified IS NULL").fetchone()
     finally:
         conn.close()
-    assert waiting["n"] == 0 or waiting["n"] >= 0  # 上限只影响本轮问了几条
-    assert stored["counters"]["collect"]["gated"] == 1
+    assert waiting["n"] == stored["counters"]["collect"]["gated"]
 
 
 def test_extraction_is_capped_too(isolated_db, monkeypatch):
@@ -705,6 +715,30 @@ def test_extraction_is_capped_too(isolated_db, monkeypatch):
     assert extract.MAX_EXTRACT == 1
 
 
+def test_extraction_overlaps_model_calls(isolated_db, monkeypatch):
+    for index in range(4):
+        _classified_lead("parallel-%d" % index, name="Parallel %d" % index)
+    active = [0]
+    peak = [0]
+    lock = threading.Lock()
+
+
+    def fake(material):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.08)
+        with lock:
+            active[0] -= 1
+        return [], []
+
+
+    monkeypatch.setattr(extract, "extract", fake)
+    counters = extract.run(limit=4)
+
+
+    assert counters["materials"] == 4
+    assert peak[0] >= 2, "抽取调用应与其他主题重叠，而不是串行等待"
 def test_the_cap_is_on_material_not_on_each_table(isolated_db):
     """A pass that means to read N things reads N of them.
 
@@ -945,6 +979,7 @@ def test_the_stage_is_capped_and_deduped(isolated_db, monkeypatch):
         "version": trace.TRACE_VERSION, "searched": True, "pages": []})
     counters = trace.run(limit=8)
     assert len(calls) == 2, "三条同一个项目只溯一次"
+    assert calls[0]["name"] == "Same Project", "分组给出的项目名要传给溯源"
     assert counters["skipped"] >= 2
 
 
@@ -1000,6 +1035,25 @@ def test_the_accounts_own_link_closes_the_mutual_proof():
         profile_texts=["CONSO · reputation layer"],
         site_host="conso.xyz", profile_links=["https://conso.xyz/"])
     assert answer["level"] == "A" and answer["trust"] == "official"
+
+
+def test_the_grouped_project_name_drives_the_second_search():
+    searched = []
+
+    class _Hit:
+        handle = "consumer_graph"
+
+    def search(name):
+        searched.append(name)
+        return [_Hit()]
+
+    answer = trace.trace_lead(
+        {"text": "测试网上线，加入白名单", "handle": "stranger", "urls": [],
+         "name": "Consumer Graph"},
+        known=set(), fetch=lambda _url: "", search=search)
+
+    assert searched == ["Consumer Graph"]
+    assert answer["level"] == "C", "没有读到页面时仍然是 C，不能因为搜到账号就放行"
 
 
 def test_links_come_out_of_the_raw_page_not_the_visible_text():
