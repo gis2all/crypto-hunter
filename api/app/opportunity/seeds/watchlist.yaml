@@ -663,6 +663,169 @@ catalog:
     enabled: true
     note: "reachable 200"
 
+# ---------------------------------------------------------------- query（1–5 + discovery）
+# 2026-10-22：按机会族重建。每个 query 行带 family；旧 30 条由迁移禁用，不在这里重复。
+query:
+  # network
+  - target: '("run a node" OR "run your own node" OR "node sale" OR "validator node" OR "become a validator" OR restaking) -is:retweet -is:reply'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：节点、验证者、sequencer、prover、restaking"
+  - target: '(testnet OR devnet OR faucet) ("run a node" OR "validator node" OR "test transaction") -is:retweet -is:reply'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：测试网参与与 faucet"
+  - target: '(测试网 OR 节点) (运行 OR 注册 OR 销售) -is:retweet -is:reply'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：中文节点/测试网"
+  # capital
+  - target: '("points program" OR "season 1" OR "season 2" OR APR OR APY) (deposit OR "provide liquidity" OR stake OR "open a vault" OR restake) -is:retweet -is:reply'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：积分、季节、收益率与资金动作"
+  - target: '("liquidity mining" OR "yield farming") (deposit OR "provide liquidity" OR stake OR restake) -is:retweet -is:reply'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：挖矿、LP、借贷"
+  - target: '(积分 OR 流动性挖矿 OR 质押) (存入 OR 提供流动性 OR 金库 OR 复投) -is:retweet -is:reply'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：中文积分与资金动作"
+  # usage
+  - target: '(testnet OR faucet OR "public beta" OR "early access") ("complete quest" OR quest OR "check-in" OR waitlist) -is:retweet -is:reply'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：测试网、积分、任务"
+  - target: '(from:Galxe OR from:Layer3xyz OR from:zealy_io OR from:TaskOn_xyz OR from:IntractHQ) (quest OR points OR check-in) -is:retweet -is:reply'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：任务平台"
+  - target: '(测试网 OR 水龙头 OR 公测) (任务 OR 积分 OR 签到) -is:retweet -is:reply'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：中文任务与测试网"
+  # issuance
+  - target: '("free mint" OR mint OR allowlist OR IDO OR LBP OR launchpad OR TGE OR "token sale") -is:retweet -is:reply'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：Mint、白名单、IDO、TGE"
+  - target: '("fair launch" OR "bonding curve" OR "node sale" OR "token sale" OR "public sale") -is:retweet -is:reply'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：公平发行、曲线、节点销售"
+  - target: '(打新 OR 认购 OR 免费铸造 OR 空投领取 OR 白名单) -is:retweet -is:reply'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：中文发行动作"
+  # governance
+  - target: '("vote on" OR "delegate votes" OR "governance proposal" OR gauge) -is:retweet -is:reply'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：投票、委托、ve、gauge"
+  - target: '(治理 OR 投票 OR 委托) (提案 OR Snapshot) -is:retweet -is:reply'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：中文治理"
+  - target: '("governance proposal" OR "delegate votes" OR "cast your vote") (DAO OR token OR protocol) -is:retweet -is:reply'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：DAO 提案"
+  # discovery
+  - target: '("new protocol" OR "new mechanism" OR "new gameplay" OR "new standard" OR "new primitive") -is:retweet -is:reply'
+    kind: query
+    family: discovery
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 独立发现：新协议、新机制、新玩法"
+  - target: '("new standard" OR "new primitive" OR "new gameplay") (protocol OR app OR SDK) -is:retweet -is:reply'
+    kind: query
+    family: discovery
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 独立发现：新 primitives 与项目发布"
+
 # ---------------------------------------------------------------- 待人工确认
 # 本轮没能验证的：handle 不存在、站点不挂 X 链接、或域名已迁走。
 # 按设计稿的规矩，宁可不入库也不写一个猜的 handle（trust: unjudged）。

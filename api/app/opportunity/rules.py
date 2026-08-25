@@ -10,7 +10,8 @@ A scan reads a few hundred posts and asks a model about a fraction of them. The 
   not what this page is for", which is the one thing the first live scans showed it needed.
 
 So the gate is a rule set: conditions over the text, the author, the numbers and the age; each
-rule scores, levels or excludes; every hit is recorded with the conditions that matched. It is
+rule scores, levels, qualifies or excludes; every hit is recorded with the conditions that
+matched. It is
 the reference implementation's model (`backend/collector_rules.py` in xdata-collector, whose
 `exclude-trade-gated` rule is the one copied first), narrowed to what this module can explain.
 
@@ -35,19 +36,14 @@ CASHTAG = re.compile(r"(^|\s)\$[A-Za-z][A-Za-z0-9_]{1,9}")
 URL = re.compile(r"https?://", re.IGNORECASE)
 EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
-#: What a post has to reach to be worth a model call. A link alone (10) is not enough; a fresh
-#: post with a link (30) is. The number is a budget decision as much as a quality one - the
-#: extraction pass reads twelve materials a scan, so the gate's job is to hand it the twelve
-#: best, not to be right about every post.
+#: The floor a post has to reach *after* it has qualified. The score is a ranking number, not the
+#: decision: the decision is whether a rule marked `qualify` was hit, and only a concrete action
+#: is allowed to carry that mark. Kept as a floor so a rule set that drifts towards small weights
+#: still cannot open the gate on bonus points alone.
 PASS_SCORE = 30
 
-#: ...and it has to carry one of these, whatever it scored. Without this, "an account we do not
-#: watch, posted today" (25 + 20 = 45) passed on its own - measured on the first run of this
-#: evaluator, where a stranger's `gm` cleared the gate. Being unknown is a reason to look closer,
-#: not a reason to spend a model call: the post still has to announce, launch or offer something.
-CONTENT_RULES = ("action-keywords", "early-words", "launch-words")
-
 _cache: dict = {}
+_words: dict[str, re.Pattern] = {}
 
 
 def load(path: Path | None = None) -> dict:
@@ -60,9 +56,29 @@ def load(path: Path | None = None) -> dict:
     return _cache[key]
 
 
+def _word(value: str) -> re.Pattern:
+    """One ASCII phrase, matched on word boundaries."""
+    pattern = _words.get(value)
+    if pattern is None:
+        pattern = re.compile(r"(?<![a-z0-9])" + re.escape(value) + r"(?![a-z0-9])")
+        _words[value] = pattern
+    return pattern
+
+
+def word_hit(value: str, text_lower: str) -> bool:
+    """One phrase against the lowered text.
+
+    ASCII matches on word boundaries so `lend` does not fire inside `lending`; CJK has no word
+    boundaries, so it stays a substring test.
+    """
+    if value.isascii():
+        return bool(_word(value).search(text_lower))
+    return value in text_lower
+
+
 def features(text: str, *, author: str = "", metrics: dict | None = None,
              created_at: str | None = None, now: datetime | None = None,
-             known: set[str] | None = None) -> dict:
+             known: set[str] | None = None, source_official: bool = False) -> dict:
     """Everything a condition may read, derived once per post.
 
     `known` is the watchlist's own handles, injected rather than written into the rule set: the
@@ -97,6 +113,7 @@ def features(text: str, *, author: str = "", metrics: dict | None = None,
         "has_emoji": bool(EMOJI.search(body)),
         "is_retweet": lowered.startswith("rt @"),
         "is_reply": lowered.startswith("@"),
+        "source_official": bool(source_official),
     }
 
 
@@ -108,6 +125,11 @@ def condition_hit(condition: dict, facts: dict) -> bool:
         return any(value in facts["text_lower"] for value in values)
     if kind == "text_not_contains_any":
         return bool(values) and not any(value in facts["text_lower"] for value in values)
+    if kind == "text_word_any":
+        return any(word_hit(value, facts["text_lower"]) for value in values)
+    if kind == "text_word_not_any":
+        return bool(values) and not any(
+            word_hit(value, facts["text_lower"]) for value in values)
     if kind == "author_in":
         return facts["author"] in {value.lstrip("@") for value in values}
     if kind == "author_not_in":
@@ -115,7 +137,7 @@ def condition_hit(condition: dict, facts: dict) -> bool:
     if kind == "author_contains_any":
         return any(value in facts["author"] for value in values)
     if kind == "author_not_known":
-        # 不在 watchlist 里的账号：不是"可疑"，是"还没被我们认识"，所以它加分而不是被排除。
+        # 不在 watchlist 里的账号。规则表不再用它加分：陌生账号不是机会信号。
         return bool(facts["author"]) and facts["author"] not in facts["known"]
     if kind == "metric_at_least":
         return facts["metrics"].get(str(condition.get("metric") or "views"), 0) >= int(
@@ -136,13 +158,15 @@ def condition_hit(condition: dict, facts: dict) -> bool:
         return facts["is_retweet"]
     if kind == "is_reply":
         return facts["is_reply"]
+    if kind == "source_official_or_link":
+        return bool(facts["source_official"] or facts["has_link"])
     return False
 
 
 def describe(condition: dict) -> str:
     kind = condition.get("type")
-    if kind in ("text_contains_any", "text_not_contains_any", "author_in", "author_not_in",
-                "author_contains_any"):
+    if kind in ("text_contains_any", "text_not_contains_any", "text_word_any",
+                "text_word_not_any", "author_in", "author_not_in", "author_contains_any"):
         return "%s:%s" % (kind, ", ".join(str(value) for value in condition.get("values") or []))
     if kind == "metric_at_least":
         return "%s >= %s" % (condition.get("metric") or "views", condition.get("value") or 0)
@@ -153,25 +177,33 @@ def describe(condition: dict) -> str:
 
 def judge(text: str, *, author: str = "", metrics: dict | None = None,
           created_at: str | None = None, ruleset: dict | None = None,
-          now: datetime | None = None, known: set[str] | None = None) -> dict:
+          now: datetime | None = None, known: set[str] | None = None,
+          family: str | None = None, source_official: bool = False) -> dict:
     """One post against the rule set: does it pass, how does it score, and why.
 
     Two ways to fail. An `exclude` rule is a refusal - read in order, the first one ends the
     reading, which is what makes it a refusal rather than a penalty. Otherwise the post has to
-    reach `PASS_SCORE`: a link and nothing else is not worth a model call, so the gate is a
-    threshold rather than "any rule matched".
+    hit a rule that carries `qualify`, and clear `PASS_SCORE` on top of it. Only a concrete
+    action carries that mark: a noun that happens to appear in a project's own prose
+    (`validator`, `yield`, `lending`) scores but does not open the gate.
     """
     from . import settings
 
     definition = ruleset or load()
     threshold = int(settings.value("pass_score", PASS_SCORE))
     facts = features(text, author=author, metrics=metrics, created_at=created_at, now=now,
-                     known=known)
+                     known=known, source_official=source_official)
     score = 0
     hits: list[dict] = []
     level = ""
+    tracks: list[str] = []
     for rule in definition.get("rules") or []:
         if not rule.get("enabled", True):
+            continue
+        rule_family = rule.get("family")
+        if rule_family and rule_family != family:
+            continue
+        if rule.get("id") == "action-keywords" and family:
             continue
         matched = [condition for condition in rule.get("conditions") or []
                    if condition_hit(condition, facts)]
@@ -186,6 +218,8 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
         if effect.get("action") == "exclude":
             return {"pass": False, "score": 0, "level": "", "excluded": True, "hits": hits}
         score += int(effect.get("score") or 0)
+        if effect.get("qualify") and rule.get("track"):
+            tracks.append(str(rule["track"]))
         if effect.get("level"):
             level = str(effect["level"])
     if not level:
@@ -194,5 +228,8 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
             if score >= int(band.get("min_score") or 0):
                 level = str(band.get("id"))
                 break
-    return {"pass": score >= threshold and any(hit["rule"] in CONTENT_RULES for hit in hits),
-            "score": score, "level": level, "excluded": False, "hits": hits}
+    track = ("actionable" if "actionable" in tracks
+             else "discovery" if "discovery" in tracks else "")
+    return {"pass": bool(tracks) and score >= threshold,
+            "score": score, "level": level, "excluded": False, "hits": hits,
+            "track": track}

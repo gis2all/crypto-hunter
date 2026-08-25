@@ -48,8 +48,8 @@ FIELDS = (
      "hint": "一条查询往回看多久。窗口 ÷ 片长 = 这条查询的调用次数。"},
     {"key": "slice_hours", "label": "切片长度（小时）", "default": 4, "min": 1, "max": 168,
      "hint": "每次请求最多 40 条，切片是解法：片太长热词会被截断，太短则吃光预算。"},
-    {"key": "pass_score", "label": "过闸分", "default": 30, "min": 0, "max": 200,
-     "hint": "闸的分数低于它就不问模型。还要命中行动 / 早期 / 上线三类词之一。"},
+    {"key": "pass_score", "label": "过闸下限分", "default": 30, "min": 0, "max": 200,
+     "hint": "资格规则命中之后，总分仍要达到它。总分只决定排序，不决定过闸。"},
 )
 
 _BY_KEY = {field["key"]: field for field in FIELDS}

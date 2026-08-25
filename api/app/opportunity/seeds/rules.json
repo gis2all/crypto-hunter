@@ -1,15 +1,27 @@
 {
-  "version": 1,
+  "version": 3,
   "kind": "opportunity_rules",
   "meta": {
     "name": "新机会的免费闸",
-    "description": "决定哪些帖子值得问模型，以及材料多于预算时先问谁。发现靠查询清单，不靠这里。",
-    "updated_at": "2026-10-18"
+    "description": "资格规则决定过闸，分数只决定先后。动作必须是具体动作短语，名词只计分。1–5 可参与机会与独立发现轨道。",
+    "updated_at": "2026-10-22"
   },
   "levels": [
-    {"id": "S", "label": "强信号", "min_score": 90},
-    {"id": "A", "label": "高优先级", "min_score": 60},
-    {"id": "B", "label": "观察", "min_score": 30}
+    {
+      "id": "S",
+      "label": "强信号",
+      "min_score": 90
+    },
+    {
+      "id": "A",
+      "label": "高优先级",
+      "min_score": 60
+    },
+    {
+      "id": "B",
+      "label": "观察",
+      "min_score": 30
+    }
   ],
   "rules": [
     {
@@ -18,95 +30,977 @@
       "enabled": true,
       "operator": "AND",
       "conditions": [
-        {"type": "text_contains_any", "values": [
-          "trading competition", "trade to earn", "trading volume", "deposit to",
-          "合约交易赛", "交易赛", "充值", "入金", "杠杆", "合约新币", "首笔交易",
-          "futures", "perpetual", "leverage"
-        ]}
+        {
+          "type": "text_word_any",
+          "values": [
+            "trading competition",
+            "trade to earn",
+            "trading volume",
+            "deposit to",
+            "合约交易赛",
+            "交易赛",
+            "充值",
+            "入金",
+            "杠杆",
+            "合约新币",
+            "首笔交易",
+            "futures",
+            "perpetual",
+            "leverage"
+          ]
+        }
       ],
-      "effect": {"action": "exclude", "score": 0, "level": ""}
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-cex",
+      "name": "排除 CEX 广告",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "listing",
+            "listed on",
+            "withdraw",
+            "deposit to",
+            "cex",
+            "上币",
+            "提现",
+            "交易所活动",
+            "平台活动"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-cex-authors",
+      "name": "排除 CEX 活动号",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "author_contains_any",
+          "values": [
+            "gate_launch",
+            "gateio",
+            "binance",
+            "okx",
+            "bybit",
+            "coinbase",
+            "kucoin",
+            "htx_",
+            "bitget",
+            "upbit",
+            "mexc"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-cex-campaign",
+      "name": "排除 CEX 理财与活动",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "binance",
+            "gate.io",
+            "gateio",
+            "okx",
+            "bybit",
+            "coinbase",
+            "kucoin",
+            "htx",
+            "bitget",
+            "upbit",
+            "mexc",
+            "币安",
+            "欧易",
+            "火币"
+          ]
+        },
+        {
+          "type": "text_word_any",
+          "values": [
+            "simple earn",
+            "flexible earn",
+            "launchpool",
+            "理财",
+            "加息",
+            "年化",
+            "活动",
+            "campaign",
+            "bonus",
+            "抽奖",
+            "礼盒"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-tradfi",
+      "name": "排除传统金融",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "credit union",
+            "checking account",
+            "savings account",
+            "bank account",
+            "mortgage",
+            "开户奖励",
+            "开户礼",
+            "定期存款",
+            "存款利率",
+            "信用卡"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-jobs",
+      "name": "排除招聘",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "hiring",
+            "founding engineer",
+            "first hire",
+            "job opening",
+            "career",
+            "招聘",
+            "求职"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-news",
+      "name": "排除新闻与观点",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "breaking",
+            "news",
+            "report",
+            "narrative",
+            "thesis",
+            "analysis",
+            "outlook",
+            "price prediction",
+            "market update",
+            "market risk",
+            "opinion",
+            "观点",
+            "新闻",
+            "行情",
+            "叙事"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-incident",
+      "name": "排除事故、索赔与重启",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "hack",
+            "hacked",
+            "exploit",
+            "exploits",
+            "exploited",
+            "drained",
+            "stolen",
+            "compensation",
+            "reimburse",
+            "recovery claim",
+            "recovery plan",
+            "restart",
+            "restarts",
+            "restarted",
+            "halted",
+            "suspended",
+            "incident",
+            "post-mortem",
+            "postmortem",
+            "黑客",
+            "被盗",
+            "索赔",
+            "赔偿",
+            "重启",
+            "暂停",
+            "漏洞"
+          ]
+        },
+        {
+          "type": "text_word_not_any",
+          "values": [
+            "airdrop",
+            "testnet",
+            "devnet",
+            "faucet",
+            "whitelist",
+            "allowlist",
+            "mint",
+            "quest",
+            "points",
+            "deposit",
+            "stake",
+            "launchpad",
+            "node sale",
+            "空投",
+            "测试网",
+            "水龙头",
+            "白名单",
+            "铸造",
+            "任务",
+            "积分",
+            "质押",
+            "打新"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-project-update",
+      "name": "排除能力与集成公告",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "now supports",
+            "expands to",
+            "adds support",
+            "integration with",
+            "is now integrated",
+            "partnership with",
+            "collaborating with",
+            "price feed",
+            "price feeds",
+            "data coverage",
+            "合作",
+            "集成",
+            "现已支持",
+            "新增支持"
+          ]
+        },
+        {
+          "type": "text_word_not_any",
+          "values": [
+            "airdrop",
+            "testnet",
+            "devnet",
+            "faucet",
+            "whitelist",
+            "allowlist",
+            "mint",
+            "quest",
+            "points",
+            "deposit",
+            "stake",
+            "provide liquidity",
+            "launchpad",
+            "node sale",
+            "空投",
+            "测试网",
+            "水龙头",
+            "白名单",
+            "铸造",
+            "任务",
+            "积分",
+            "质押",
+            "打新"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-offtopic-event",
+      "name": "排除非加密与泛活动",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "prayer",
+            "worship",
+            "church",
+            "sermon",
+            "bible",
+            "webinar",
+            "conference",
+            "meetup",
+            "summit",
+            "祷告",
+            "礼拜",
+            "讲道",
+            "讲座",
+            "峰会",
+            "线下活动"
+          ]
+        },
+        {
+          "type": "text_word_not_any",
+          "values": [
+            "airdrop",
+            "testnet",
+            "quest",
+            "mint",
+            "whitelist",
+            "points",
+            "空投",
+            "测试网",
+            "任务",
+            "铸造",
+            "白名单",
+            "积分"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-noncrypto",
+      "name": "排除非加密与诈骗",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "casino",
+            "betting",
+            "forex",
+            "signals",
+            "guaranteed",
+            "risk-free",
+            "pump",
+            "referral code",
+            "博彩",
+            "外汇",
+            "喊单",
+            "荐股"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-engagement",
+      "name": "排除纯互动抽奖",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "follow and retweet",
+            "follow + retweet",
+            "tag friends",
+            "comment to win",
+            "giveaway",
+            "rt to win",
+            "like and retweet",
+            "follow to enter",
+            "抽奖"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-newsletter",
+      "name": "排除订阅与通知",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "newsletter",
+            "subscribe to our",
+            "receive notifications",
+            "email alerts",
+            "邮件订阅",
+            "订阅我们的"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
     },
     {
       "id": "exclude-retweet",
       "name": "排除转发",
       "enabled": true,
       "operator": "AND",
-      "conditions": [{"type": "is_retweet"}],
-      "effect": {"action": "exclude", "score": 0, "level": ""}
+      "conditions": [
+        {
+          "type": "is_retweet"
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
     },
     {
       "id": "action-keywords",
-      "name": "行动词",
+      "name": "通用动作短语",
+      "enabled": true,
+      "operator": "AND",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "airdrop",
+            "空投",
+            "whitelist",
+            "allowlist",
+            "白名单",
+            "testnet",
+            "测试网",
+            "faucet",
+            "水龙头",
+            "quest",
+            "任务",
+            "points program",
+            "积分计划",
+            "mint",
+            "free mint",
+            "免费铸造",
+            "claim airdrop",
+            "领取空投",
+            "waitlist",
+            "early access",
+            "公测",
+            "内测",
+            "launchpad",
+            "打新",
+            "认购",
+            "node sale",
+            "run a node",
+            "provide liquidity",
+            "提供流动性",
+            "stake",
+            "质押",
+            "deposit",
+            "存入",
+            "vote on",
+            "治理投票",
+            "delegate votes"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 50,
+        "level": ""
+      }
+    },
+    {
+      "id": "qualify-network",
+      "name": "网络与安全动作",
+      "enabled": true,
+      "operator": "AND",
+      "family": "network",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "run a node",
+            "run your own node",
+            "operate a node",
+            "set up a node",
+            "node sale",
+            "validator node",
+            "become a validator",
+            "delegate to a validator",
+            "run a validator",
+            "run a prover",
+            "run a sequencer",
+            "storage provider",
+            "bandwidth provider",
+            "restake",
+            "restaking",
+            "testnet",
+            "devnet",
+            "faucet",
+            "测试网",
+            "节点销售",
+            "运行节点",
+            "验证者节点",
+            "委托质押",
+            "水龙头"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 60,
+        "level": ""
+      }
+    },
+    {
+      "id": "score-network-nouns",
+      "name": "网络名词（只计分）",
+      "enabled": true,
+      "operator": "AND",
+      "family": "network",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "validator",
+            "sequencer",
+            "prover",
+            "node",
+            "oracle",
+            "验证者",
+            "节点",
+            "预言机",
+            "排序器"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "score": 20,
+        "level": ""
+      }
+    },
+    {
+      "id": "qualify-capital",
+      "name": "资本与流动性动作",
+      "enabled": true,
+      "operator": "AND",
+      "family": "capital",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "deposit",
+            "deposits",
+            "stake",
+            "staking",
+            "provide liquidity",
+            "add liquidity",
+            "open a vault",
+            "lend",
+            "borrow",
+            "restake",
+            "yield farm",
+            "liquidity mining",
+            "points program",
+            "earn points",
+            "season 1",
+            "season 2",
+            "质押",
+            "存款",
+            "存入",
+            "提供流动性",
+            "借贷",
+            "金库",
+            "积分"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 60,
+        "level": ""
+      }
+    },
+    {
+      "id": "score-capital-nouns",
+      "name": "资本名词（只计分）",
+      "enabled": true,
+      "operator": "AND",
+      "family": "capital",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "yield",
+            "lending",
+            "vault",
+            "vaults",
+            "points",
+            "APR",
+            "APY",
+            "liquidity",
+            "流动性",
+            "收益"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "score": 20,
+        "level": ""
+      }
+    },
+    {
+      "id": "qualify-usage",
+      "name": "使用与增长动作",
+      "enabled": true,
+      "operator": "AND",
+      "family": "usage",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "complete quest",
+            "complete the quest",
+            "quest",
+            "check-in",
+            "check in",
+            "waitlist",
+            "early access",
+            "public beta",
+            "testnet",
+            "faucet",
+            "测试网",
+            "水龙头",
+            "公测",
+            "内测",
+            "任务",
+            "签到",
+            "白名单"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 60,
+        "level": ""
+      }
+    },
+    {
+      "id": "qualify-issuance",
+      "name": "发行与分配动作",
+      "enabled": true,
+      "operator": "AND",
+      "family": "issuance",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "mint",
+            "free mint",
+            "allowlist",
+            "whitelist",
+            "ido",
+            "ico",
+            "lbp",
+            "launchpad",
+            "tge",
+            "node sale",
+            "token sale",
+            "public sale",
+            "fair launch",
+            "bonding curve",
+            "airdrop",
+            "claim airdrop",
+            "空投",
+            "打新",
+            "认购",
+            "白名单",
+            "免费铸造",
+            "空投领取"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 60,
+        "level": ""
+      }
+    },
+    {
+      "id": "qualify-governance",
+      "name": "所有权与治理动作",
+      "enabled": true,
+      "operator": "AND",
+      "family": "governance",
+      "track": "actionable",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "vote on",
+            "vote for",
+            "cast your vote",
+            "delegate votes",
+            "delegate your votes",
+            "governance proposal",
+            "gauge vote",
+            "snapshot vote",
+            "投票",
+            "治理投票",
+            "委托投票",
+            "提案投票"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 60,
+        "level": ""
+      }
+    },
+    {
+      "id": "discovery-words",
+      "name": "新东西描述",
+      "enabled": true,
+      "operator": "AND",
+      "track": "discovery",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "new protocol",
+            "new mechanism",
+            "new gameplay",
+            "new standard",
+            "new primitive",
+            "新协议",
+            "新机制",
+            "新玩法",
+            "新标准"
+          ]
+        },
+        {
+          "type": "source_official_or_link"
+        },
+        {
+          "type": "text_word_any",
+          "values": [
+            "chain",
+            "blockchain",
+            "onchain",
+            "on-chain",
+            "token",
+            "wallet",
+            "contract",
+            "defi",
+            "nft",
+            "crypto",
+            "web3",
+            "dapp",
+            "加密",
+            "链上",
+            "代币",
+            "钱包",
+            "合约",
+            "公链"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "qualify": true,
+        "score": 40,
+        "level": ""
+      }
+    },
+    {
+      "id": "score-early-words",
+      "name": "早期描述（只计分）",
       "enabled": true,
       "operator": "AND",
       "conditions": [
-        {"type": "text_contains_any", "values": [
-          "空投", "白名单", "测试网", "水龙头", "积分", "任务", "签到", "领取", "报名",
-          "公测", "内测", "免费", "零成本", "打新", "认购", "挖矿", "挂机", "质押",
-          "airdrop", "whitelist", "allowlist", "testnet", "devnet", "faucet", "points",
-          "quest", "claim", "mint", "check-in", "waitlist", "early access", "beta",
-          "invite code", "sign up", "signup", "register", "reward", "campaign"
-        ]}
+        {
+          "type": "text_word_any",
+          "values": [
+            "introducing",
+            "announcing",
+            "looking for testers",
+            "beta testers",
+            "call for testers",
+            "early access",
+            "waitlist",
+            "invite code"
+          ]
+        }
       ],
-      "effect": {"action": "score", "score": 40, "level": "B"}
+      "effect": {
+        "action": "score",
+        "score": 25,
+        "level": ""
+      }
     },
     {
-      "id": "early-words",
-      "name": "早期入口",
+      "id": "score-launch-words",
+      "name": "上线描述（只计分）",
       "enabled": true,
       "operator": "AND",
       "conditions": [
-        {"type": "text_contains_any", "values": [
-          "introducing", "announcing", "we built", "looking for testers", "beta testers",
-          "call for testers", "founding engineer", "early access", "waitlist", "invite code"
-        ]}
+        {
+          "type": "text_word_any",
+          "values": [
+            "is live",
+            "now live",
+            "we're live",
+            "mainnet",
+            "launch",
+            "launched",
+            "上线",
+            "主网",
+            "发布",
+            "首发",
+            "public beta",
+            "genesis"
+          ]
+        }
       ],
-      "effect": {"action": "score", "score": 30, "level": "B"}
-    },
-    {
-      "id": "launch-words",
-      "name": "上线与首发",
-      "enabled": true,
-      "operator": "AND",
-      "conditions": [
-        {"type": "text_contains_any", "values": [
-          "is live", "now live", "we're live", "mainnet", "launch", "launched", "上线",
-          "主网", "发布", "首发", "public beta", "genesis"
-        ]}
-      ],
-      "effect": {"action": "score", "score": 25, "level": "B"}
-    },
-    {
-      "id": "unknown-author",
-      "name": "不在 watchlist 里的账号",
-      "enabled": true,
-      "operator": "AND",
-      "conditions": [{"type": "author_not_known"}],
-      "effect": {"action": "score", "score": 25, "level": "B"}
+      "effect": {
+        "action": "score",
+        "score": 15,
+        "level": ""
+      }
     },
     {
       "id": "fresh",
       "name": "新鲜（24 小时内）",
       "enabled": true,
       "operator": "AND",
-      "conditions": [{"type": "age_within_days", "value": 1}],
-      "effect": {"action": "score", "score": 20, "level": ""}
+      "conditions": [
+        {
+          "type": "age_within_days",
+          "value": 1
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "score": 5,
+        "level": ""
+      }
     },
     {
       "id": "has-link",
       "name": "带链接",
       "enabled": true,
       "operator": "AND",
-      "conditions": [{"type": "has_link"}],
-      "effect": {"action": "score", "score": 10, "level": ""}
+      "conditions": [
+        {
+          "type": "has_link"
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "score": 5,
+        "level": ""
+      }
     },
     {
       "id": "some-attention",
       "name": "有一点关注",
       "enabled": true,
       "operator": "AND",
-      "conditions": [{"type": "metric_at_least", "metric": "views", "value": 100}],
-      "effect": {"action": "score", "score": 10, "level": ""}
+      "conditions": [
+        {
+          "type": "metric_at_least",
+          "metric": "views",
+          "value": 100
+        }
+      ],
+      "effect": {
+        "action": "score",
+        "score": 5,
+        "level": ""
+      }
     }
   ]
 }

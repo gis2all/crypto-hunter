@@ -130,13 +130,15 @@ def post_row(tweet, source_target: str, scan_id: str, verdict: dict | None = Non
         "urls": list(getattr(tweet, "urls", ()) or ()),
         "score": None if verdict is None else verdict.get("score"),
         "rules_json": None if verdict is None else _rules_json(verdict),
+        "track": "actionable" if verdict is None else (verdict.get("track") or "actionable"),
     }
 
 
 def _rules_json(verdict: dict) -> str:
     import json
     return json.dumps({"level": verdict.get("level"), "excluded": verdict.get("excluded"),
-                       "hits": verdict.get("hits") or []}, ensure_ascii=False)
+                       "track": verdict.get("track"), "hits": verdict.get("hits") or []},
+                      ensure_ascii=False)
 
 
 def collect(scan_id: str, sources: list[dict], tell=None,
@@ -156,6 +158,10 @@ def collect(scan_id: str, sources: list[dict], tell=None,
     room = settings.value("sources_per_scan", MAX_SOURCES)
     counters = {"sources": 0, "posts": 0, "queries": 0, "slices": 0, "gated": 0, "skipped": 0,
                 "excluded": 0, "failed": [], "deferred": max(0, len(sources) - room),
+                # A slice that failed used to disappear into `search_sliced`'s own return value:
+                # a run where X never answered looked exactly like a quiet day. These three make
+                # "nothing was found" and "nothing was asked" different facts on the scan row.
+                "calls_ok": 0, "calls_failed": 0, "errors": [],
                 }
     # The accounts this watchlist already knows, injected into the gate: a post from one of them
     # is normal, a post from a stranger that announces something is a lead (rules.py).
@@ -175,12 +181,19 @@ def collect(scan_id: str, sources: list[dict], tell=None,
             if kind == "official":
                 counters["queries"] += 1
                 tweets = timeline(target)
+                counters["calls_ok"] += 1
             else:
                 query, window, step, limit = xread.query_row(source)
                 answer = search_sliced(query, window_hours=window, slice_hours=step, limit=limit,
                                        cancel=cancel)
-                counters["queries"] += answer["slices"]
-                counters["slices"] += answer["slices"]
+                slices = int(answer.get("slices") or 0)
+                bad = list(answer.get("failed") or [])
+                counters["queries"] += slices
+                counters["slices"] += slices
+                counters["calls_ok"] += max(0, slices - len(bad))
+                counters["calls_failed"] += len(bad)
+                for reason in bad:
+                    _remember_error(counters, reason)
                 tweets = answer["rows"]
             for tweet in tweets:
                 row = post_row(tweet, target, scan_id)
@@ -188,7 +201,8 @@ def collect(scan_id: str, sources: list[dict], tell=None,
                     continue
                 verdict = rules.judge(row["text"], author=row["handle"],
                                       metrics=row["metrics"], created_at=row["posted_at"],
-                                      known=known)
+                                      known=known, family=source.get("family"),
+                                      source_official=(kind == "official"))
                 row = post_row(tweet, target, scan_id, verdict)
                 if not db.opportunity_post_put(row):
                     continue                      # already read in an earlier scan
@@ -206,6 +220,8 @@ def collect(scan_id: str, sources: list[dict], tell=None,
             if cancel is not None and cancel.is_set():
                 raise
             counters["failed"].append(target)
+            counters["calls_failed"] += 1
+            _remember_error(counters, exc)
             log.info("opportunity: %s (%s) did not answer: %r", target, kind, exc)
         finally:
             # Touched whether it answered or not: a source that failed is exactly the one the
@@ -214,4 +230,18 @@ def collect(scan_id: str, sources: list[dict], tell=None,
             db.opportunity_source_touched(target)
         if tell:
             tell(index, total)
+    if counters["calls_ok"] == 0 and counters["calls_failed"]:
+        # Every call failed. Returning zero posts here would report an empty round, which reads
+        # as "the filters found nothing" - the opposite of what happened.
+        raise RuntimeError("X 没有回答：%d 次调用全部失败（%s）" % (
+            counters["calls_failed"],
+            counters["errors"][0] if counters["errors"] else "原因未记录"))
     return counters
+
+
+def _remember_error(counters: dict, reason) -> None:
+    """Keep the first few distinct failure reasons, trimmed to something a row can hold."""
+    text = " ".join(str(reason or "").split())[:200]
+    errors = counters["errors"]
+    if text and text not in errors and len(errors) < 3:
+        errors.append(text)
