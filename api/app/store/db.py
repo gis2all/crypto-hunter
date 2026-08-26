@@ -46,7 +46,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 15
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -73,6 +73,30 @@ def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
         "                                  WHERE p.url = opportunities.source_ref))"
         " WHERE source_kind = 'post' AND ecosystem IS NULL AND source_ref IS NOT NULL")
     return cursor.rowcount or 0
+
+
+def _normalise_opportunity_ecosystems(conn: sqlite3.Connection) -> int:
+    """One spelling per chain: `Tron` and `tron` collapse to the key, `multi` to 多链.
+
+    The label belongs to the panel (`schema.ecosystem_label`); the column stores the key, so the
+    filter cannot grow a second row for the same chain. Idempotent: a value that is already the
+    key is not written again.
+    """
+    from app.opportunity import schema
+
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(opportunities)")}
+    if "ecosystem" not in columns:
+        return 0
+    rows = conn.execute("SELECT slug, ecosystem FROM opportunities"
+                        " WHERE ecosystem IS NOT NULL AND ecosystem != ''").fetchall()
+    changed = 0
+    for row in rows:
+        canonical = schema.canonical_ecosystem(row["ecosystem"])
+        if canonical != row["ecosystem"]:
+            conn.execute("UPDATE opportunities SET ecosystem = ? WHERE slug = ?",
+                         (canonical, row["slug"]))
+            changed += 1
+    return changed
 
 
 def now_iso() -> str:
@@ -129,7 +153,14 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunity_posts", "trace_json", "TEXT"),
                   ("opportunity_posts", "traced_at", "TEXT"),
                   ("opportunities", "source_type", "TEXT"),
-                  ("opportunity_sources", "last_read_at", "TEXT"))
+                  ("opportunity_sources", "last_read_at", "TEXT"),
+                  ("opportunity_sources", "family", "TEXT"),
+                  ("opportunity_posts", "track", "TEXT NOT NULL DEFAULT 'actionable'"),
+                  ("opportunities", "track", "TEXT NOT NULL DEFAULT 'actionable'"),
+                  ("opportunities", "novelty", "TEXT"),
+                  #: 补链阶段已经问过这张卡了（搜到结果、但没有链也算问过）。NULL 表示还欠一次，
+                  #: 网络失败也留 NULL，下一轮重试。
+                  ("opportunities", "ecosystem_checked_at", "TEXT"))
 
 #: Columns an earlier shape carried. Nothing reads them, a fresh database never creates
 #: them, and leaving them behind on an old one is a table that lies about what the code
@@ -198,6 +229,22 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
         filled = _backfill_opportunity_sources(conn)
         if filled:
             log.info("opportunities: filled ecosystem / source_type on %d rows", filled)
+    if was < 13 and conn.execute(
+            "SELECT count(*) AS n FROM opportunity_sources").fetchone()["n"]:
+        # A one-time catalog rewrite for the database that already exists. The query text is
+        # part of the gate's recall now, not just its budget: a broad noun query brought back
+        # project updates and an old `we're live` query brought back a prayer stream, so the
+        # catalog is revised in place and every superseded row is retired rather than deleted.
+        # The empty database is seeded from watchlist.yaml and must not have its test/manual
+        # rows touched.
+        from app.opportunity import watchlist as _watchlist
+        _watchlist.migrate_catalog(rewrite=True)
+    if was < 14:
+        # `Tron`, `Flare` and `Bttc` were stored title-cased while the known chains were keys;
+        # the panel printed both spellings side by side. The column is the key from now on.
+        renamed = _normalise_opportunity_ecosystems(conn)
+        if renamed:
+            log.info("opportunities: normalised %d ecosystem spellings", renamed)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if own:
         conn.close()
@@ -751,11 +798,11 @@ def opportunity_source_put(rows: list[dict]) -> int:
         for row in rows:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO opportunity_sources"
-                " (target, kind, ecosystem, cluster, enabled, window_hours, slice_hours,"
+                " (target, kind, ecosystem, family, cluster, enabled, window_hours, slice_hours,"
                 "  max_results, note, added_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (row["target"], row["kind"], row.get("ecosystem") or "multi",
-                 row.get("cluster"), 1 if row.get("enabled", True) else 0,
+                 row.get("family"), row.get("cluster"), 1 if row.get("enabled", True) else 0,
                  int(row.get("window_hours") or 24), int(row.get("slice_hours") or 4),
                  int(row.get("max_results") or 40), row.get("note"), row["added_at"]),
             )
@@ -763,6 +810,33 @@ def opportunity_source_put(rows: list[dict]) -> int:
     finally:
         conn.close()
     return written
+
+
+def opportunity_source_seed_put(rows: list[dict]) -> int:
+    """Insert or refresh catalog queries from the tracked seed."""
+    if not rows:
+        return 0
+    conn = connect()
+    try:
+        for row in rows:
+            conn.execute(
+                "INSERT INTO opportunity_sources"
+                " (target, kind, ecosystem, family, cluster, enabled, window_hours, slice_hours,"
+                "  max_results, note, added_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(target) DO UPDATE SET kind = excluded.kind,"
+                " ecosystem = excluded.ecosystem, family = excluded.family,"
+                " enabled = excluded.enabled, window_hours = excluded.window_hours,"
+                " slice_hours = excluded.slice_hours, max_results = excluded.max_results,"
+                " note = excluded.note, added_at = excluded.added_at",
+                (row["target"], row["kind"], row.get("ecosystem") or "multi",
+                 row.get("family"), row.get("cluster"), 1 if row.get("enabled", True) else 0,
+                 int(row.get("window_hours") or 24), int(row.get("slice_hours") or 4),
+                 int(row.get("max_results") or 40), row.get("note"), row["added_at"]),
+            )
+    finally:
+        conn.close()
+    return len(rows)
 
 
 def opportunity_post_put(row: dict) -> bool:
@@ -776,13 +850,14 @@ def opportunity_post_put(row: dict) -> bool:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO opportunity_posts"
             " (tweet_id, handle, author_name, text, lang, metrics_json, score, rules_json,"
-            "  urls_json, posted_at, url, source_target, first_seen_scan)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  urls_json, posted_at, url, source_target, first_seen_scan, track)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (row["tweet_id"], row["handle"], row.get("author_name"), row["text"], row.get("lang"),
              json.dumps(row.get("metrics") or {}, ensure_ascii=False), row.get("score"),
              row.get("rules_json"), json.dumps(list(row.get("urls") or []), ensure_ascii=False),
              row.get("posted_at"), row.get("url"),
-             row.get("source_target"), row.get("first_seen_scan")),
+             row.get("source_target"), row.get("first_seen_scan"),
+             row.get("track") or "actionable"),
         )
         return bool(cursor.rowcount)
     finally:
@@ -893,7 +968,7 @@ def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[di
             rows = conn.execute(
                 "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
                 " posted_at AS at, url, source_target, metrics_json, score, trace_level,"
-                " trace_json FROM opportunity_posts"
+                " trace_json, track FROM opportunity_posts"
                 # 按免费闸的分排序，不按时间：每轮只问 60 条，按时间排会让**旧的但高分**的帖子
                 # 永远排不上（2026-10-19 实测：重建后 DarkHorse 的两条高分帖被饿死，用户发现
                 # "之前发现过、现在看不到"）。闸已经给每条打过分，这 60 个名额应该花在最好的上面。
@@ -903,7 +978,7 @@ def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[di
             rows = conn.execute(
                 "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
                 " posted_at AS at, url, source_target, metrics_json, project_name,"
-                " trace_level, trace_json"
+                " trace_level, trace_json, track"
                 " FROM opportunity_posts"
                 " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
                 " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
@@ -953,13 +1028,13 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
     try:
         conn.execute("BEGIN")
         conn.execute(
-            "INSERT INTO opportunities (slug, kind, category, title, organizer, official_url,"
+            "INSERT INTO opportunities (slug, kind, track, category, title, organizer, official_url,"
             " summary, trust, trust_basis, ecosystem, source_type, risk, barrier, maturity,"
             " started_at, deadline, status, reason, heat, heat_basis, discovered_at, source_kind,"
-            " source_ref, extract_version, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " source_ref, extract_version, novelty, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(slug) DO UPDATE SET"
-            " kind = excluded.kind, category = excluded.category, title = excluded.title,"
+            " kind = excluded.kind, track = excluded.track, category = excluded.category, title = excluded.title,"
             " organizer = excluded.organizer, official_url = excluded.official_url,"
             " summary = excluded.summary, trust = excluded.trust,"
             " trust_basis = excluded.trust_basis, ecosystem = excluded.ecosystem,"
@@ -969,16 +1044,19 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
             " status = excluded.status, reason = excluded.reason,"
             " heat = excluded.heat, heat_basis = excluded.heat_basis,"
             " source_kind = excluded.source_kind, source_ref = excluded.source_ref,"
-            " extract_version = excluded.extract_version, updated_at = excluded.updated_at",
-            (entry["slug"], entry["kind"], entry.get("category"), entry["title"],
-             entry.get("organizer"), entry.get("official_url"), entry.get("summary"),
+            " extract_version = excluded.extract_version, novelty = excluded.novelty,"
+            " ecosystem_checked_at = NULL,"
+            " updated_at = excluded.updated_at",
+            (entry["slug"], entry["kind"], entry.get("track") or "actionable",
+             entry.get("category"), entry["title"], entry.get("organizer"),
+             entry.get("official_url"), entry.get("summary"),
              entry.get("trust") or "unjudged", entry.get("trust_basis"),
              entry.get("ecosystem"), entry.get("source_type"), entry.get("risk"),
              entry.get("barrier"), entry.get("maturity"), entry.get("started_at"),
              entry.get("deadline"), entry.get("status") or "candidate", entry.get("reason"),
              entry.get("heat"), entry.get("heat_basis"), entry["discovered_at"],
              entry.get("source_kind"), entry.get("source_ref"),
-             entry.get("extract_version"), now_iso()),
+             entry.get("extract_version"), entry.get("novelty"), now_iso()),
         )
         conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (entry["slug"],))
         for index, step in enumerate(steps or []):
@@ -1030,6 +1108,107 @@ def opportunity_items(status: str | None = None, kind: str | None = None,
     finally:
         conn.close()
     return items
+
+
+def opportunity_unjudged() -> list[dict]:
+    """Cards still 未判定 and not yet asked about, with the material they came from.
+
+    `ecosystem_checked_at` is what keeps a card that genuinely has no chain from being searched
+    again every round. A search that failed leaves it NULL, so the next round retries.
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT o.slug, o.title, o.summary, o.organizer, o.source_ref,"
+            "       p.text, p.trace_json, p.project_name"
+            " FROM opportunities o"
+            " LEFT JOIN opportunity_posts p ON p.url = o.source_ref"
+            " WHERE o.ecosystem = '未判定' AND o.ecosystem_checked_at IS NULL"
+            "   AND o.status != 'retired'"
+            " ORDER BY o.discovered_at DESC").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def opportunity_set_ecosystem(slug: str, ecosystem: str, *, checked: bool = True) -> int:
+    """Fill one card's chain. Only a row that is still 未判定 is written.
+
+    `checked=True` also marks the question answered, so an entry that has no chain stops being
+    looked up every round. A caller that could not search passes `checked=False`.
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET ecosystem = ?, updated_at = ?,"
+            " ecosystem_checked_at = CASE WHEN ? THEN ? ELSE ecosystem_checked_at END"
+            " WHERE slug = ? AND ecosystem = '未判定'",
+            (ecosystem, now_iso(), 1 if checked else 0, now_iso(), slug))
+        return cursor.rowcount or 0
+    finally:
+        conn.close()
+
+
+def opportunity_mark_ecosystem_checked(slug: str) -> int:
+    """Searched, and the answer is still 未判定: record that the question was asked."""
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET ecosystem_checked_at = ?"
+            " WHERE slug = ? AND ecosystem = '未判定' AND ecosystem_checked_at IS NULL",
+            (now_iso(), slug))
+        return cursor.rowcount or 0
+    finally:
+        conn.close()
+
+
+def opportunity_steps_for(slugs: list[str]) -> dict[str, str]:
+    """Each slug's steps as one line of text, for a judgement that needs the whole card."""
+    if not slugs:
+        return {}
+    conn = connect()
+    try:
+        marks = ",".join("?" for _ in slugs)
+        rows = conn.execute(
+            "SELECT slug, title, body FROM opportunity_steps"
+            " WHERE slug IN (%s) ORDER BY slug, ordinal" % marks, tuple(slugs)).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, list[str]] = {}
+    for row in rows:
+        out.setdefault(row["slug"], []).append(("%s：%s" % (row["title"], row["body"])).strip())
+    return {slug: "；".join(parts) for slug, parts in out.items()}
+
+
+def opportunity_suspicious_ecosystems() -> list[dict]:
+    """Cards whose chain looks like the project's own name - the `TxFlow → txflow` shape.
+
+    A chain-named project (`Somnia`) is legitimate, so the caller decides against its own list
+    of known chains; this only narrows the rows to look at.
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT o.slug, o.ecosystem, o.organizer, p.project_name"
+            " FROM opportunities o"
+            " LEFT JOIN opportunity_posts p ON p.url = o.source_ref"
+            " WHERE o.ecosystem IS NOT NULL"
+            "   AND o.ecosystem NOT IN ('未判定', '多链')").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def opportunity_reset_ecosystem(slug: str) -> int:
+    """Send one card back to 未判定 so the next pass looks at it again."""
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET ecosystem = '未判定', ecosystem_checked_at = NULL,"
+            " updated_at = ? WHERE slug = ?", (now_iso(), slug))
+        return cursor.rowcount or 0
+    finally:
+        conn.close()
 
 
 def opportunity_retire(slug: str, reason: str) -> None:
@@ -1123,13 +1302,18 @@ def opportunity_counts() -> dict[str, int]:
     try:
         rows = conn.execute(
             "SELECT status, kind, count(*) AS n FROM opportunities GROUP BY status, kind").fetchall()
+        tracks = conn.execute(
+            "SELECT track, count(*) AS n FROM opportunities GROUP BY track").fetchall()
         posts = conn.execute("SELECT count(*) AS n FROM opportunity_posts").fetchone()
-        sources = conn.execute("SELECT count(*) AS n FROM opportunity_sources").fetchone()
+        sources = conn.execute(
+            "SELECT count(*) AS n FROM opportunity_sources WHERE enabled = 1").fetchone()
     finally:
         conn.close()
     out = {"posts": posts["n"], "sources": sources["n"]}
     for row in rows:
         out["%s:%s" % (row["status"], row["kind"])] = row["n"]
+    for row in tracks:
+        out["track:%s" % (row["track"] or "actionable")] = row["n"]
     return out
 
 

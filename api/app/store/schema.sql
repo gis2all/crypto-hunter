@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS opportunity_sources (
   target     TEXT NOT NULL UNIQUE,          -- an X handle (official) or a raw X query (query)
   kind       TEXT NOT NULL,                 -- official | query
   ecosystem  TEXT NOT NULL DEFAULT 'multi',
+  family     TEXT,                          -- network | capital | usage | issuance | governance
   cluster    TEXT,                          -- launchpad / defi / infra / ... a label, not a rule
   enabled    INTEGER NOT NULL DEFAULT 1,
   --: A query row's own three numbers: how far back it looks, how long one slice is, and how many
@@ -286,6 +287,7 @@ CREATE TABLE IF NOT EXISTS opportunity_posts (
   source_target   TEXT,                     -- which watchlist row found it
   first_seen_scan TEXT,
   classified      TEXT,                     -- activity | project | opinion | news | other | skipped
+  track           TEXT NOT NULL DEFAULT 'actionable',  -- actionable | discovery
   classified_at   TEXT,
   extracted_at    TEXT                      -- when the expensive pass last read it (NULL = not yet)
 );
@@ -299,6 +301,7 @@ CREATE TABLE IF NOT EXISTS opportunity_posts (
 CREATE TABLE IF NOT EXISTS opportunities (
   slug            TEXT PRIMARY KEY,
   kind            TEXT NOT NULL,            -- activity | project
+  track           TEXT NOT NULL DEFAULT 'actionable',  -- actionable | discovery
   category        TEXT,                     -- 打新 / 挖矿 / ... or 新协议 / 新实验 / ...
   title           TEXT NOT NULL,
   organizer       TEXT,                     -- the official handle, when the material names one
@@ -309,6 +312,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   --: 从哪条 watchlist 行读到的：生态与来源类型都是那条行的字段，条目自己不知道它们，
   --: 而页面要按它们筛选，所以在写入时随行存下来（来源行以后被删掉，条目的归属也还在）。
   ecosystem       TEXT,
+  ecosystem_checked_at TEXT,                -- 补链阶段问过的时刻；NULL = 还欠一次
   source_type     TEXT,                     -- official | platform | exchange | catalog | github | keyword
   risk            TEXT,
   barrier         TEXT,                     -- comma-joined enum, the activity half only
@@ -330,6 +334,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   source_kind     TEXT,                     -- post | page
   source_ref      TEXT,                     -- the tweet id or the url it was read from
   extract_version TEXT,                     -- which prompt wrote it; a rule change is traceable
+  novelty         TEXT,                     -- protocol / gameplay / mechanism / ...
   updated_at      TEXT NOT NULL
 );
 

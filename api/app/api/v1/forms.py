@@ -729,7 +729,8 @@ def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
     if len(ecosystems) > 1:
         groups.append({"key": "ecosystem", "title": "生态", "options":
                        [{"value": "", "label": "全部"}] +
-                       [{"value": name, "label": name} for name in ecosystems]})
+                       [{"value": name, "label": schema.ecosystem_label(name)}
+                        for name in ecosystems]})
 
     status = [{"value": "", "label": "全部", "count": None}] + [
         {"value": key, "label": label,

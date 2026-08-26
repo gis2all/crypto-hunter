@@ -38,6 +38,8 @@ MATERIAL_KINDS = ("activity", "project", "opinion", "news", "other")
 #: a free string is not a filter: two scans writing 挖矿 and 挖矿活动 make two categories.
 ACTIVITY_CATEGORIES = ("打新", "挖矿", "做任务", "空投", "测试网", "Mint", "白名单", "AMA", "其他")
 PROJECT_CATEGORIES = ("新协议", "新实验", "新工具", "新标准", "基础设施", "其他")
+NOVELTIES = ("protocol", "gameplay", "mechanism", "standard", "asset", "chain",
+             "tooling", "market")
 
 #: The eight barriers an activity can carry. Multi-select, and "none of them" means the
 #: material did not say - never "no barrier": that is the one reading this field exists to
@@ -94,9 +96,12 @@ def canonical_ecosystem(raw: object) -> str:
     """Whatever the model wrote, as one canonical chain name.
 
     A known chain (through its aliases) collapses to its canonical spelling; a chain this build
-    does not know is kept as itself, title-cased, because it is a real answer and the panel can
+    does not know is kept as itself, lower-cased, because it is a real answer and the panel can
     show it; anything that is not a chain name - a sentence, a symbol, an empty string - is
     `未判定`, which is the honest reading of "we could not tell".
+
+    The stored value is always the key, never the label: one spelling per chain, so the filter
+    cannot grow a second `Tron` row next to `tron`. `ecosystem_label` is what the panel prints.
     """
     text = " ".join(str(raw or "").split()).strip()
     if not text:
@@ -112,23 +117,65 @@ def canonical_ecosystem(raw: object) -> str:
     if any(re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(alias), lowered)
            for alias in UNJUDGED_ALIASES):
         return UNJUDGED
-    return text.title() if _CHAIN_NAME.match(text) else UNJUDGED
+    return text.lower() if _CHAIN_NAME.match(text) else UNJUDGED
+
+
+#: What the panel prints for a stored key. Known chains carry their own spelling (`BSC`, `BTTC`,
+#: `MultiversX`); a chain that is not here falls back to capitalising each word.
+ECOSYSTEM_LABELS = {
+    "bitcoin": "Bitcoin",
+    "ethereum": "Ethereum",
+    "solana": "Solana",
+    "base": "Base",
+    "bsc": "BSC",
+    "arbitrum": "Arbitrum",
+    "sui": "Sui",
+    "aptos": "Aptos",
+    "near": "Near",
+    "avax": "AVAX",
+    "cosmos": "Cosmos",
+    "starknet": "Starknet",
+    "berachain": "Berachain",
+    "megaeth": "MegaETH",
+    "tron": "Tron",
+    "hyperliquid": "Hyperliquid",
+    "flare": "Flare",
+    "aleo": "Aleo",
+    "bttc": "BTTC",
+    "multiversx": "MultiversX",
+    "injective": "Injective",
+    "ronin": "Ronin",
+}
+
+#: Words that stay upper-case when a new chain is title-cased by the fallback.
+ECOSYSTEM_ACRONYMS = frozenset(("bsc", "bttc", "avax", "evm", "l2", "rwa", "dao", "defi", "nft"))
+
+
+def ecosystem_label(name: object) -> str:
+    """The stored key as the panel prints it. Unknown chains still read as a name, not a key."""
+    text = " ".join(str(name or "").split()).strip()
+    if not text or text in (MULTI, UNJUDGED):
+        return text
+    lowered = text.lower()
+    if lowered in ECOSYSTEM_LABELS:
+        return ECOSYSTEM_LABELS[lowered]
+    parts = re.split(r"([\s\-]+)", lowered)
+    return "".join(part.upper() if part in ECOSYSTEM_ACRONYMS
+                   else (part[:1].upper() + part[1:] if part else part)
+                   for part in parts)
 
 
 def order_ecosystems(values) -> list[str]:
-    """The panel's order: known chains first (in `CHAINS` order), then anything new, then the two
-    readings that are not a chain. New chains sort alphabetically among themselves, so the panel
-    reads the same way twice even while it grows."""
-    def key(name: str) -> tuple:
-        if name in CHAINS:
-            return (0, CHAINS.index(name), "")
-        if name == MULTI:
-            return (2, 0, "")
-        if name == UNJUDGED:
-            return (3, 0, "")
-        return (1, 0, name)
+    """The panel's order: every chain A-Z by the name it is printed as, then the two readings
+    that are not a chain (多链, then 未判定).
 
-    return sorted({str(name) for name in values if name}, key=key)
+    Capitalisation and the label map are what the reader sees, so the key is the label rather
+    than the stored key: `BSC` sorts under B, not after `bitcoin` because of the raw string.
+    """
+    seen = {str(name) for name in values if name}
+    chains = sorted((name for name in seen if name not in (MULTI, UNJUDGED)),
+                    key=lambda name: ecosystem_label(name).lower())
+    return chains + [name for name in (MULTI, UNJUDGED) if name in seen]
 
 
 #: Lengths, as caps and never as rejections - the same rule `report/schema.py` follows: a
@@ -179,6 +226,7 @@ class Entry(BaseModel):
     title: str = ""
     kind: str = "activity"
     category: str = ""
+    novelty: str = ""
     organizer: str = ""
     official_url: str = ""
     summary: str = ""
@@ -258,6 +306,7 @@ def read_entries(raw: dict) -> tuple[list[Entry], list[str]]:
         entry.risk = _trim(entry.risk, CAPS["risk"])
         entry.organizer = str(entry.organizer or "").strip().lstrip("@")
         entry.official_url = str(entry.official_url or "").strip()
+        entry.novelty = str(entry.novelty or "").strip().lower()
         entry.started_at = str(entry.started_at or "").strip()
         entry.deadline = str(entry.deadline or "").strip()
         entry.steps = [step for step in entry.steps if str(step.body or "").strip()][:MAX_STEPS]
@@ -281,6 +330,10 @@ def read_entries(raw: dict) -> tuple[list[Entry], list[str]]:
             issues.append("%s: category %r is not one of %s" % (where, entry.category,
                                                                 ", ".join(allowed)))
             entry.category = "其他"
+        if entry.novelty and entry.novelty not in NOVELTIES:
+            issues.append("%s: novelty %r is not one of %s" % (where, entry.novelty,
+                                                            ", ".join(NOVELTIES)))
+            entry.novelty = ""
         unknown = [name for name in entry.barrier if name not in BARRIERS]
         if unknown:
             issues.append("%s: barrier %s is not one of the eight" % (where, ", ".join(unknown)))
