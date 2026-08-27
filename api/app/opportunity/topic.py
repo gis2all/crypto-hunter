@@ -82,6 +82,7 @@ def merge(materials: list[dict]) -> list[dict]:
             "source_target": head.get("source_target") or "",
             "trace_level": head.get("trace_level") or "",
             "trace_json": head.get("trace_json") or "",
+            "track": head.get("track") or "actionable",
             "consumed": [row["ref"] for row in posts],
             "posts": len(kept),
             "score": max(float(row.get("score") or 0) for row in kept),

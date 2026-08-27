@@ -1670,6 +1670,11 @@ export interface components {
             slug: string;
             /** Kind */
             kind: string;
+            /**
+             * Track
+             * @default actionable
+             */
+            track: string;
             /** Category */
             category?: string | null;
             /** Title */
@@ -1727,6 +1732,8 @@ export interface components {
             source_ref?: string | null;
             /** Extract Version */
             extract_version?: string | null;
+            /** Novelty */
+            novelty?: string | null;
             /**
              * Steps
              * @default []
@@ -1923,6 +1930,8 @@ export interface components {
             kind: string;
             /** Ecosystem */
             ecosystem: string;
+            /** Family */
+            family?: string | null;
             /** Cluster */
             cluster?: string | null;
             /** Enabled */

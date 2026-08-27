@@ -632,6 +632,7 @@ class OpportunityItemOut(BaseModel):
 
     slug: str
     kind: str
+    track: str = "actionable"
     category: str | None = None
     title: str
     organizer: str | None = None
@@ -662,6 +663,7 @@ class OpportunityItemOut(BaseModel):
     source_kind: str | None = None
     source_ref: str | None = None
     extract_version: str | None = None
+    novelty: str | None = None
     steps: list[OpportunityStepOut] = []
 
 
@@ -671,6 +673,7 @@ class OpportunitySourceOut(BaseModel):
     target: str
     kind: str
     ecosystem: str
+    family: str | None = None
     cluster: str | None = None
     enabled: bool
     #: A `query` row's own three numbers: how far back it looks, how long one slice is, and how

@@ -37,7 +37,8 @@ def _item(row: dict) -> OpportunityItemOut:
     """
     barrier = [name for name in str(row.get("barrier") or "").split(",") if name]
     return OpportunityItemOut(
-        slug=row["slug"], kind=row["kind"], category=row.get("category"), title=row["title"],
+        slug=row["slug"], kind=row["kind"], track=row.get("track") or "actionable",
+        category=row.get("category"), title=row["title"],
         organizer=row.get("organizer"), official_url=row.get("official_url"),
         summary=row.get("summary"), trust=row.get("trust") or "unjudged",
         trust_basis=row.get("trust_basis"), ecosystem=row.get("ecosystem"),
@@ -51,6 +52,7 @@ def _item(row: dict) -> OpportunityItemOut:
         discovered_at=row["discovered_at"],
         source_kind=row.get("source_kind"), source_ref=row.get("source_ref"),
         extract_version=row.get("extract_version"),
+        novelty=row.get("novelty"),
         steps=[_step(step) for step in row.get("steps") or []],
     )
 
@@ -131,7 +133,7 @@ def set_item_state(slug: str, body: OpportunityStateIn) -> dict:
 def list_sources() -> list[dict]:
     """The watchlist as it stands: what a scan will read next time."""
     watchlist.ensure_seeded()
-    return watchlist.rows()
+    return watchlist.enabled()
 
 
 @router.post("/scan", response_model=OpportunityScanOut, status_code=202)

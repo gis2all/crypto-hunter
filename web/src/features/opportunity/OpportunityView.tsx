@@ -109,6 +109,11 @@ function matches(item: OpportunityItem, key: string, value: string): boolean {
 }
 
 /** One stored timestamp, cut to the minute: the seconds never matter and the string is long. */
+const NOVELTY_LABELS: Record<string, string> = {
+  protocol: "新协议", gameplay: "新玩法", mechanism: "新机制", standard: "新标准",
+  asset: "新资产", chain: "新链/生态", tooling: "新工具", market: "新市场",
+};
+
 function stamp(value: string | null | undefined): string {
   if (!value) {
     return "—";
@@ -180,7 +185,8 @@ function ScanPanel({ scan, open, form }: {
       return collect.posts === undefined
         ? "—"
         : `帖子 ${collect.posts} · 过闸 ${collect.gated ?? 0} · 排除 ${collect.excluded ?? 0}`
-          + ` · X 调用 ${collect.queries ?? 0}`;
+          + ` · X 调用 ${collect.queries ?? 0}`
+          + (collect.calls_failed ? ` · 失败 ${collect.calls_failed}` : "");
     }
     if (key === "classify") {
       if (classify.groups !== undefined) {
@@ -193,6 +199,13 @@ function ScanPanel({ scan, open, form }: {
       return extract.entries === undefined
         ? "—"
         : `条目 ${extract.entries} · 晋升 ${extract.promoted ?? 0}`;
+    }
+    if (key === "chain") {
+      const chain = (counters.chain ?? {}) as Record<string, number>;
+      return chain.cards === undefined
+        ? "—"
+        : `待补 ${chain.cards} · 补上 ${chain.found ?? 0}`
+          + ` · 搜索 ${chain.searched ?? 0}`;
     }
     if (key === "sweep") {
       const sweep = (counters.sweep ?? {}) as Record<string, number>;
@@ -346,6 +359,7 @@ function EntryCard({ item, trust, full, onState }: {
           <span className="srow-v chips">
             {item.category ? <span className="chip">{item.category}</span> : null}
             {item.maturity ? <span className="chip">{item.maturity}</span> : null}
+            {item.novelty ? <span className="chip">{NOVELTY_LABELS[item.novelty] ?? item.novelty}</span> : null}
           </span>
         ) : null}
       </div>
@@ -431,6 +445,7 @@ export function OpportunityView() {
   useEffect(() => { savePref(VIEW_KEY, view); }, [view]);
   /** 列表 tab：全部（除归档/删除之外的一切）· 本轮 · 归档 · 删除 · 排队中。 */
   const [tab, setTab] = useState<"all" | "round" | "archived" | "deleted" | "queues">("all");
+  const [trackFilter, setTrackFilter] = useState<"actionable" | "discovery">("actionable");
   /** 时间轮次条选中的那一轮；选了就只看它新增的。 */
   const [pickedScan, setPickedScan] = useState<string>("");
   const scans = useOpportunityScans();
@@ -470,6 +485,9 @@ export function OpportunityView() {
   };
 
   const inTab = (item: OpportunityItem) => {
+    if (item.track !== trackFilter) {
+      return false;
+    }
     if (pickedScan) {
       const from = roundStart(pickedScan);
       return item.discovered_at >= from && item.discovered_at < roundEnd(pickedScan);
@@ -484,15 +502,55 @@ export function OpportunityView() {
   };
 
   const tabCounts = {
-    all: items.filter((item) => item.user_state === "active").length,
+    all: items.filter((item) => item.track === trackFilter && item.user_state === "active").length,
     round: latest
-      ? items.filter((item) => item.user_state === "active"
+      ? items.filter((item) => item.track === trackFilter && item.user_state === "active"
         && item.discovered_at >= latest.started_at).length
       : 0,
-    archived: items.filter((item) => item.user_state === "archived").length,
-    deleted: items.filter((item) => item.user_state === "deleted").length,
+    archived: items.filter((item) => item.track === trackFilter && item.user_state === "archived").length,
+    deleted: items.filter((item) => item.track === trackFilter && item.user_state === "deleted").length,
     queues: (queues.data?.unclassified.count ?? 0) + (queues.data?.unextracted.count ?? 0),
   };
+
+  /** 生态面板只列当前视野里真有卡片的链。状态 / 分栏 / 搜索已经筛掉的东西，不该还留着一个
+   *  点进去为空的选项（Aleo 只有未晋升的卡，默认「可参与」下点它就是空白）。生态自己那一维
+   *  不参与，否则选中的链会把自己从面板上删掉。 */
+  const facetItems = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (!inTab(item)) {
+        return false;
+      }
+      if (needle) {
+        const haystack = [item.title, item.organizer, item.category, item.summary]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(needle)) {
+          return false;
+        }
+      }
+      return groups.every((group) => group.key === "ecosystem"
+        || matches(item, group.key, value(group.key)));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, groups, picked, tab, pickedScan, scans.data, search]);
+
+  const liveEcosystems = useMemo(
+    () => new Set(facetItems.map((item) => item.ecosystem ?? "")),
+    [facetItems],
+  );
+
+  const panelGroups = useMemo(() => groups.map((group) => (group.key !== "ecosystem"
+    ? group
+    : { ...group, options: group.options.filter(
+      (option) => option.value === "" || liveEcosystems.has(option.value)) })),
+  [groups, liveEcosystems]);
+
+  useEffect(() => {
+    const chosen = picked.ecosystem;
+    if (chosen && !liveEcosystems.has(chosen)) {
+      setPicked((prev) => ({ ...prev, ecosystem: "" }));
+    }
+  }, [liveEcosystems, picked.ecosystem]);
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -641,6 +699,15 @@ export function OpportunityView() {
           读者自己的决定与管线那半分开记，所以这里筛的是 user_state。 */}
       <div className="opp-bar">
         <div className="tabs">
+          {([["actionable", "可参与"], ["discovery", "发现"]] as const).map(([key, label]) => (
+            <span key={key}
+              className={"tab" + (trackFilter === key ? " on" : "")}
+              onClick={() => { setTrackFilter(key); setTab("all"); setPickedScan(""); }}>
+              {label} {counts["track:" + key] ?? 0}
+            </span>
+          ))}
+        </div>
+        <div className="tabs">
           {([["all", "全部"], ["round", "本轮"], ["archived", "归档"],
              ["deleted", "删除"], ["queues", "排队中"]] as const).map(([key, label]) => (
             <span key={key}
@@ -683,7 +750,7 @@ export function OpportunityView() {
 
       <div className="grid fav-body">
         <aside className="fav-side">
-          {groups.map((group) => (
+          {panelGroups.map((group) => (
             <Fragment key={group.key}>
               <h4 className="look-h">{group.title}</h4>
               <div className="fav-opts">

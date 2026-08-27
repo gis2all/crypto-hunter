@@ -31,13 +31,14 @@
   `无成本` / `需 gas` / `需资金` / `需质押` / `需白名单` / `需 KYC` / `需设备或挂机` / `需社交任务`。
   材料没说就不要选 —— **不要用"无成本"表示"没说"**。
 - **`maturity` 只能从**：`实验性` / `测试网` / `主网`。材料没说就留空。
-- **`ecosystem` 写项目所在公链的常用英文名**（`ethereum` / `solana` / `base` / `bitcoin`…）。
+- **`ecosystem` 写项目所在公链的常用英文名，小写**（`ethereum` / `solana` / `base` / `bitcoin`…）。
   材料说它在哪条链上就写哪条；说了不止一条写 `多链`；一条都没说写 `未判定`。
   **不限于常见那几条**：写了别的公链（`aptos`、`avax`…）也照写，读取器会归一化。
 - ~~旧规则~~ `ecosystem` 只能从这八档里选**：`bitcoin` / `ethereum` / `solana` / `base` / `bsc` / `sui` / `多链` / `未判定`。
   材料说它在哪条链上就写哪条；说了不止一条写 `多链`；一条都没说写 `未判定` ——
   `未判定` 是「材料没说」，`多链` 是「材料说它同时在好几条链上」，两者不是一回事。
 - `organizer` 只填材料里出现的官方账号 handle（不带 @）；`official_url` 只填材料里出现的官网地址。
+- `novelty` 只在发现轨道填写：新协议 `protocol`、新玩法 `gameplay`、新机制 `mechanism`、新标准 `standard`、新资产 `asset`、新链/生态 `chain`、新工具 `tooling`、新市场 `market`；没有就留空。
 - 每一步的 `source_url` 填**材料的来源 URL**（你读的就是它），`source_at` 填材料时间。
 - 步骤写不清就不要写这一步；一条 activity 一步都写不出，就不要产出这条 activity
   （降级成 project 也不行 —— 那是两回事）。
@@ -58,6 +59,7 @@
       "title": "ORDWORLD 公测已开放",
       "kind": "activity",
       "category": "测试网",
+      "novelty": "",
       "organizer": "BreathFi20",
       "official_url": "https://game.breath20.xyz",
       "summary": "",
