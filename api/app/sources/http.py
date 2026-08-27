@@ -73,6 +73,11 @@ MIN_INTERVAL: dict[str, float] = {
     # organisations and remembers each answer for an hour (`opportunity/scan.py` GITHUB_TTL), so
     # this interval is what keeps a scan from spending that budget on retries.
     "api.github.com": 1.0,
+    # 补链阶段的搜索：一个动作一次请求，引擎对连续查询很敏感，一秒是实测能过线的间隔。
+    "lite.duckduckgo.com": 2.0,
+    "www.bing.com": 1.5,
+    "mcp.exa.ai": 0.5,
+    "search.parallel.ai": 0.5,
     # The board pages `dexscreener_rank` reads, not the API: a sweep asks for six of them
     # back to back, and they are the site's own HTML rather than a published feed.
     "dexscreener.com": 0.5,

@@ -28,7 +28,7 @@ from uuid import uuid4
 
 from ..llm import client as llm
 from ..store import db
-from . import extract, group, lifecycle, scan as scanner, trace, watchlist
+from . import chainsearch, extract, group, lifecycle, scan as scanner, trace, watchlist
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -39,6 +39,7 @@ STAGES = (
     ("classify", "分组"),
     ("trace", "溯源到官方家"),
     ("extract", "抽取与落库"),
+    ("chain", "补链"),
     ("sweep", "生命周期"),
 )
 
@@ -194,6 +195,11 @@ def run(job: dict, say) -> None:
     say("extract")
     counters["extract"] = extract.run(
         tell=lambda done, total: _tick(job, "extract", done, total))
+
+    # 补链在抽取之后：卡片自己的标题与摘要是最便宜、也最贴近事件的证据，而它们到这一步才存在。
+    say("chain")
+    counters["chain"] = chainsearch.run(
+        tell=lambda done, total: _tick(job, "chain", done, total))
 
     # 生命周期最后一步，而且只在有材料之后：一个活动的结束时间是从它自己的材料里读出来的，
     # 所以这一趟必须先有材料、有抽取，才谈得上"到点了"。热度也在这一步重算：它是派生的，

@@ -21,8 +21,8 @@ from ..store import db
 from . import heat as heat_scale
 from . import settings
 from . import topic as topics
-from . import model, promote, trust
-from .schema import EXTRACT_VERSION, Entry, read_entries, slug_for
+from . import model, probe, promote, trust
+from .schema import EXTRACT_VERSION, UNJUDGED, Entry, read_entries, slug_for
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -63,6 +63,9 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     # 互动读数，heat 就是 None（未判定），不是 0。
     heat = heat_score(material.get("metrics"))
     heat_basis = heat_basis_text(material.get("metrics"))
+    # The pages the trace already read answer the chain for free; everything else is the补链
+    # stage's job, after the card (and its own title) exists.
+    fallback = probe.from_pages([page["text"] for page in _pages_of(material)])
     for entry in entries:
         status, reason = promote.verdict(entry)
         how_official, basis = trust.verdict(entry, material, source)
@@ -77,6 +80,7 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
         row = {
             "slug": slug_for(entry),
             "kind": entry.kind,
+            "track": material.get("track") or "actionable",
             "category": entry.category,
             "title": entry.title,
             "organizer": entry.organizer,
@@ -87,7 +91,8 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
             # 生态是**从材料读出来的**（抽取那一步的输出），不是从"谁发的帖"继承的：
             # 一个 Solana 账号宣布 Base 上的项目，条目就该写 base（2026-10-19, user）。
             # 来源类型仍是来源行的字段：它说的是"我们怎么找到它的"。
-            "ecosystem": entry.ecosystem or "未判定",
+            "ecosystem": (entry.ecosystem if entry.ecosystem and entry.ecosystem != UNJUDGED
+                          else fallback) or UNJUDGED,
             # 生态是从哪读出来的：有官方页就是官方来源，否则只有那条帖。
             "ecosystem_basis": ("官方来源" if material.get("official_pages") else "材料"),
             "source_type": (source or {}).get("kind"),
@@ -106,6 +111,7 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
             # and `extracted_at` - not this column - is what stops a second pass.
             "source_ref": material.get("url") or material.get("ref"),
             "extract_version": EXTRACT_VERSION,
+            "novelty": entry.novelty or None,
         }
         steps = [step.model_dump() for step in entry.steps]
         db.opportunity_put(row, steps)
