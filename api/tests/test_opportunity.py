@@ -134,6 +134,61 @@ def test_the_gate_takes_an_action_word():
     assert _gate("New airdrop live now")["pass"]
 
 
+def test_a_family_only_passes_its_own_action_word():
+    moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    launch = rules.judge("mainnet is live", author="stranger", created_at=moment,
+                          family="usage", known=KNOWN)
+    assert not launch["pass"], "mainnet is live 不能单独过 usage 闸"
+    testnet = rules.judge("testnet is live", author="stranger", created_at=moment,
+                          family="usage", known=KNOWN)
+    assert testnet["pass"] and testnet["track"] == "actionable"
+
+
+def test_a_new_protocol_needs_an_official_source_for_the_discovery_track():
+    moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    text = "Introducing a new protocol for intents: a wallet on Solana"
+    assert not rules.judge(text, author="stranger", created_at=moment,
+                           family="discovery", known=KNOWN)["pass"]
+    out = rules.judge(text, author="stranger", created_at=moment,
+                      family="discovery", known=KNOWN, source_official=True)
+    assert out["pass"] and out["track"] == "discovery"
+
+
+def test_the_gate_rejects_jobs_news_and_cex_ads():
+    moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    for text, family in (("founding engineer for protocol", None),
+                         ("market news report", None),
+                         ("Binance listing new token", "issuance")):
+        assert rules.judge(text, author="stranger", created_at=moment,
+                           known=KNOWN, family=family)["excluded"]
+
+
+def test_exchange_campaigns_and_offchain_offers_are_refused():
+    """These four reached extraction on 2026-10-24 and never had a chain to find."""
+    moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    for text, author in (
+            ("Binance Simple Earn USDT 新用户 30% 加息", "crypt0_n0va"),
+            ("Gate Crazy Wednesday 马术活动：礼盒抽奖与高息理财", "Gate_Launch"),
+            ("Lake Michigan Credit Union 开户领 $193", "willyoes")):
+        assert rules.judge(text, author=author, created_at=moment,
+                           known=KNOWN)["excluded"], text
+
+
+def test_a_new_standard_needs_a_crypto_context_to_pass_discovery():
+    moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    duck = ("DuckDB 2.0.0 LTS 发布，带来新的 SQL 标准 https://t.co/x")
+    assert not rules.judge(duck, author="duckdb", created_at=moment, known=KNOWN,
+                           family="discovery", source_official=True)["pass"]
+    chain = ("Introducing a new protocol for intents: a wallet on Solana https://t.co/x")
+    out = rules.judge(chain, author="someone", created_at=moment, known=KNOWN,
+                      family="discovery", source_official=True)
+    assert out["pass"] and out["track"] == "discovery"
+
+
+def test_airdrop_claim_behavior_is_unchanged():
+    assert _gate("airdrop claim is live", author="stranger")["pass"]
+
+
 def test_the_gate_refuses_an_exchange_trading_campaign():
     """13 of the first 15 entries were exchange campaigns - this is the rule that says no."""
     out = _gate("HTX 合约交易赛 WAL 专场，交易越多积分越多", author="HTX_Global", views=17000)
@@ -145,22 +200,66 @@ def test_the_gate_refuses_a_retweet():
     assert _gate("RT @someone: airdrop is live")["excluded"]
 
 
-def test_being_unknown_is_not_enough_on_its_own():
-    """An account we do not watch posting `gm` scored 45 and passed - measured, then fixed.
+def test_being_unknown_earns_nothing():
+    """Being unknown used to be worth 25 points, which paid for a model call on `gm`.
 
-    Being unknown is a reason to look closer, not a reason to spend a model call: the post still
-    has to announce, launch or offer something.
+    An unfamiliar account is a reason to read the text, not a reason to spend budget on it.
     """
     out = _gate("gm", author="stranger", views=0)
     assert not out["pass"]
-    assert out["score"] >= rules.PASS_SCORE, "分数够了，是内容那一关把它挡住了"
+    assert not any(hit["rule"] == "unknown-author" for hit in out["hits"])
 
 
-def test_an_unknown_account_announcing_something_scores_highest():
-    out = _gate("Introducing Foobar: a new solver for intents. Testnet is live, join the waitlist",
+def test_an_unknown_account_announcing_a_testnet_passes():
+    out = _gate("Testnet is live. Join the waitlist and complete quests",
                 author="foobar_labs", views=12)
-    assert out["pass"] and out["score"] > 100
-    assert any(hit["rule"] == "unknown-author" for hit in out["hits"])
+    assert out["pass"] and out["score"] > rules.PASS_SCORE
+
+
+def test_nouns_and_base_points_do_not_open_the_gate():
+    """A project update full of `validator` / `oracle` / `node` scored 30 and passed.
+
+    Only a concrete action may qualify a post now; the nouns and the recency/link/attention
+    bonuses are ranking weights and nothing else.
+    """
+    text = ("WINkLink oracle nodes verify cross-chain transfers; validator keys sign the payload "
+            "before settlement https://t.co/x")
+    out = rules.judge(text, author="Richdegen67", metrics={"views": 900},
+                      created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                      family="network", known=KNOWN)
+    assert not out["pass"]
+    assert out["score"] >= rules.PASS_SCORE, "分数够了，仍然过不了，因为没有一个具体动作"
+    assert not out["track"]
+
+
+def test_lending_is_not_the_verb_lend():
+    out = rules.judge("Imagine lending someone $100,000 against a collateral dashboard",
+                      author="driftnomics", family="capital",
+                      created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                      known=KNOWN)
+    assert not out["pass"]
+
+
+def test_an_incident_report_is_refused():
+    """Qubic's `restarts its blockchain and opens recovery claims` came in on the node query."""
+    out = rules.judge(
+        "JUST IN: Qubic restarts its blockchain and opens recovery claims for victims of a "
+        "$1.4M hack, following validator approval of a recovery plan.",
+        author="oddsmaxxing", family="network",
+        created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(), known=KNOWN)
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-incident"
+
+
+def test_a_non_crypto_live_stream_is_refused():
+    """A weekly prayer stream matched `we're live` and `Sign up to receive notifications`."""
+    out = rules.judge(
+        "Join believers every Friday at 12 PM Eastern. We will be live, taking prayer requests. "
+        "Streaming live on our social platforms. Sign up to receive notifications.",
+        author="jerusalemprayer",
+        created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(), known=KNOWN)
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-offtopic-event"
 
 
 def test_a_known_account_announcing_something_still_passes():
@@ -351,6 +450,51 @@ def test_a_query_source_is_read_as_a_search(isolated_db, monkeypatch):
     row = db.opportunity_materials(unclassified=True, limit=5)[0]
     assert row["source_target"] == "testnet is live"
 
+
+def test_all_failed_calls_are_a_failure_not_an_empty_round(isolated_db, monkeypatch):
+    """X was unreachable, so every slice failed - that is not "a quiet day".
+
+    Measured 2026-10-23: 42 slices, 0 posts, and the scan printed `done`, because a failed slice
+    only landed in a list `collect` never read.
+    """
+    db.opportunity_source_put([{
+        "target": "testnet", "kind": "query", "ecosystem": "multi", "cluster": None,
+        "enabled": True, "note": None, "added_at": db.now_iso(), "window_hours": 8,
+        "slice_hours": 4, "max_results": 40}])
+
+    def failed_slice(*args, **kwargs):
+        return {"rows": [], "slices": 1, "failed": ["x cli rc=1: Connection timed out"]}
+
+    def unreachable(*args, **kwargs):
+        raise RuntimeError("x cli rc=1: Connection timed out")
+
+    monkeypatch.setattr(scan, "search_sliced", failed_slice)
+    monkeypatch.setattr(scan, "timeline", unreachable)
+    with pytest.raises(RuntimeError) as failure:
+        scan.collect("s-unreachable", db.opportunity_sources_enabled())
+    assert "X 没有回答" in str(failure.value)
+
+
+def test_a_partial_slice_failure_still_collects(isolated_db, monkeypatch):
+    from app.search.base import TweetRow
+
+    db.opportunity_source_put([{
+        "target": "testnet", "kind": "query", "ecosystem": "multi", "cluster": None,
+        "enabled": True, "note": None, "added_at": db.now_iso(), "window_hours": 8,
+        "slice_hours": 4, "max_results": 40}])
+
+    def one_bad_slice(*args, **kwargs):
+        return {"rows": [TweetRow(id="8801", handle="someone", name="Someone",
+                                  text="testnet is live, join the waitlist https://t.co/x",
+                                  created_at="2026-10-18T00:00:00Z")],
+                "slices": 2, "failed": ["x cli rc=1: rate limited"]}
+
+    monkeypatch.setattr(scan, "search_sliced", one_bad_slice)
+    monkeypatch.setattr(scan, "timeline", lambda *a, **k: [])
+    counters = scan.collect("s-partial", db.opportunity_sources_enabled())
+    assert counters["posts"] == 1 and counters["calls_failed"] == 1
+    assert counters["calls_ok"] >= 2
+
 # ------------------------------------------------------------------ 核实三态
 
 def _material(text: str, source: str = "BreathFi20", kind: str = "post") -> dict:
@@ -424,6 +568,53 @@ def test_the_seed_fills_the_table_once_and_never_again(isolated_db):
         conn.close()
     assert watchlist.ensure_seeded() > 0
     assert watchlist.ensure_seeded() == 0, "第二次不该再播种：之后以表为准"
+
+
+def test_the_seed_has_five_families_and_no_enabled_cex():
+    rows = watchlist.seed_rows()
+    queries = [row for row in rows if row["kind"] == "query"]
+    assert {row["family"] for row in queries} == {
+        "network", "capital", "usage", "issuance", "governance", "discovery"}
+    cex = [row for row in rows if row["kind"] == "official"
+           and row["target"].lower() in watchlist.CEX_HANDLES]
+    assert cex and all(not row["enabled"] for row in cex)
+
+
+def test_the_catalog_migration_replaces_legacy_queries_and_disables_cex(isolated_db):
+    db.opportunity_source_put([
+        {"target": "legacy query", "kind": "query", "ecosystem": "multi", "cluster": None,
+         "enabled": True, "note": None, "added_at": db.now_iso()},
+        {"target": "Binance", "kind": "official", "ecosystem": "multi", "cluster": None,
+         "enabled": True, "note": None, "added_at": db.now_iso()},
+        {"target": "BSC", "kind": "official", "ecosystem": "bsc", "cluster": None,
+         "enabled": True, "note": None, "added_at": db.now_iso()},
+    ])
+    watchlist.migrate_catalog()
+    rows = {row["target"]: row for row in db.opportunity_sources()}
+    assert rows["legacy query"]["enabled"] == 0
+    assert rows["legacy query"]["family"] == "legacy"
+    assert rows["Binance"]["enabled"] == 0
+    assert rows["BSC"]["enabled"] == 1
+    active = [row for row in rows.values() if row["kind"] == "query" and row["enabled"]]
+    assert {row["family"] for row in active} == {
+        "network", "capital", "usage", "issuance", "governance", "discovery"}
+
+
+def test_a_catalog_rewrite_retires_a_query_that_was_current(isolated_db):
+    """A revision has to retire the previous revision's rows, not only the `family IS NULL` ones.
+
+    The first family catalog used bare nouns (`validator`, `yield`) that also matched ordinary
+    project prose. Those rows carry a family, so a migration keyed on "no family" would leave
+    them enabled and keep recalling the same noise.
+    """
+    db.opportunity_source_put([{
+        "target": "superseded family query", "kind": "query", "family": "network",
+        "ecosystem": "multi", "cluster": None, "enabled": True, "note": None,
+        "added_at": db.now_iso()}])
+    watchlist.migrate_catalog(rewrite=True)
+    rows = {row["target"]: row for row in db.opportunity_sources()}
+    assert rows["superseded family query"]["enabled"] == 0
+    assert rows["superseded family query"]["family"] == "legacy"
 
 
 # ------------------------------------------------------------------ 扫描 job（假引擎、假模型）
@@ -522,6 +713,9 @@ def small_watchlist(isolated_db, monkeypatch):
     db.opportunity_source_put(_one_source())
     monkeypatch.setattr(scan, "_throttle", lambda: None)
     monkeypatch.setattr(job, "submit", lambda _job: None)
+    # The link probe reads one page from the network; a test that let it would fetch live sites.
+    from app.opportunity import chainsearch
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [])
     return _one_source()
 
 
@@ -561,7 +755,12 @@ def test_a_post_that_never_reaches_the_model_is_not_called_an_opinion(isolated_d
     assert marks["Pix-1"] == "activity"
 
 
-def test_a_source_that_does_not_answer_is_a_count_not_a_crash(isolated_db, monkeypatch):
+def test_a_round_where_x_never_answers_fails_instead_of_looking_quiet(isolated_db, monkeypatch):
+    """一个都没答，和「今天没有新东西」必须是两件事。
+
+    部分切片失败仍然只记账（`test_a_partial_slice_failure_still_collects`）；全部失败时这一轮
+    记 `failed`，页面写字，而不是显示「帖子 0 · 过闸 0」。
+    """
     class _Broken:
         def timeline(self, handle, limit=20):
             raise RuntimeError("x cli rc=1")
@@ -574,8 +773,232 @@ def test_a_source_that_does_not_answer_is_a_count_not_a_crash(isolated_db, monke
     started = job.start()
     job.drive(started)
     stored = db.opportunity_scan_get(started["id"])
-    assert stored["status"] == "done"
-    assert stored["counters"]["collect"]["failed"], "没答的源要写进计数，不能只进日志"
+    assert stored["status"] == "failed"
+    assert "X 没有回答" in (stored["error"] or "")
+
+
+# ------------------------------------------------------------------ 生态兜底（C + D）
+
+def test_a_page_that_names_its_chain_is_read():
+    from app.opportunity import probe
+
+    assert probe.signal("Acme is built on Base.") == "base"
+    assert probe.signal("Deployed on Arbitrum One") == "arbitrum"
+    assert probe.signal("Live on the Robinhood chain") == "robinhood"
+    assert probe.signal("Acme 部署在 sui 上") == "sui"
+
+
+def test_a_bare_word_is_not_a_chain():
+    from app.opportunity import probe
+
+    assert probe.signal("A database for based teams") == ""
+    assert probe.signal("We are near the end") == ""
+    assert probe.signal("Scroll down to continue") == ""
+
+
+def test_an_address_or_an_explorer_names_the_chain():
+    from app.opportunity import probe
+
+    assert probe.signal("aleo1" + "q" * 58) == "aleo"
+    assert probe.signal("T" + "A" * 33) == "tron"
+    assert probe.signal("", '<a href="https://bscscan.com/address/0x1">bscscan</a>') == "bsc"
+
+
+def test_the_trace_pages_answer_the_chain_before_unjudged(isolated_db):
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post",
+                "trace_json": json.dumps({"level": "B", "pages": ["Acme is built on Base"]})}
+    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0}
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s",
+                                    ecosystem="未判定")], [], counters)
+    row = db.opportunity_items()[0]
+    assert row["ecosystem"] == "base"
+
+
+def test_the_models_own_chain_still_wins(isolated_db):
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post"}
+    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0}
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s",
+                                    ecosystem="solana")], [], counters)
+    assert db.opportunity_items()[0]["ecosystem"] == "solana"
+
+
+# ------------------------------------------------------------------ 补链（网页搜索）
+
+def _card(slug: str, title: str, summary: str = "") -> None:
+    conn = db.connect()
+    conn.execute(
+        "INSERT INTO opportunities (slug, kind, title, summary, ecosystem, discovered_at, updated_at)"
+        " VALUES (?, 'project', ?, ?, '未判定', '2026-10-24', '2026-10-24')",
+        (slug, title, summary))
+    conn.close()
+
+
+def test_the_search_pages_are_parsed_into_three_results():
+    from app.opportunity import chainsearch
+
+    ddg = ("<a rel=\"nofollow\" href=\"//duckduckgo.com/l/?uddg=https%3A%2F%2Facme.xyz%2F&amp;rut=1\""
+           " class='result-link'>Acme</a>"
+           "<td class='result-snippet'>Acme is built on Base.</td>")
+    assert chainsearch._ddg(ddg) == [
+        {"url": "https://acme.xyz/", "title": "Acme", "snippet": "Acme is built on Base."}]
+
+    bing = ('<li class="b_algo"><h2><a href="https://acme.xyz">Acme</a></h2>'
+            "<p>Acme chain</p></li>")
+    assert chainsearch._bing(bing)[0]["url"] == "https://acme.xyz"
+
+
+def test_only_a_single_named_chain_counts_on_a_card():
+    from app.opportunity import chainsearch
+
+    assert chainsearch._named("USDe 原生上线 X Layer 并接入 Aave V3") == "x layer"
+    assert chainsearch._named("JustLend 与 TRON DeFi Summer") == "tron"
+    assert chainsearch._named("Ethereum 与 Base 双链上线") == "", "两条链时要往下问"
+    assert chainsearch._named("Binance Simple Earn 新用户加息") == ""
+
+
+def test_the_chain_pass_uses_the_card_before_any_search(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("a", "USDe 原生上线 X Layer 并接入 Aave V3")
+    asked: list[str] = []
+    monkeypatch.setattr(chainsearch, "search", lambda term: asked.append(term) or [])
+    out = chainsearch.run()
+    assert out["found"] == 1 and not asked, "卡片自己写了链，就不该再搜"
+    assert db.opportunity_items()[0]["ecosystem"] == "x layer"
+
+
+def test_the_chain_pass_searches_what_the_card_does_not_say(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("b", "Acme 上线新金库")
+    asked: list[str] = []
+
+    def find(term: str) -> list[dict]:
+        asked.append(term)
+        return [{"title": "Acme", "snippet": "Acme is built on Sui",
+                 "url": "https://acme.xyz"}]
+
+    monkeypatch.setattr(chainsearch, "search", find)
+    out = chainsearch.run()
+    assert asked == ["Acme 上线新金库 blockchain"]
+    assert out["found"] == 1
+    assert db.opportunity_items()[0]["ecosystem"] == "sui"
+
+
+def test_the_model_decides_what_the_results_do_not_say(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("c", "Acme 上线新金库")
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [
+        {"title": "Acme explorer", "snippet": "Explorer for Base",
+         "url": "https://scan.acme.xyz"}])
+
+    def fake(messages, **kw):
+        assert kw.get("purpose") == "opportunity_chain"
+        return {"items": [{"slug": "c", "chain": "Base",
+                           "evidence": "https://scan.acme.xyz"}]}
+
+    monkeypatch.setattr(llm, "complete_json", fake)
+    out = chainsearch.run()
+    assert out["found"] == 1 and out["llm"] == 1
+    assert db.opportunity_items()[0]["ecosystem"] == "base"
+
+
+def test_a_chain_must_appear_in_the_result_it_cites():
+    from app.opportunity import chainsearch
+
+    card = {"project_name": "Acme"}
+    empty = {"title": "Acme", "snippet": "No chain here", "url": "https://acme.xyz"}
+    assert not chainsearch._supported("base", empty, card)
+    assert chainsearch._supported(
+        "base", {"title": "Acme", "snippet": "Acme is built on Base", "url": "https://acme.xyz"},
+        card)
+
+
+def test_a_project_name_is_not_a_chain():
+    from app.opportunity import chainsearch
+
+    txflow = {"title": "TxFlow", "snippet": "TxFlow vault", "url": "https://txflow.xyz"}
+    assert not chainsearch._supported("txflow", txflow, {"project_name": "TxFlow"})
+    somnia = {"title": "Somnia", "snippet": "Somnia Network", "url": "https://somnia.network"}
+    assert chainsearch._supported("somnia", somnia, {"project_name": "Somnia"}), "链名就是项目名也可以"
+
+
+def test_multi_chain_needs_two_chains_in_the_result():
+    from app.opportunity import chainsearch
+
+    two = {"title": "Acme", "snippet": "live on Base and Solana", "url": "https://acme.xyz"}
+    one = {"title": "Acme", "snippet": "live on Base", "url": "https://acme.xyz"}
+    assert chainsearch._supported("多链", two, {})
+    assert not chainsearch._supported("多链", one, {})
+
+
+def test_a_chain_that_is_the_project_name_is_asked_again(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    conn = db.connect()
+    conn.execute(
+        "INSERT INTO opportunities (slug, kind, title, organizer, ecosystem, discovered_at,"
+        " updated_at) VALUES ('t', 'project', 'TxFlow 金库', 'TxFlow', 'txflow', 'x', 'x')")
+    conn.close()
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [])
+    out = chainsearch.run()
+    assert out["reset"] == 1
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT ecosystem FROM opportunities WHERE slug='t'").fetchone()
+    finally:
+        conn.close()
+    assert row["ecosystem"] == "未判定"
+
+
+def test_a_card_that_is_not_on_a_chain_is_retired(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("f", "Lake Michigan Credit Union 开户领 $193")
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [
+        {"title": "Lake Michigan Credit Union", "snippet": "Open a checking account",
+         "url": "https://lmcu.org"}])
+    monkeypatch.setattr(llm, "complete_json", lambda messages, **kw: {
+        "items": [{"slug": "f", "chain": "not_onchain", "evidence": "https://lmcu.org"}]})
+    out = chainsearch.run()
+    assert out["offchain"] == 1
+    row = db.opportunity_items()[0]
+    assert row["status"] == "retired" and row["reason"] == "offchain"
+
+
+def test_an_answer_without_a_listed_source_is_not_written(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("d", "Acme 上线新金库")
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [
+        {"title": "Acme", "snippet": "No chain here", "url": "https://acme.xyz"}])
+    monkeypatch.setattr(llm, "complete_json", lambda messages, **kw: {
+        "items": [{"slug": "d", "chain": "base", "evidence": "https://made.up"}]})
+    out = chainsearch.run()
+    assert out["found"] == 0 and out["unknown"] == 1
+    assert db.opportunity_items()[0]["ecosystem"] == "未判定"
+
+
+def test_a_search_that_did_not_answer_is_retried_next_round(isolated_db, monkeypatch):
+    from app.opportunity import chainsearch
+
+    _card("e", "Acme 上线新金库")
+    monkeypatch.setattr(chainsearch, "search", lambda _term: [])
+    out = chainsearch.run()
+    assert out["failed"] == 1
+    conn = db.connect()
+    try:
+        assert conn.execute("SELECT ecosystem_checked_at FROM opportunities").fetchone()[0] is None
+    finally:
+        conn.close()
+    assert [row["slug"] for row in db.opportunity_unjudged()] == ["e"], "下一轮还要问"
 
 
 def test_a_grouping_failure_fails_the_stage_and_writes_nothing(isolated_db, monkeypatch):
@@ -1347,6 +1770,8 @@ def test_the_panel_is_two_groups_ecosystem_first():
     # 生态按枚举自己的顺序，不按字母序 —— 面板两次读起来要一样
     assert [option["value"] for option in groups["ecosystem"]["options"]] == \
         ["", "bitcoin", "solana"]
+    assert [option["label"] for option in groups["ecosystem"]["options"]] == \
+        ["全部", "Bitcoin", "Solana"], "面板印显示名，筛选仍发键"
     status = {option["value"]: option["count"] for option in groups["status"]["options"]}
     assert status == {"": None, "promoted": 1, "candidate": 0, "retired": 1}
 
@@ -1415,16 +1840,57 @@ def test_an_ecosystem_is_judged_not_restricted():
     assert ecosystem_of("以太坊") == "ethereum"
     assert ecosystem_of("这是以太坊上的一个协议") == "ethereum", "句子里的名字也认得"
     assert ecosystem_of("Aptos") == "aptos", "枚举外的真链保留它自己"
-    assert ecosystem_of("Solanaa") == "Solanaa", "拼错的会自己长一行 —— 加进别名表即自愈"
+    assert ecosystem_of("Tron") == "tron", "枚举外的链存键，不存显示名"
+    assert ecosystem_of("Solanaa") == "solanaa", "拼错的会自己长一行 —— 加进别名表即自愈"
     assert ecosystem_of("???") == "未判定", "不是链名就说不清"
     assert ecosystem_of("multi") == "多链", "多链与未判定是两件事"
 
 
-def test_the_panel_orders_known_chains_then_new_ones_then_the_two_readings():
+def test_the_panel_orders_chains_a_to_z_then_the_two_readings():
     from app.opportunity.schema import order_ecosystems
 
     ordered = order_ecosystems(["未判定", "多链", "aptos", "ethereum", "zzzchain", "bitcoin"])
-    assert ordered == ["bitcoin", "ethereum", "aptos", "zzzchain", "多链", "未判定"]
+    assert ordered == ["aptos", "bitcoin", "ethereum", "zzzchain", "多链", "未判定"]
+
+
+def test_the_panel_sorts_by_the_printed_name_not_the_raw_key():
+    from app.opportunity.schema import order_ecosystems
+
+    ordered = order_ecosystems(["base", "bsc", "bitcoin", "avax", "arbitrum"])
+    assert ordered == ["arbitrum", "avax", "base", "bitcoin", "bsc"]
+
+
+def test_the_panel_prints_a_label_and_filters_by_the_key():
+    """`BTT C`-style spellings live in the label; the value stays the lower-case key."""
+    from app.opportunity.schema import ecosystem_label
+
+    assert ecosystem_label("bitcoin") == "Bitcoin"
+    assert ecosystem_label("bsc") == "BSC"
+    assert ecosystem_label("bttc") == "BTTC"
+    assert ecosystem_label("multiversx") == "MultiversX"
+    assert ecosystem_label("megaeth") == "MegaETH"
+    assert ecosystem_label("zzzchain") == "Zzzchain", "新链走兜底，仍然像个名字"
+    assert ecosystem_label("multi-sig") == "Multi-Sig"
+    assert ecosystem_label("多链") == "多链"
+    assert ecosystem_label("未判定") == "未判定"
+
+
+def test_the_ecosystem_spellings_are_normalised_in_place(isolated_db):
+    conn = db.connect()
+    conn.execute(
+        "INSERT INTO opportunities (slug, kind, title, ecosystem, discovered_at, updated_at)"
+        " VALUES ('a', 'project', 'A', 'Tron', 'x', 'x'),"
+        "        ('b', 'project', 'B', 'Multi', 'x', 'x'),"
+        "        ('c', 'project', 'C', 'solana', 'x', 'x')")
+    conn.close()
+
+    changed = db._normalise_opportunity_ecosystems(db.connect())
+    assert changed == 2, "已经是键的行不重写"
+    conn = db.connect()
+    rows = {row["slug"]: row["ecosystem"] for row in
+            conn.execute("SELECT slug, ecosystem FROM opportunities")}
+    conn.close()
+    assert rows == {"a": "tron", "b": "多链", "c": "solana"}
 
 
 def test_a_missing_ecosystem_is_unjudged_too():
