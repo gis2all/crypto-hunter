@@ -1635,11 +1635,29 @@ def test_the_queues_answer_where_a_project_went(client, isolated_db):
                              "source_target": "q", "first_seen_scan": "s", "score": 90,
                              "rules_json": "{}"})
     db.opportunity_mark("q2", "post", classified="activity")
+    db.opportunity_post_put({"tweet_id": "q3", "handle": "someone", "text": "溯源失败的线索",
+                             "posted_at": "2026-10-19T00:00:00+00:00", "url": "u",
+                             "source_target": "q", "first_seen_scan": "s", "score": 70,
+                             "rules_json": "{}"})
+    db.opportunity_trace_put("q3", "C", {"level": "C"})
     piles = client.get("/api/v1/opportunity/queues").json()
     assert piles["unclassified"]["count"] >= 1
     assert piles["unclassified"]["top"][0]["ref"] == "q1", "按分数排序，最高分在最前"
     assert piles["unextracted"]["count"] >= 1
-    assert "trace_failed" in piles
+    assert piles["trace_failed"]["top"][0]["ref"] == "q3", "第三堆也要列出那几条"
+
+
+def test_a_queue_limit_of_zero_lists_the_whole_pile(client, isolated_db):
+    for index in range(8):
+        db.opportunity_post_put({"tweet_id": "z%d" % index, "handle": "someone",
+                                 "text": "trace failed %d" % index,
+                                 "posted_at": "2026-10-19T00:00:00+00:00", "url": "u%d" % index,
+                                 "source_target": "q", "first_seen_scan": "s", "score": index,
+                                 "rules_json": "{}"})
+        db.opportunity_trace_put("z%d" % index, "C", {"level": "C"})
+    assert len(client.get("/api/v1/opportunity/queues").json()["trace_failed"]["top"]) == 6
+    whole = client.get("/api/v1/opportunity/queues?limit=0").json()
+    assert len(whole["trace_failed"]["top"]) == 8, "limit=0 表示整堆"
 
 
 # ------------------------------------------------------------------ 溯源（线索 → 官方家）

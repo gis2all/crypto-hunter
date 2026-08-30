@@ -1342,6 +1342,9 @@ def opportunity_queues(limit: int = 6) -> dict:
     a post can sit in a queue for scans, and a queue nobody can see is a queue that looks like a
     loss (user, 2026-10-19).
     """
+    # `limit <= 0` means "the whole pile": the queue is a list a reader browses, and a sample of
+    # it is only ever a teaser. SQLite reads LIMIT -1 as no limit.
+    cap = -1 if int(limit or 0) <= 0 else int(limit)
     conn = connect()
     try:
         waiting = conn.execute(
@@ -1349,7 +1352,7 @@ def opportunity_queues(limit: int = 6) -> dict:
         top_waiting = conn.execute(
             "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score"
             " FROM opportunity_posts WHERE classified IS NULL"
-            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
         pending = conn.execute(
             "SELECT count(*) AS n FROM opportunity_posts"
             " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL").fetchone()["n"]
@@ -1357,15 +1360,19 @@ def opportunity_queues(limit: int = 6) -> dict:
             "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score, project_name"
             " FROM opportunity_posts"
             " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
-            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
         failed = conn.execute(
             "SELECT count(*) AS n FROM opportunity_posts WHERE trace_level = 'C'").fetchone()["n"]
+        top_failed = conn.execute(
+            "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score, project_name"
+            " FROM opportunity_posts WHERE trace_level = 'C'"
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
     finally:
         conn.close()
     return {
         "unclassified": {"count": waiting, "top": [dict(row) for row in top_waiting]},
         "unextracted": {"count": pending, "top": [dict(row) for row in top_pending]},
-        "trace_failed": {"count": failed},
+        "trace_failed": {"count": failed, "top": [dict(row) for row in top_failed]},
     }
 
 
