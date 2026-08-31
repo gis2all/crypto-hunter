@@ -319,8 +319,11 @@ export const getOpportunityQueues = () =>
       count: number;
       top: { ref: string; handle: string; text: string; score: number; project_name?: string | null }[];
     };
-    trace_failed: { count: number };
-  }>("/opportunity/queues");
+    trace_failed: {
+      count: number;
+      top: { ref: string; handle: string; text: string; score: number; project_name?: string | null }[];
+    };
+  }>("/opportunity/queues?limit=0");
 
 /** 归档 / 删除 / 恢复 one entry. The page's only write, and it is the reader's own. */
 export const setOpportunityState = (slug: string, userState: string) =>

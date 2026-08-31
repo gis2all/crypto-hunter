@@ -19,14 +19,13 @@ import {
   Archive,
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
-  Ban,
+  Pause,
   CalendarClock,
   ChevronDown,
   ChevronUp,
   Clock,
   ExternalLink,
   FileText,
-  Inbox,
   FoldVertical,
   ListChecks,
   LoaderCircle,
@@ -154,15 +153,18 @@ function pillClass(tone: string): string {
 
 /** The scan, as a step list. Drawn with the round panel's own stylesheet and marker, so
  *  抓材料 here and 拉取扫描源 there are the same kind of row. */
-function ScanPanel({ scan, open, form }: {
+function ScanPanel({ scan, open, form, stopping, onCancel }: {
   scan: OpportunityScan | null | undefined;
   open: boolean;
   form: OpportunityForm;
+  stopping?: boolean;
+  onCancel?: () => void;
 }) {
   const stages = scan?.stages ?? [];
   const ended = stages.filter((stage) => stage.state === "done").length;
   const progress = stages.length ? ended / stages.length : 0;
   const failed = scan?.status === "failed";
+  const cancelled = scan?.status === "cancelled";
   const running = scan?.status === "running";
   const counters = (scan?.counters ?? {}) as Record<string, unknown>;
   const collect = (counters.collect ?? {}) as Record<string, number>;
@@ -217,6 +219,15 @@ function ScanPanel({ scan, open, form }: {
   };
 
   const note = typeof counters.note === "string" ? counters.note : "";
+  /** 与 Arc 一轮同一条：第一下只是上膛，第二下才真的停；10 秒不动自动退回。 */
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setArmed(false), 10000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
   const foot = !scan
     ? String(form.empty ?? "还没有扫描过。")
     : failed
@@ -231,7 +242,8 @@ function ScanPanel({ scan, open, form }: {
         <b>
           {!scan ? "还没有扫描记录"
             : failed ? "扫描失败"
-              : running ? "正在扫描" : "扫描完成"}
+              : cancelled ? "已中止 · 本次"
+                : running ? "正在扫描" : "扫描完成"}
         </b>
         {scan ? (
           <span className="rp-el">{running ? "已用 " : "用时 "}{mmss(Math.round(seconds))}</span>
@@ -242,6 +254,27 @@ function ScanPanel({ scan, open, form }: {
           </span>
         ) : null}
         <span className="spacer" />
+        {scan && running ? (
+          stopping ? (
+            <span className="btn sec demo">
+              <Icon as={LoaderCircle} className="spin" size={14} />
+              正在中止
+            </span>
+          ) : (
+            <button
+              className={armed ? "btn sec arm" : "btn sec"}
+              onClick={armed
+                ? () => { setArmed(false); onCancel?.(); }
+                : () => setArmed(true)}
+              title={armed
+                ? "再点一次：扫描停在当前阶段，已读到的材料保留"
+                : "停止这次扫描：停在当前阶段，已读到的材料保留"}
+            >
+              <Icon as={Pause} size={14} />
+              {armed ? "确认中止" : "中止"}
+            </button>
+          )
+        ) : null}
       </div>
       <div className="rp-bar">
         <i style={{ transform: "scaleX(" + progress.toFixed(4) + ")" }} />
@@ -445,12 +478,17 @@ export function OpportunityView() {
   useEffect(() => { savePref(VIEW_KEY, view); }, [view]);
   /** 列表 tab：全部（除归档/删除之外的一切）· 本轮 · 归档 · 删除 · 排队中。 */
   const [tab, setTab] = useState<"all" | "round" | "archived" | "deleted" | "queues">("all");
+  /** 排队中这一页的三段：左侧点哪一类就只看哪一类，直接点 tab 时回到全部。 */
+  const [queueFilter, setQueueFilter] = useState<
+    "all" | "unclassified" | "unextracted" | "trace_failed">("all");
   const [trackFilter, setTrackFilter] = useState<"actionable" | "discovery">("actionable");
   /** 时间轮次条选中的那一轮；选了就只看它新增的。 */
   const [pickedScan, setPickedScan] = useState<string>("");
   const scans = useOpportunityScans();
   const queues = useOpportunityQueues();
   const [panelOpen, setPanelOpen] = useState(false);
+  /** 点了确认之后，按钮要一直停在「正在中止」，直到扫描行自己离开 running。 */
+  const [stopping, setStopping] = useState(false);
   /** 顶栏的 展开卡片 / 收起卡片：一次落到每一张卡上。卡片自己的展开是**不受控**的
    *  （读者拥有它），所以批量动作给卡片换一个 key 重挂，而不是去接管那个状态 —— 与雷达、
    *  收藏页同一条做法（`Card.tsx` 的 `openAll` / `bulkTick`）。 */
@@ -509,7 +547,22 @@ export function OpportunityView() {
       : 0,
     archived: items.filter((item) => item.track === trackFilter && item.user_state === "archived").length,
     deleted: items.filter((item) => item.track === trackFilter && item.user_state === "deleted").length,
-    queues: (queues.data?.unclassified.count ?? 0) + (queues.data?.unextracted.count ?? 0),
+    // 三堆都是「排队中」这一页的内容，标签上的数也必须是三堆之和。
+    queues: (queues.data?.unclassified.count ?? 0) + (queues.data?.unextracted.count ?? 0)
+      + (queues.data?.trace_failed.count ?? 0),
+  };
+
+  /** 排队中的三项不是筛选值，是三段列表的入口：只列非零项，点了切过去并滚到那一段。 */
+  const queueRows = ([
+    ["unclassified", "未分组", queues.data?.unclassified.count ?? 0],
+    ["unextracted", "未抽取", queues.data?.unextracted.count ?? 0],
+    ["trace_failed", "溯源失败", queues.data?.trace_failed.count ?? 0],
+  ] as const).filter(([key, , count]) => count > 0 || queueFilter === key);
+
+  const openQueue = (key: "unclassified" | "unextracted" | "trace_failed") => {
+    setQueueFilter(key);
+    setTab("queues");
+    setPickedScan("");
   };
 
   /** 生态面板只列当前视野里真有卡片的链。状态 / 分栏 / 搜索已经筛掉的东西，不该还留着一个
@@ -599,6 +652,12 @@ export function OpportunityView() {
     });
   };
 
+  useEffect(() => {
+    if (data?.scan?.status !== "running") {
+      setStopping(false);
+    }
+  }, [data?.scan?.status]);
+
   return (
     <div id="view-opportunity">
       <header className="topbar">
@@ -665,20 +724,16 @@ export function OpportunityView() {
               </button>
             </>
           )}
-          {/* 中止只在真的能中止时出现：它停在下一次 X 调用上，而不是等这一次调用回来。 */}
-          {running ? (
-            <button type="button" className="btn sec" disabled={stopScan.isPending}
-              onClick={() => stopScan.mutate(data?.scan?.id ?? "", {
-                onError: (exc) => setError(errorText(exc)),
-              })}>
-              <Icon as={Ban} size={14} />
-              中止
-            </button>
-          ) : null}
         </div>
       </header>
 
-      <ScanPanel scan={data?.scan} open={panelOpen} form={form} />
+      <ScanPanel scan={data?.scan} open={panelOpen} form={form} stopping={stopping}
+                 onCancel={() => {
+                   setStopping(true);
+                   stopScan.mutate(data?.scan?.id ?? "", {
+                     onError: (exc) => { setStopping(false); setError(errorText(exc)); },
+                   });
+                 }} />
 
       {error ? (
         <div className="note-bar bad">
@@ -712,7 +767,11 @@ export function OpportunityView() {
              ["deleted", "删除"], ["queues", "排队中"]] as const).map(([key, label]) => (
             <span key={key}
               className={"tab" + (!pickedScan && tab === key ? " on" : "")}
-              onClick={() => { setTab(key); setPickedScan(""); }}>
+              onClick={() => {
+                setTab(key);
+                setPickedScan("");
+                if (key === "queues") setQueueFilter("all");
+              }}>
               {label} {tabCounts[key]}
             </span>
           ))}
@@ -770,6 +829,21 @@ export function OpportunityView() {
               </div>
             </Fragment>
           ))}
+          {queueRows.length ? (
+            <>
+              <h4 className="look-h">队列</h4>
+              <div className="fav-opts">
+                {queueRows.map(([key, label, count]) => (
+                  <div key={key}
+                       className={"fav-opt" + (tab === "queues" && queueFilter === key ? " on" : "")}
+                       onClick={() => openQueue(key)}>
+                    {label}
+                    <span className="opp-opt-count">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
           <h4 className="look-h">排序</h4>
           <div className="fav-opts">
             {sorts.map((option) => (
@@ -813,10 +887,13 @@ export function OpportunityView() {
               {([
                 ["unclassified", "未分组", "抓到了，还没交给模型分组"],
                 ["unextracted", "未抽取", "已经分组，还没排到抽取（每轮有限额）"],
-              ] as const).map(([key, title, lead]) => {
+                ["trace_failed", "溯源失败", "没找到官方来源，进了未晋升池"],
+              ] as const)
+                .filter(([key]) => queueFilter === "all" || queueFilter === key)
+                .map(([key, title, lead]) => {
                 const pile = queues.data?.[key];
                 return (
-                  <div className="opp-pile" key={key}>
+                  <div className="opp-pile" id={"queue-" + key} key={key}>
                     <h4 className="opp-list-title">
                       {title}（{pile?.count ?? 0}）
                       <span className="opp-hint">{lead}</span>
@@ -835,12 +912,6 @@ export function OpportunityView() {
                   </div>
                 );
               })}
-              <div className="opp-pile">
-                <h4 className="opp-list-title">
-                  溯源失败（{queues.data?.trace_failed.count ?? 0}）
-                  <span className="opp-hint">没找到官方来源，进了未晋升池</span>
-                </h4>
-              </div>
             </div>
           ) : shown.length ? (
             <div className="grid">
@@ -855,23 +926,6 @@ export function OpportunityView() {
               {items.length ? "没有符合当前筛选的条目。" : form.empty}
             </div>
           )}
-          {/* 「分析中」在「全部」的末尾：排队中的东西信息量与卡片差一个量级，混排会让
-              列表忽长忽短，所以它是一行摘要 + 一个折叠区。 */}
-          {tab === "all" && !pickedScan ? (
-            <details className="opp-fold">
-              <summary>
-                <Icon as={Inbox} size={12} />
-                分析中（{(queues.data?.unclassified.count ?? 0)
-                  + (queues.data?.unextracted.count ?? 0)}）
-              </summary>
-              <p className="opp-hint">
-                已抓到、还没走完分析：未分组 {queues.data?.unclassified.count ?? 0} ·
-                未抽取 {queues.data?.unextracted.count ?? 0} ·
-                溯源失败 {queues.data?.trace_failed.count ?? 0}。
-                切到「排队中」看分数最高的那几条。
-              </p>
-            </details>
-          ) : null}
         </section>
       </div>
 
