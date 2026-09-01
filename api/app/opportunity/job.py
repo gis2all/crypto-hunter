@@ -1,4 +1,4 @@
-"""One scan: the five stages, the row the page polls while they run, and the flag that stops it.
+"""One scan: the seven stages, the row the page polls while they run, and the flag that stops it.
 
 A scan is not a round. It belongs to no chain, no set of settings and no report library, so it
 does not touch `runs` and does not queue behind one - the same argument `lookup.py` makes for its
