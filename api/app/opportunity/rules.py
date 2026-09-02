@@ -196,7 +196,7 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
     score = 0
     hits: list[dict] = []
     level = ""
-    tracks: list[str] = []
+    qualified = 0
     for rule in definition.get("rules") or []:
         if not rule.get("enabled", True):
             continue
@@ -218,8 +218,8 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
         if effect.get("action") == "exclude":
             return {"pass": False, "score": 0, "level": "", "excluded": True, "hits": hits}
         score += int(effect.get("score") or 0)
-        if effect.get("qualify") and rule.get("track"):
-            tracks.append(str(rule["track"]))
+        if effect.get("qualify"):
+            qualified += 1
         if effect.get("level"):
             level = str(effect["level"])
     if not level:
@@ -228,8 +228,5 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
             if score >= int(band.get("min_score") or 0):
                 level = str(band.get("id"))
                 break
-    track = ("actionable" if "actionable" in tracks
-             else "discovery" if "discovery" in tracks else "")
-    return {"pass": bool(tracks) and score >= threshold,
-            "score": score, "level": level, "excluded": False, "hits": hits,
-            "track": track}
+    return {"pass": qualified > 0 and score >= threshold,
+            "score": score, "level": level, "excluded": False, "hits": hits}

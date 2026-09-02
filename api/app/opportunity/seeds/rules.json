@@ -529,7 +529,6 @@
       "name": "通用动作短语",
       "enabled": true,
       "operator": "AND",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -586,7 +585,6 @@
       "enabled": true,
       "operator": "AND",
       "family": "network",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -659,7 +657,6 @@
       "enabled": true,
       "operator": "AND",
       "family": "capital",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -732,7 +729,6 @@
       "enabled": true,
       "operator": "AND",
       "family": "usage",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -770,7 +766,6 @@
       "enabled": true,
       "operator": "AND",
       "family": "issuance",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -813,7 +808,6 @@
       "enabled": true,
       "operator": "AND",
       "family": "governance",
-      "track": "actionable",
       "conditions": [
         {
           "type": "text_word_any",
@@ -845,7 +839,6 @@
       "name": "新东西描述",
       "enabled": true,
       "operator": "AND",
-      "track": "discovery",
       "conditions": [
         {
           "type": "text_word_any",
