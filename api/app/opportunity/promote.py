@@ -23,6 +23,7 @@ REASONS = {
     "vague": "材料没说清（这是什么 / 怎么做）",
     "no_official_source": "未找到官方来源（溯源 C 级）",
     "deadline_passed": "材料写的截止时间已过",
+    "offchain": "不在链上（交易所活动或非加密内容）",
 }
 
 PROMOTED = "promoted"

@@ -67,6 +67,11 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     # stage's job, after the card (and its own title) exists.
     fallback = probe.from_pages([page["text"] for page in _pages_of(material)])
     for entry in entries:
+        slug = slug_for(entry)
+        # 归档 / 删除的卡是读者冻结的：同一项目再有新材料也不覆盖它。
+        if db.opportunity_state_of(slug) not in (None, "active"):
+            counters["frozen"] += 1
+            continue
         status, reason = promote.verdict(entry)
         how_official, basis = trust.verdict(entry, material, source)
         # 溯源的结果优先于 trust 自己的判断：A 级是"官网与官方号互证"，比"来自官方号"
@@ -78,9 +83,8 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
         elif trace_level == "C":
             status, reason = "candidate", "no_official_source"
         row = {
-            "slug": slug_for(entry),
+            "slug": slug,
             "kind": entry.kind,
-            "track": material.get("track") or "actionable",
             "category": entry.category,
             "title": entry.title,
             "organizer": entry.organizer,
@@ -125,7 +129,8 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
 
 def run(limit: int | None = None, tell=None) -> dict:
     """Read, judge and store. Model calls overlap; the coordinator owns every write."""
-    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0}
+    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
+                "frozen": 0}
     # 一张卡 = 一个主题（user, 2026-10-19）：同一项目的多条帖合成一份材料，官方页附在后面。
     materials = topics.materials(
         limit=limit or settings.value("extract_per_scan", MAX_EXTRACT))

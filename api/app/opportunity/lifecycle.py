@@ -71,6 +71,9 @@ def sweep(*, now: datetime | None = None) -> dict:
     """
     retired: list[str] = []
     for item in db.opportunity_items(status="promoted"):
+        if item.get("user_state") != "active":
+            # 归档 / 删除的卡已经被读者冻结，管线不再改写它的状态。
+            continue
         if passed(item.get("deadline"), now=now):
             db.opportunity_retire(item["slug"], "deadline_passed")
             retired.append(item["slug"])

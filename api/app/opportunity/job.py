@@ -6,7 +6,7 @@ own worker, and the reason this module carries its own single thread rather than
 scheduler's. The two can overlap, which is what the per-host pacers and this module's own X
 throttle are for.
 
-Six stages, and they are the pipeline's own vocabulary: read the watchlist, gather material, group
+Seven stages, and they are the pipeline's own vocabulary: read the watchlist, gather material, group
 it into project candidates, trace their official homes, extract and store, then sweep (retire what
 the material said was over, and recompute heat). The page draws them from the scan row it is
 polling, so a scan that dies on the third stage keeps the first two stages' readings and says where

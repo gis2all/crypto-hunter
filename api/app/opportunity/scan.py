@@ -130,14 +130,13 @@ def post_row(tweet, source_target: str, scan_id: str, verdict: dict | None = Non
         "urls": list(getattr(tweet, "urls", ()) or ()),
         "score": None if verdict is None else verdict.get("score"),
         "rules_json": None if verdict is None else _rules_json(verdict),
-        "track": "actionable" if verdict is None else (verdict.get("track") or "actionable"),
     }
 
 
 def _rules_json(verdict: dict) -> str:
     import json
     return json.dumps({"level": verdict.get("level"), "excluded": verdict.get("excluded"),
-                       "track": verdict.get("track"), "hits": verdict.get("hits") or []},
+                       "hits": verdict.get("hits") or []},
                       ensure_ascii=False)
 
 

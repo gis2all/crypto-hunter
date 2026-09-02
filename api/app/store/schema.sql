@@ -287,7 +287,7 @@ CREATE TABLE IF NOT EXISTS opportunity_posts (
   source_target   TEXT,                     -- which watchlist row found it
   first_seen_scan TEXT,
   classified      TEXT,                     -- activity | project | opinion | news | other | skipped
-  track           TEXT NOT NULL DEFAULT 'actionable',  -- actionable | discovery
+  track           TEXT NOT NULL DEFAULT 'actionable',  -- legacy: 2026-10-24 起不再写入
   classified_at   TEXT,
   extracted_at    TEXT                      -- when the expensive pass last read it (NULL = not yet)
 );
@@ -301,7 +301,7 @@ CREATE TABLE IF NOT EXISTS opportunity_posts (
 CREATE TABLE IF NOT EXISTS opportunities (
   slug            TEXT PRIMARY KEY,
   kind            TEXT NOT NULL,            -- activity | project
-  track           TEXT NOT NULL DEFAULT 'actionable',  -- actionable | discovery
+  track           TEXT NOT NULL DEFAULT 'actionable',  -- legacy: 2026-10-24 起不再写入
   category        TEXT,                     -- 打新 / 挖矿 / ... or 新协议 / 新实验 / ...
   title           TEXT NOT NULL,
   organizer       TEXT,                     -- the official handle, when the material names one

@@ -850,14 +850,13 @@ def opportunity_post_put(row: dict) -> bool:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO opportunity_posts"
             " (tweet_id, handle, author_name, text, lang, metrics_json, score, rules_json,"
-            "  urls_json, posted_at, url, source_target, first_seen_scan, track)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  urls_json, posted_at, url, source_target, first_seen_scan)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (row["tweet_id"], row["handle"], row.get("author_name"), row["text"], row.get("lang"),
              json.dumps(row.get("metrics") or {}, ensure_ascii=False), row.get("score"),
              row.get("rules_json"), json.dumps(list(row.get("urls") or []), ensure_ascii=False),
              row.get("posted_at"), row.get("url"),
-             row.get("source_target"), row.get("first_seen_scan"),
-             row.get("track") or "actionable"),
+             row.get("source_target"), row.get("first_seen_scan")),
         )
         return bool(cursor.rowcount)
     finally:
@@ -968,7 +967,7 @@ def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[di
             rows = conn.execute(
                 "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
                 " posted_at AS at, url, source_target, metrics_json, score, trace_level,"
-                " trace_json, track FROM opportunity_posts"
+                " trace_json FROM opportunity_posts"
                 # 按免费闸的分排序，不按时间：每轮只问 60 条，按时间排会让**旧的但高分**的帖子
                 # 永远排不上（2026-10-19 实测：重建后 DarkHorse 的两条高分帖被饿死，用户发现
                 # "之前发现过、现在看不到"）。闸已经给每条打过分，这 60 个名额应该花在最好的上面。
@@ -978,7 +977,7 @@ def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[di
             rows = conn.execute(
                 "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
                 " posted_at AS at, url, source_target, metrics_json, project_name,"
-                " trace_level, trace_json, track"
+                " trace_level, trace_json"
                 " FROM opportunity_posts"
                 " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
                 " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
@@ -1028,13 +1027,13 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
     try:
         conn.execute("BEGIN")
         conn.execute(
-            "INSERT INTO opportunities (slug, kind, track, category, title, organizer, official_url,"
+            "INSERT INTO opportunities (slug, kind, category, title, organizer, official_url,"
             " summary, trust, trust_basis, ecosystem, source_type, risk, barrier, maturity,"
             " started_at, deadline, status, reason, heat, heat_basis, discovered_at, source_kind,"
             " source_ref, extract_version, novelty, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(slug) DO UPDATE SET"
-            " kind = excluded.kind, track = excluded.track, category = excluded.category, title = excluded.title,"
+            " kind = excluded.kind, category = excluded.category, title = excluded.title,"
             " organizer = excluded.organizer, official_url = excluded.official_url,"
             " summary = excluded.summary, trust = excluded.trust,"
             " trust_basis = excluded.trust_basis, ecosystem = excluded.ecosystem,"
@@ -1047,8 +1046,7 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
             " extract_version = excluded.extract_version, novelty = excluded.novelty,"
             " ecosystem_checked_at = NULL,"
             " updated_at = excluded.updated_at",
-            (entry["slug"], entry["kind"], entry.get("track") or "actionable",
-             entry.get("category"), entry["title"], entry.get("organizer"),
+            (entry["slug"], entry["kind"], entry.get("category"), entry["title"], entry.get("organizer"),
              entry.get("official_url"), entry.get("summary"),
              entry.get("trust") or "unjudged", entry.get("trust_basis"),
              entry.get("ecosystem"), entry.get("source_type"), entry.get("risk"),
@@ -1124,7 +1122,7 @@ def opportunity_unjudged() -> list[dict]:
             " FROM opportunities o"
             " LEFT JOIN opportunity_posts p ON p.url = o.source_ref"
             " WHERE o.ecosystem = '未判定' AND o.ecosystem_checked_at IS NULL"
-            "   AND o.status != 'retired'"
+            "   AND o.status != 'retired' AND o.user_state = 'active'"
             " ORDER BY o.discovered_at DESC").fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -1281,6 +1279,17 @@ def opportunity_set_heat(slug: str, value: float | None, basis: str | None) -> N
         conn.close()
 
 
+def opportunity_state_of(slug: str) -> str | None:
+    """The reader's own state for one card: active / archived / deleted, or None if absent."""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT user_state FROM opportunities WHERE slug = ?", (slug,)).fetchone()
+        return str(row["user_state"]) if row else None
+    finally:
+        conn.close()
+
+
 def opportunity_item(slug: str) -> dict | None:
     conn = connect()
     try:
@@ -1302,8 +1311,6 @@ def opportunity_counts() -> dict[str, int]:
     try:
         rows = conn.execute(
             "SELECT status, kind, count(*) AS n FROM opportunities GROUP BY status, kind").fetchall()
-        tracks = conn.execute(
-            "SELECT track, count(*) AS n FROM opportunities GROUP BY track").fetchall()
         posts = conn.execute("SELECT count(*) AS n FROM opportunity_posts").fetchone()
         sources = conn.execute(
             "SELECT count(*) AS n FROM opportunity_sources WHERE enabled = 1").fetchone()
@@ -1312,8 +1319,6 @@ def opportunity_counts() -> dict[str, int]:
     out = {"posts": posts["n"], "sources": sources["n"]}
     for row in rows:
         out["%s:%s" % (row["status"], row["kind"])] = row["n"]
-    for row in tracks:
-        out["track:%s" % (row["track"] or "actionable")] = row["n"]
     return out
 
 
@@ -1334,7 +1339,7 @@ def opportunity_scans(limit: int = 20) -> list[dict]:
     return out
 
 
-def opportunity_queues(limit: int = 6) -> dict:
+def opportunity_queues(limit: int = 6, scan: str | None = None) -> dict:
     """What is still waiting, in three piles: not classified, classified but not extracted, and
     leads whose trace found no official home.
 
@@ -1345,28 +1350,34 @@ def opportunity_queues(limit: int = 6) -> dict:
     # `limit <= 0` means "the whole pile": the queue is a list a reader browses, and a sample of
     # it is only ever a teaser. SQLite reads LIMIT -1 as no limit.
     cap = -1 if int(limit or 0) <= 0 else int(limit)
+    # 一条帖子属于采集它的那一轮；`scan` 给出时三堆都只看那一轮抓到的。
+    extra = " AND first_seen_scan = ?" if scan else ""
+    one = (scan,) if scan else ()
     conn = connect()
     try:
         waiting = conn.execute(
-            "SELECT count(*) AS n FROM opportunity_posts WHERE classified IS NULL").fetchone()["n"]
+            "SELECT count(*) AS n FROM opportunity_posts WHERE classified IS NULL" + extra,
+            one).fetchone()["n"]
         top_waiting = conn.execute(
             "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score"
-            " FROM opportunity_posts WHERE classified IS NULL"
-            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
+            " FROM opportunity_posts WHERE classified IS NULL" + extra +
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (*one, cap)).fetchall()
         pending = conn.execute(
             "SELECT count(*) AS n FROM opportunity_posts"
-            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL").fetchone()["n"]
+            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
+            + extra, one).fetchone()["n"]
         top_pending = conn.execute(
             "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score, project_name"
             " FROM opportunity_posts"
-            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
-            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
+            " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL" + extra +
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (*one, cap)).fetchall()
         failed = conn.execute(
-            "SELECT count(*) AS n FROM opportunity_posts WHERE trace_level = 'C'").fetchone()["n"]
+            "SELECT count(*) AS n FROM opportunity_posts WHERE trace_level = 'C'"
+            + extra, one).fetchone()["n"]
         top_failed = conn.execute(
             "SELECT tweet_id AS ref, handle, text, COALESCE(score, 0) AS score, project_name"
-            " FROM opportunity_posts WHERE trace_level = 'C'"
-            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (cap,)).fetchall()
+            " FROM opportunity_posts WHERE trace_level = 'C'" + extra +
+            " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (*one, cap)).fetchall()
     finally:
         conn.close()
     return {
