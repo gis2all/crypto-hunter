@@ -632,7 +632,6 @@ class OpportunityItemOut(BaseModel):
 
     slug: str
     kind: str
-    track: str = "actionable"
     category: str | None = None
     title: str
     organizer: str | None = None
@@ -785,5 +784,5 @@ class OpportunityListOut(BaseModel):
     #: which sort keys are offered. The frontend renders them without recognising any of them.
     filters: list[OpportunityFilterOut] = []
     sorts: list[OpportunitySortOut] = []
-    #: The page's own copy - 口径、两个列表的标题与空态、trust 的说法、未晋升池的说明。
+    #: The page's own copy - 口径、watchlist 说明、空态与 trust 的说法。
     form: dict = {}

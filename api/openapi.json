@@ -1640,6 +1640,24 @@
        "default": 6,
        "title": "Limit"
       }
+     },
+     {
+      "name": "scan",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "只看这一轮抓到的帖子",
+       "title": "Scan"
+      },
+      "description": "只看这一轮抓到的帖子"
      }
     ],
     "responses": {
@@ -3919,11 +3937,6 @@
      "kind": {
       "type": "string",
       "title": "Kind"
-     },
-     "track": {
-      "type": "string",
-      "title": "Track",
-      "default": "actionable"
      },
      "category": {
       "anyOf": [

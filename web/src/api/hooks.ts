@@ -312,10 +312,11 @@ export function useOpportunityScans() {
   return useQuery({ queryKey: ["opportunity", "scans"], queryFn: () => api.listOpportunityScans() });
 }
 
-export function useOpportunityQueues() {
+export function useOpportunityQueues(scan?: string) {
   return useQuery({
-    queryKey: ["opportunity", "queues"],
-    queryFn: api.getOpportunityQueues,
+    // 轮次进 key：换一轮要重新取，不能拿全局那一份当这一轮的。
+    queryKey: ["opportunity", "queues", scan ?? ""],
+    queryFn: () => api.getOpportunityQueues(scan),
     refetchInterval: 60_000,
   });
 }

@@ -749,7 +749,7 @@ def opportunity_sorts() -> list[dict]:
 
 
 def opportunity_form() -> dict:
-    """The 新机会 page's own copy: what the page is, what the two lists mean, and the空态.
+    """The 新机会 page's own copy: what the page is, its trust words, and the空态.
 
     Same rule as the settings page: the explanatory sentences live here and the frontend prints
     them without recognising any of them. Button labels stay on the page, the way the CA search

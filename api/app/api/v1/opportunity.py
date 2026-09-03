@@ -1,7 +1,7 @@
 """新机会：外部发现的读与跑。
 
-四个端点，两读两写：一次读给出页面要的全部（条目、计数、最近一次扫描、页面文案），
-watchlist 单独读，扫描可以启动并按 id 轮询。
+这组端点分成读取与写入：一次读给出页面要的全部（条目、计数、最近一次扫描、页面文案），
+watchlist 单独读；扫描可以启动、按 id 轮询与中止，另有队列、设定和条目状态。
 
 扫描是一个可轮询的 job（`opportunity/job.py`），不是一轮：它不写 `runs`，不属于任何链、
 任何设定与任何报告库。这一点与 CA 搜索同源（`api/v1/lookup.py`），也是为什么它的行住在
@@ -37,8 +37,7 @@ def _item(row: dict) -> OpportunityItemOut:
     """
     barrier = [name for name in str(row.get("barrier") or "").split(",") if name]
     return OpportunityItemOut(
-        slug=row["slug"], kind=row["kind"], track=row.get("track") or "actionable",
-        category=row.get("category"), title=row["title"],
+        slug=row["slug"], kind=row["kind"], category=row.get("category"), title=row["title"],
         organizer=row.get("organizer"), official_url=row.get("official_url"),
         summary=row.get("summary"), trust=row.get("trust") or "unjudged",
         trust_basis=row.get("trust_basis"), ecosystem=row.get("ecosystem"),
@@ -107,9 +106,10 @@ def list_scans(limit: int = Query(20, ge=1, le=200)) -> list[dict]:
 
 
 @router.get("/queues")
-def read_queues(limit: int = Query(6, ge=0, le=2000)) -> dict:
+def read_queues(limit: int = Query(6, ge=0, le=2000),
+                scan: str | None = Query(None, description="只看这一轮抓到的帖子")) -> dict:
     """What is still waiting: 未分组 / 未抽取 / 溯源失败，各带条数与分数最高的几条。"""
-    return db.opportunity_queues(limit=limit)
+    return db.opportunity_queues(limit=limit, scan=scan)
 
 
 @router.patch("/items/{slug}", response_model=OpportunityItemOut)

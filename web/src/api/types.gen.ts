@@ -1670,11 +1670,6 @@ export interface components {
             slug: string;
             /** Kind */
             kind: string;
-            /**
-             * Track
-             * @default actionable
-             */
-            track: string;
             /** Category */
             category?: string | null;
             /** Title */
@@ -3410,6 +3405,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description 只看这一轮抓到的帖子 */
+                scan?: string | null;
             };
             header?: never;
             path?: never;

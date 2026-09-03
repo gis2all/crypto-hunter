@@ -312,7 +312,7 @@ export const listOpportunityScans = (limit = 20) =>
   request<OpportunityScanRow[]>("/opportunity/scans?limit=" + limit);
 
 /** 还在排队的东西：未分组 / 未抽取 / 溯源失败。 */
-export const getOpportunityQueues = () =>
+export const getOpportunityQueues = (scan?: string) =>
   request<{
     unclassified: { count: number; top: { ref: string; handle: string; text: string; score: number }[] };
     unextracted: {
@@ -323,7 +323,7 @@ export const getOpportunityQueues = () =>
       count: number;
       top: { ref: string; handle: string; text: string; score: number; project_name?: string | null }[];
     };
-  }>("/opportunity/queues?limit=0");
+  }>("/opportunity/queues?limit=0" + (scan ? "&scan=" + encodeURIComponent(scan) : ""));
 
 /** 归档 / 删除 / 恢复 one entry. The page's only write, and it is the reader's own. */
 export const setOpportunityState = (slug: string, userState: string) =>
