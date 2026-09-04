@@ -22,6 +22,8 @@ import {
   Pause,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
   ExternalLink,
@@ -30,6 +32,7 @@ import {
   ListChecks,
   LoaderCircle,
   Play,
+  RotateCw,
   Save,
   SlidersHorizontal,
   Trash2,
@@ -118,6 +121,16 @@ function stamp(value: string | null | undefined): string {
     return "—";
   }
   return value.slice(0, 16).replace("T", " ");
+}
+
+/** 卡片时间行的那一版：今年的日期省掉年份，只留 `MM-DD HH:mm`，三个时间才放得进一行。 */
+function shortStamp(value: string | null | undefined): string {
+  const text = stamp(value);
+  if (text === "—") {
+    return "";
+  }
+  const year = String(new Date().getFullYear());
+  return text.startsWith(year + "-") ? text.slice(5) : text;
 }
 
 /** A stage under half a second is real work, not zero: show it as <1s instead of 0:00. */
@@ -335,7 +348,9 @@ function Body({ item, full }: { item: OpportunityItem; full: boolean }) {
   }, [item.slug, full]);
 
   return (
-    <div className={"opp-body-wrap" + (expanded ? " full" : "") + (cut && !expanded ? " cut" : "")}>
+    <div className={"opp-body-wrap" + (expanded ? " full" : "")
+      + (expanded && !full ? " single" : "")
+      + (cut && !expanded ? " cut" : "")}>
       <div className="opp-body" ref={box}>
         {item.summary ? <p className="opp-sum">{item.summary}</p> : null}
         {item.steps.length ? (
@@ -345,8 +360,9 @@ function Body({ item, full }: { item: OpportunityItem; full: boolean }) {
                 <b>{step.title || `步骤 ${step.ordinal + 1}`}</b>
                 <span>{step.body}</span>
                 {step.source_url ? (
-                  <a href={step.source_url} target="_blank" rel="noreferrer">
-                    来源 <Icon as={ExternalLink} size={12} />
+                  <a className="opp-step-src" href={step.source_url} target="_blank"
+                     rel="noreferrer" title="这一步的来源" aria-label="步骤来源">
+                    <Icon as={ExternalLink} size={12} />
                   </a>
                 ) : null}
               </li>
@@ -376,6 +392,15 @@ function EntryCard({ item, trust, full, onState }: {
   onState: (slug: string, state: string) => void;
 }) {
   const badge = trust[item.trust] ?? { label: item.trust, tone: "muted" };
+  const handle = (item.organizer || "").replace(/^@/, "");
+  // 类目与新机制常常是同一个词（新协议 / 新协议），一条事实只画一次。
+  const chips = [...new Set([
+    item.category,
+    item.maturity,
+    item.novelty ? (NOVELTY_LABELS[item.novelty] ?? item.novelty) : "",
+    // 没有抽到动作的卡只能看，不能做：它是一个读数，不该和「可参与」混在一起看不出来。
+    item.steps.length ? "" : "仅观察",
+  ].filter(Boolean))];
   return (
     <article className="card opp-card">
       {/* Two lines, always: the name and its chips, then everything that is a reading about
@@ -388,11 +413,9 @@ function EntryCard({ item, trust, full, onState }: {
         {/* 分类与成熟度是**标签**，所以它们要待在 `.chips` 里：`display:inline-flex` 与居中
             只写在 `.chips .chip` 上（proto.css），裸着放会落回 26px、`line-height:1` 的
             那个版本 —— 文字顶在框顶，看着像一个空盒子（user, 2026-10-18）。 */}
-        {item.category || item.maturity ? (
+        {chips.length ? (
           <span className="srow-v chips">
-            {item.category ? <span className="chip">{item.category}</span> : null}
-            {item.maturity ? <span className="chip">{item.maturity}</span> : null}
-            {item.novelty ? <span className="chip">{NOVELTY_LABELS[item.novelty] ?? item.novelty}</span> : null}
+            {chips.map((name) => <span className="chip" key={name}>{name}</span>)}
           </span>
         ) : null}
       </div>
@@ -409,20 +432,32 @@ function EntryCard({ item, trust, full, onState }: {
             {badge.label}
           </span>
         </span>
-        {item.organizer ? <span>@{item.organizer}</span> : null}
+        {handle ? (
+          <a href={"https://x.com/" + handle} target="_blank" rel="noreferrer">@{handle}</a>
+        ) : null}
         {item.official_url ? (
           <a href={item.official_url} target="_blank" rel="noreferrer">
             官方入口 <Icon as={ExternalLink} size={12} />
           </a>
         ) : null}
-        <span>发现 {stamp(item.discovered_at)}</span>
-        {item.started_at ? <span>开始 {item.started_at}</span> : null}
-        <span>{item.deadline ? "截止 " + item.deadline : "截止 未公布"}</span>
       </div>
+      {/* 时间单独一行：发现 / 开始 / 截止是同一种读数，不该和账号、入口挤在一起。 */}
+      <div className="opp-time">
+        <span>发现 {shortStamp(item.discovered_at)}</span>
+        {item.started_at ? <span>开始 {shortStamp(item.started_at)}</span> : null}
+        <span>{item.deadline ? "截止 " + shortStamp(item.deadline) : "截止 未公布"}</span>
+      </div>
+      {/* 为什么它不在列表上：这是状态，跟时间放在一起，不跟动作挤在页脚。 */}
+      {item.status !== "promoted" && item.reason ? (
+        <p className="opp-state">
+          {item.status === "retired" ? "已结束" : "未晋升"} · {item.reason}
+        </p>
+      ) : null}
       <Body item={item} full={full} />
       {/* 门槛行**永远在**：抽不到门槛是「未判定」——那是这个模块自己的一个读数（与热度的
           未判定同一套说法），不是"这一条没有门槛"。它同时让折叠态的卡片少一处高度差。 */}
-      <div className="srow-v chips" title={item.barrier.join(" · ")}>
+      <div className={(item.barrier.length ? "srow-v chips" : "opp-barrier-empty") + " opp-barrier"}
+           title={item.barrier.join(" · ")}>
         {item.barrier.length ? (
           <>
             {item.barrier.slice(0, 2).map((name) => (
@@ -433,31 +468,35 @@ function EntryCard({ item, trust, full, onState }: {
             ) : null}
           </>
         ) : (
-          <span className="chip">门槛 未判定</span>
+          <span>门槛 未判定</span>
         )}
       </div>
-      {/* 不在列表上的条目自己说明为什么：未晋升的原因、或已结束的原因。 */}
-      {item.status !== "promoted" && item.reason ? (
-        <p className="opp-reason">{item.reason}</p>
-      ) : null}
       <div className="opp-foot">
-        <span>{item.trust_basis}</span>
         {item.source_ref ? (
-          <a href={item.source_ref} target="_blank" rel="noreferrer">原文</a>
+          <a href={item.source_ref} target="_blank" rel="noreferrer">
+            原文 <Icon as={ExternalLink} size={12} />
+          </a>
         ) : null}
-        {item.extract_version ? <span>{item.extract_version}</span> : null}
         {/* 这一页唯一的写动作，而且是读者自己的：归档＝知道但不优先，删除＝不想要（软删，
             行与证据都留着）。它不动管线那半 —— 卡片照样说清"为什么它不在列表上"。 */}
         <span className="opp-acts">
-          <button type="button"
-            title={item.user_state === "archived" ? "取消归档" : "归档（知道但不优先，留在归档里）"}
-            onClick={() => onState(item.slug, item.user_state === "archived" ? "active" : "archived")}>
-            <Icon as={Archive} size={12} />
-          </button>
-          <button type="button" title="删除（软删，可从已删除恢复）"
-            onClick={() => onState(item.slug, "deleted")}>
-            <Icon as={Trash2} size={12} />
-          </button>
+          {item.user_state === "active" ? (
+            <>
+              <button type="button" title="归档（知道但不优先，管线不再更新它）"
+                onClick={() => onState(item.slug, "archived")}>
+                <Icon as={Archive} size={12} />
+              </button>
+              <button type="button" title="删除（软删，管线不再更新它）"
+                onClick={() => onState(item.slug, "deleted")}>
+                <Icon as={Trash2} size={12} />
+              </button>
+            </>
+          ) : (
+            <button type="button" title="恢复（回到列表，重新纳入调查）"
+              onClick={() => onState(item.slug, "active")}>
+              <Icon as={RotateCw} size={12} />
+            </button>
+          )}
         </span>
       </div>
     </article>
@@ -476,28 +515,25 @@ export function OpportunityView() {
     () => readPref(VIEW_KEY) === "settings" ? "settings" : "report",
   );
   useEffect(() => { savePref(VIEW_KEY, view); }, [view]);
-  /** 列表 tab：全部（除归档/删除之外的一切）· 本轮 · 归档 · 删除 · 排队中。 */
-  const [tab, setTab] = useState<"all" | "round" | "archived" | "deleted" | "queues">("all");
-  /** 排队中这一页的三段：左侧点哪一类就只看哪一类，直接点 tab 时回到全部。 */
+  /** 列表状态：全部（未处理）· 归档 · 删除 · 排队中。 */
+  const [tab, setTab] = useState<"all" | "archived" | "deleted" | "queues">("all");
+  /** 排队中这一页的三段：左侧点哪一类就只看哪一类；切换筛选或已处理分组时回到列表。 */
   const [queueFilter, setQueueFilter] = useState<
     "all" | "unclassified" | "unextracted" | "trace_failed">("all");
-  const [trackFilter, setTrackFilter] = useState<"actionable" | "discovery">("actionable");
   /** 时间轮次条选中的那一轮；选了就只看它新增的。 */
   const [pickedScan, setPickedScan] = useState<string>("");
   const scans = useOpportunityScans();
-  const queues = useOpportunityQueues();
+  const queues = useOpportunityQueues(pickedScan || undefined);
   const [panelOpen, setPanelOpen] = useState(false);
-  /** 点了确认之后，按钮要一直停在「正在中止」，直到扫描行自己离开 running。 */
-  const [stopping, setStopping] = useState(false);
   /** 顶栏的 展开卡片 / 收起卡片：一次落到每一张卡上。卡片自己的展开是**不受控**的
-   *  （读者拥有它），所以批量动作给卡片换一个 key 重挂，而不是去接管那个状态 —— 与雷达、
-   *  收藏页同一条做法（`Card.tsx` 的 `openAll` / `bulkTick`）。 */
+   *  （读者拥有它），所以批量动作给卡片换一个 key 重挂，而不是去接管那个状态。 */
   const [openAll, setOpenAll] = useState(false);
   const [bulkTick, setBulkTick] = useState(0);
+  /** 点了确认之后，按钮要一直停在「正在中止」，直到扫描行自己离开 running。 */
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
-  /** One value per filter group, `""` meaning 全部. 状态 opens on 可参与: the list is what the
-   *  page is for, and the pool behind it is one click away. */
-  const [picked, setPicked] = useState<Record<string, string>>({ status: "promoted" });
+  /** One value per filter group, `""` meaning 全部. 刷新后一律从「全部」开始。 */
+  const [picked, setPicked] = useState<Record<string, string>>({});
   const [sortKey, setSortKey] = useState("discovered");
   const [dir, setDir] = useState("desc");
   const [search, setSearch] = useState("");
@@ -513,44 +549,67 @@ export function OpportunityView() {
   const value = (key: string) => picked[key] ?? "";
 
   const scanRows = scans.data ?? [];
-  const latest = scanRows[0];
+  // stepper 的游标：没选轮次时停在最新一轮，选了就跟着 pickedScan 走。
+  const scanIndex = pickedScan
+    ? Math.max(0, scanRows.findIndex((row) => row.id === pickedScan))
+    : 0;
+  const currentScan = scanRows[scanIndex] ?? null;
+  const pickScan = (index: number) => {
+    const row = scanRows[index];
+    if (!row) {
+      return;
+    }
+    setPickedScan(row.id);
+    setTab("all");
+  };
   const roundStart = (scan: string) => scanRows.find((row) => row.id === scan)?.started_at ?? "";
   const roundEnd = (scan: string) => {
-    // 一轮的窗口 = 它自己的开始 到 下一轮（更早那条）的开始；最早那轮的下界是空串。
+    // 一轮的窗口 = 它自己的开始 到 更新那一轮的开始；最新那轮的上界是「无穷」。
+    // `scanRows` 是新的在前，所以「更新那条」是 index - 1，不是 + 1。
     const index = scanRows.findIndex((row) => row.id === scan);
-    const next = index >= 0 ? scanRows[index + 1] : undefined;
+    const next = index > 0 ? scanRows[index - 1] : undefined;
     return next?.started_at ?? "9999";
   };
 
-  const inTab = (item: OpportunityItem) => {
-    if (item.track !== trackFilter) {
-      return false;
+  const inRound = (item: OpportunityItem) => {
+    if (!pickedScan) {
+      return true;
     }
-    if (pickedScan) {
-      const from = roundStart(pickedScan);
-      return item.discovered_at >= from && item.discovered_at < roundEnd(pickedScan);
+    const from = roundStart(pickedScan);
+    return item.discovered_at >= from && item.discovered_at < roundEnd(pickedScan);
+  };
+
+  const inTab = (item: OpportunityItem) => {
+    if (!inRound(item)) {
+      return false;
     }
     if (tab === "archived") return item.user_state === "archived";
     if (tab === "deleted") return item.user_state === "deleted";
-    if (tab === "round") {
-      return item.user_state === "active" && !!latest
-        && item.discovered_at >= latest.started_at;
-    }
     return item.user_state === "active";
   };
 
+  // 轮次选中后，状态与排队中的计数都按这一轮重新数；否则它们会跟列表对不上。
+  const roundItems = items.filter(inRound);
   const tabCounts = {
-    all: items.filter((item) => item.track === trackFilter && item.user_state === "active").length,
-    round: latest
-      ? items.filter((item) => item.track === trackFilter && item.user_state === "active"
-        && item.discovered_at >= latest.started_at).length
-      : 0,
-    archived: items.filter((item) => item.track === trackFilter && item.user_state === "archived").length,
-    deleted: items.filter((item) => item.track === trackFilter && item.user_state === "deleted").length,
+    all: roundItems.filter((item) => item.user_state === "active").length,
+    archived: roundItems.filter((item) => item.user_state === "archived").length,
+    deleted: roundItems.filter((item) => item.user_state === "deleted").length,
     // 三堆都是「排队中」这一页的内容，标签上的数也必须是三堆之和。
     queues: (queues.data?.unclassified.count ?? 0) + (queues.data?.unextracted.count ?? 0)
       + (queues.data?.trace_failed.count ?? 0),
   };
+  const statusScope = roundItems.filter((item) => (
+    tab === "archived" ? item.user_state === "archived"
+      : tab === "deleted" ? item.user_state === "deleted"
+        : item.user_state === "active"));
+  /** 已处理：读者自己按下去的两个桶。「全部」是可见的退出口，和生态 / 状态同一套结构。 */
+  const processedTotal = tabCounts.archived + tabCounts.deleted;
+  const showProcessed = processedTotal > 0 || tab === "archived" || tab === "deleted";
+  const processedRows = ([
+    ["all", "全部", processedTotal],
+    ["archived", "归档", tabCounts.archived],
+    ["deleted", "删除", tabCounts.deleted],
+  ] as const).filter(([key, , count]) => key === "all" || count > 0 || tab === key);
 
   /** 排队中的三项不是筛选值，是三段列表的入口：只列非零项，点了切过去并滚到那一段。 */
   const queueRows = ([
@@ -562,11 +621,10 @@ export function OpportunityView() {
   const openQueue = (key: "unclassified" | "unextracted" | "trace_failed") => {
     setQueueFilter(key);
     setTab("queues");
-    setPickedScan("");
   };
 
   /** 生态面板只列当前视野里真有卡片的链。状态 / 分栏 / 搜索已经筛掉的东西，不该还留着一个
-   *  点进去为空的选项（Aleo 只有未晋升的卡，默认「可参与」下点它就是空白）。生态自己那一维
+   *  点进去为空的选项（Aleo 只有未晋升的卡，切到「可参与」时点它就是空白）。生态自己那一维
    *  不参与，否则选中的链会把自己从面板上删掉。 */
   const facetItems = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -727,6 +785,43 @@ export function OpportunityView() {
         </div>
       </header>
 
+      {/* 轮次条与雷达同一条：报告 / 设定 下面一行，左右箭头翻历史。 */}
+      {view === "report" && currentScan ? (
+        <div className="bhead opp-roundbar">
+          <div className="batch">
+            <button type="button" title="更早一轮"
+              className={"step" + (scanIndex < scanRows.length - 1 ? "" : " demo")}
+              disabled={scanIndex >= scanRows.length - 1}
+              onClick={() => pickScan(scanIndex + 1)}>
+              <Icon as={ChevronLeft} />
+            </button>
+            <b>{stamp(currentScan.started_at)}</b>
+            <button type="button" title="更新一轮"
+              className={"step" + (scanIndex > 0 ? "" : " demo")}
+              disabled={scanIndex <= 0}
+              onClick={() => pickScan(scanIndex - 1)}>
+              <Icon as={ChevronRight} />
+            </button>
+          </div>
+          <div className="funnel">
+            <span>出卡</span>
+            <b>{(currentScan.counters as { extract?: { entries?: number } }).extract?.entries ?? 0}</b>
+          </div>
+          {/* 与列表 tab 同一套分段控件：选中态是蓝底，不是一个文字链接。 */}
+          <div className="tabs">
+            <span className={"tab" + (pickedScan ? "" : " on")}
+              onClick={() => setPickedScan("")}>
+              全部轮次
+            </span>
+            <span className={"tab" + (pickedScan && scanIndex === 0 ? " on" : "")}
+              onClick={() => pickScan(0)}>
+              回到本轮
+            </span>
+          </div>
+          <span className="spacer" />
+        </div>
+      ) : null}
+
       <ScanPanel scan={data?.scan} open={panelOpen} form={form} stopping={stopping}
                  onCancel={() => {
                    setStopping(true);
@@ -750,85 +845,64 @@ export function OpportunityView() {
         </div>
       ) : null}
 
-      {/* 五个 tab：全部（除归档/删除之外的一切）· 本轮 · 归档 · 删除 · 排队中。
-          读者自己的决定与管线那半分开记，所以这里筛的是 user_state。 */}
-      <div className="opp-bar">
-        <div className="tabs">
-          {([["actionable", "可参与"], ["discovery", "发现"]] as const).map(([key, label]) => (
-            <span key={key}
-              className={"tab" + (trackFilter === key ? " on" : "")}
-              onClick={() => { setTrackFilter(key); setTab("all"); setPickedScan(""); }}>
-              {label} {counts["track:" + key] ?? 0}
-            </span>
-          ))}
-        </div>
-        <div className="tabs">
-          {([["all", "全部"], ["round", "本轮"], ["archived", "归档"],
-             ["deleted", "删除"], ["queues", "排队中"]] as const).map(([key, label]) => (
-            <span key={key}
-              className={"tab" + (!pickedScan && tab === key ? " on" : "")}
-              onClick={() => {
-                setTab(key);
-                setPickedScan("");
-                if (key === "queues") setQueueFilter("all");
-              }}>
-              {label} {tabCounts[key]}
-            </span>
-          ))}
-        </div>
-        <span className="opp-counts">
-          {pickedScan
-            ? `只看第 ${scanRows.findIndex((row) => row.id === pickedScan) + 1} 轮`
-            : `共 ${items.length} 条条目`}
-        </span>
-      </div>
-
-      {/* 时间轮次条：每一轮一格，点一格看那一轮新增的；再点一次回到全部。
-          它与「归档」是同一份数据 —— 条是快选，列表是细看。 */}
-      {scanRows.length ? (
-        <div className="opp-strip">
-          {scanRows.slice(0, 12).map((row, index) => {
-            const entries = (row.counters as { extract?: { entries?: number } }).extract?.entries ?? 0;
-            const stamp = (row.started_at || "").slice(5, 16).replace("T", " ");
-            return (
-              <button type="button" key={row.id}
-                className={"opp-round" + (pickedScan === row.id ? " on" : "")}
-                title={`${row.started_at} · 出卡 ${entries} 条 · ${row.status}`}
-                onClick={() => {
-                  setPickedScan(pickedScan === row.id ? "" : row.id);
-                  setTab("all");
-                }}>
-                <b>{index === 0 ? "本轮" : `第 ${index + 1} 轮`}</b>
-                <span>{stamp}</span>
-                <em>{entries} 条</em>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
       <div className="grid fav-body">
         <aside className="fav-side">
           {panelGroups.map((group) => (
             <Fragment key={group.key}>
               <h4 className="look-h">{group.title}</h4>
               <div className="fav-opts">
-                {group.options.map((option) => (
-                  <div
-                    key={option.value || "all"}
-                    className={"fav-opt" + (value(group.key) === option.value ? " on" : "")}
-                    onClick={() => setPicked((prev) => ({ ...prev, [group.key]: option.value }))}
-                  >
-                    {option.label}
-                    {/* 只有 状态 这一组带计数：那三个数原来在页头，面板不该把它弄丢。 */}
-                    {option.count === null || option.count === undefined
-                      ? null
-                      : <span className="opp-opt-count">{option.count}</span>}
-                  </div>
-                ))}
+                {group.options.map((option) => {
+                  // 状态是这一页自己的计数：选中某一轮后按那一轮重数，不能继续报全库的数。
+                  // 生态同理，但它的 scope 要排除生态自己（facetCounts 已经排除），否则选中
+                  // 一条链之后其他链会全部变成 0。
+                  let count = option.count;
+                  if (group.key === "status") {
+                    count = option.value
+                      ? statusScope.filter((item) => item.status === option.value).length
+                      : statusScope.length;
+                  } else if (group.key === "ecosystem") {
+                    count = option.value
+                      ? facetItems.filter((item) => item.ecosystem === option.value).length
+                      : facetItems.length;
+                  }
+                  return (
+                    <div
+                      key={option.value || "all"}
+                      className={"fav-opt" + (value(group.key) === option.value ? " on" : "")}
+                      onClick={() => {
+                        setPicked((prev) => ({ ...prev, [group.key]: option.value }));
+                        // 在「排队中」时点任一筛选，视为要回到列表。
+                        if (tab === "queues") {
+                          setTab("all");
+                          setQueueFilter("all");
+                        }
+                      }}
+                    >
+                      {option.label}
+                      {count === null || count === undefined
+                        ? null
+                        : <span className="opp-opt-count">{count}</span>}
+                    </div>
+                  );
+                })}
               </div>
             </Fragment>
           ))}
+          {showProcessed ? (
+            <>
+              <h4 className="look-h">已处理</h4>
+              <div className="fav-opts">
+                {processedRows.map(([key, label, count]) => (
+                  <div key={key}
+                       className={"fav-opt" + (tab === key ? " on" : "")}
+                       onClick={() => setTab(key === "all" || tab === key ? "all" : key)}>
+                    {label}
+                    <span className="opp-opt-count">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
           {queueRows.length ? (
             <>
               <h4 className="look-h">队列</h4>

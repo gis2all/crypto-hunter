@@ -961,39 +961,44 @@ div.pgroup>.pset{margin-top:auto}
 /* ---------- 新机会 (features/opportunity/OpportunityView.tsx) ----------
 
    A Place of its own, so it wears the shelf's own strip on top (above) and the page's own
-   `.grid` under it: the two lists are card walls, the same width as a report card, because an
+   `.grid` under it: the list is a card wall, the same width as a report card, because an
    entry is read the same way a card is. Two things are this page's own - the entry card (an
    activity carries instructions, which a report card never does) and the two folds at the
    bottom, which are tables because a pool and a watchlist are read as rows. */
 
 /* The entry card: same frame, ground and radius as a report card, and a column so the foot
    sits at the bottom whatever the steps above it do. */
-/* 这一页的卡片**拉伸到行高**，与全站那条 `align-items:start`（app.css 的 2026-09-26 决定：
-   "让每张卡在自己的内容处结束"）不同，理由只有一条：**这里的正文是固定高度的块**，所以拉伸
-   多出来的空间落在页脚之前（页脚是 `margin-top:auto`），读起来是卡片底部的留白，而不是当初
-   那条插在正文中间的空带。折叠态下同排卡片因此完全等高（user, 2026-10-18）。 */
+/* 折叠态与批量展开态都按行拉伸：同一排等高，批量展开时以最高的那张为准。只有**单张卡
+   自己展开**时才切成 start，让那一张变高而邻居不动（与币种卡片一致，2026-10-24）。 */
 #view-opportunity .fav-body .grid{align-items:stretch}
+#view-opportunity .fav-body .grid:has(.opp-body-wrap.single){align-items:start}
 .opp-card{display:flex;flex-direction:column;gap:8px;padding:12px 14px;min-width:0}
-/* The name and its chips, on their own line: a long title plus four chips wraps, and a wrapped
-   row reads as a second heading. */
-.opp-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+/* 标题与标签同一段文字流：标题自己换行时，标签跟着落在最后一行末尾，而不是被挤到标题下面。 */
+.opp-head{display:block}
+.opp-head .srow-v.chips{display:inline-flex;margin-left:6px;vertical-align:middle}
 .opp-title{font-size:13.5px;line-height:1.35;min-width:0}
 /* The readings about the entry, one line: where it came from, when it was found, and the two
    badges at the far end. The badges are a group so they wrap together or not at all. */
 .opp-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--mono);
   font-size:10.5px;color:var(--muted)}
 .opp-meta a{color:var(--accent-fg);display:inline-flex;align-items:center;gap:3px}
+/* 时间单独一行：发现 / 开始 / 截止，三个同种读数。 */
+.opp-time{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);
+  font-size:10.5px;color:var(--muted);white-space:nowrap}
 /* The badges lead the meta line: they are the two readings a scanning reader wants first, and
    left-aligned they wrap into the same block instead of a row of their own on the right. */
 .opp-badges{display:inline-flex;align-items:center;gap:5px}
-.opp-sum{margin:0;font-size:12.5px;line-height:1.6;color:var(--fg-2)}
+.opp-sum{margin:0;font-size:12.5px;line-height:var(--opp-line);color:var(--fg-2)}
 /* The steps: numbered by their own ordinal, each one a line the reader can follow, with the
    page it came from beside it. */
-.opp-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;
-  line-height:1.55}
+.opp-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:0;font-size:12.5px;
+  line-height:var(--opp-line)}
 .opp-steps li{color:var(--fg-2)}
 .opp-steps b{color:var(--fg);font-weight:600;margin-right:4px}
 .opp-steps a{color:var(--accent-fg);margin-left:6px;display:inline-flex;align-items:center;gap:3px}
+/* 步骤来源只留一个图标：三步各带一行「来源」文字，读起来像三条附注而不是三条步骤。 */
+.opp-steps a.opp-step-src{color:var(--muted);opacity:.65}
+.opp-steps a.opp-step-src:hover{color:var(--accent-fg);opacity:1}
 /* 门槛与分类的标签行用既有的 `.srow-v chips`，不另立容器：`.chips .chip` 才是那个
    20px、居中的标签（proto.css），裸 `.chip` 是顶对齐的 26px 盒子。 */
 
@@ -1003,17 +1008,15 @@ div.pgroup>.pset{margin-top:auto}
    为什么是 height 而不是 -webkit-line-clamp：正文里有一个 <ol> 与几个 <p>，而 clamp 只对
    单一内联流是精确的；固定高度对两者都精确，而且"固定高度"本来就是这条需求的原话
    （user, 2026-10-18）。 */
-:root{--opp-body-lines:7}
+:root{--opp-body-lines:7;--opp-line:21.5px}
 .opp-body-wrap{position:relative}
-.opp-body{height:calc(var(--opp-body-lines) * 1.72em);overflow:hidden;display:flex;
-  flex-direction:column;gap:8px}
+.opp-body{height:calc(var(--opp-body-lines) * var(--opp-line));overflow:hidden;display:flex;
+  flex-direction:column;gap:0}
 .opp-body-wrap.full .opp-body{height:auto;overflow:visible}
-/* 被切在半条步骤上时，底部渐隐提示"下面还有"；只有真的被切了才画（`.cut` 由测量给出）。 */
-.opp-body-wrap.cut::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1.72em;
-  pointer-events:none;background:linear-gradient(transparent,var(--surface))}
 /* 展开按钮与结论那一颗共用外观：同一个 .verdict-more 规则，两个选择器。 */
 .verdict-more,.opp-body-more{position:absolute;right:0;bottom:0;display:flex;align-items:center;
   height:1.72em;padding-left:16px;background:linear-gradient(to right,transparent,var(--surface) 16px)}
+.opp-body-more{height:var(--opp-line)}
 .opp-body-wrap.full .opp-body-more{position:static;justify-content:flex-end;height:auto;
   padding:3px 0 0;background:none}
 .verdict-more button,.opp-body-more button{display:inline-flex;align-items:center;gap:3px;
@@ -1023,18 +1026,23 @@ div.pgroup>.pset{margin-top:auto}
 .verdict-more button:focus-visible,.opp-body-more button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
 .verdict-more button>.ico,.opp-body-more button>.ico{transition:transform .12s ease}
 .verdict-more button[aria-expanded=true]>.ico,.opp-body-more button[aria-expanded=true]>.ico{transform:rotate(180deg)}
-.opp-risk{margin:0;font-size:12px;line-height:1.55;color:var(--warn-fg)}
+.opp-risk{margin:0;font-size:12px;line-height:var(--opp-line);color:var(--warn-fg)}
 /* The foot: where the reading came from and which prompt wrote it, in the card-src voice. */
-.opp-foot{margin-top:auto;padding-top:8px;border-top:1px solid var(--hair);display:flex;
+.opp-foot{padding-top:8px;border-top:1px solid var(--hair);display:flex;
   align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;
   color:var(--muted)}
-.opp-foot a{color:var(--accent-fg)}
+.opp-foot a{color:var(--accent-fg);display:inline-flex;align-items:center;gap:3px}
 /* 归档 / 删除：两个图标按钮，压在页脚右端。样式沿用页脚里那些小链接的尺寸，不另造一套。 */
 .opp-acts{margin-left:auto;display:inline-flex;align-items:center;gap:2px}
 .opp-acts button{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
   border:0;background:none;color:var(--muted);cursor:pointer}
 .opp-acts button:hover{background:var(--surface-warm);color:var(--fg-2)}
 .opp-acts button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+/* 「没有门槛信息」不是一道门槛：灰字，不和「需资金」用同一个 chip 形状。行高对齐 chips。 */
+.opp-barrier-empty{font-family:var(--mono);font-size:10.5px;line-height:20px;color:var(--muted)}
+/* 门槛压到页脚正上方：卡片被拉伸出来的空白落在正文与门槛之间，而不是门槛与页脚之间。
+   它自己带一条上横线，和页脚的横线一起把「门槛」夹成一条独立的带。 */
+.opp-barrier{margin-top:auto;padding-top:8px;border-top:1px solid var(--hair)}
 
 /* The toolbar: the trust filter on the left, the counts at the far end. A **row**, not a column
    - the first cut reused `.fav-opts`, which is a column for the shelf's side panel, so four
@@ -1048,8 +1056,8 @@ div.pgroup>.pset{margin-top:auto}
    watchlist fold where the material lives. */
 .opp-tally{margin:12px 16px 24px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .opp-opt-count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-/* 不在列表上的条目自己说明为什么（未晋升 / 已结束的原因）。 */
-.opp-reason{margin:0;font-size:11.5px;color:var(--muted)}
+/* 不在列表上的条目自己说明为什么（未晋升 / 已结束）：状态行，紧跟在时间下面。 */
+.opp-state{margin:0;font-size:11.5px;line-height:1.45;color:var(--muted)}
 /* The list heading is the page's own hierarchy: the two lists are what the page is, so their
    titles are the only text on it that is not a reading. */
 .opp-list{margin:16px 16px 0}
@@ -1073,14 +1081,12 @@ div.pgroup>.pset{margin-top:auto}
   font-variant-numeric:tabular-nums}
 /* 时间轮次条：每一轮一格，点一格只看那一轮新增的。与雷达那条批次头同源（时间 + 读数），
    只是这里排成一行可以点。 */
-.opp-strip{display:flex;gap:6px;flex-wrap:wrap;margin:10px 16px 0}
-.opp-round{display:inline-flex;align-items:baseline;gap:7px;padding:5px 9px;
-  border:1px solid var(--border);background:var(--surface);color:var(--fg-2);cursor:pointer}
-.opp-round:hover{border-color:var(--accent);color:var(--fg)}
-.opp-round.on{border-color:var(--accent);background:var(--accent-tint);color:var(--accent-fg)}
-.opp-round b{font-size:11.5px;font-weight:600}
-.opp-round span{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-.opp-round em{font-family:var(--mono);font-size:10.5px;font-style:normal;color:var(--muted)}
+/* 轮次条：直接复用雷达的 .bhead / .batch / .step / .funnel，只补「回到本轮」。 */
+.opp-roundbar{padding-right:16px}
+.opp-roundbar .spacer{flex:1}
+/* 两个跳转紧跟在「出卡」后面，用列表 tab 那一套分段控件。 */
+.opp-roundbar .tabs{margin-left:12px}
+.opp-roundbar .tab{height:20px;padding:0 8px;font-size:10.5px}
 
 /* 排队中：三堆东西，每堆一张表。它是"我见过的东西去哪了"的答案，所以标题里带条数。 */
 .opp-queues{display:flex;flex-direction:column;gap:14px}
