@@ -141,17 +141,17 @@ def test_a_family_only_passes_its_own_action_word():
     assert not launch["pass"], "mainnet is live 不能单独过 usage 闸"
     testnet = rules.judge("testnet is live", author="stranger", created_at=moment,
                           family="usage", known=KNOWN)
-    assert testnet["pass"] and testnet["track"] == "actionable"
+    assert testnet["pass"]
 
 
-def test_a_new_protocol_needs_an_official_source_for_the_discovery_track():
+def test_a_new_protocol_still_needs_an_official_source_to_pass():
     moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     text = "Introducing a new protocol for intents: a wallet on Solana"
     assert not rules.judge(text, author="stranger", created_at=moment,
                            family="discovery", known=KNOWN)["pass"]
     out = rules.judge(text, author="stranger", created_at=moment,
                       family="discovery", known=KNOWN, source_official=True)
-    assert out["pass"] and out["track"] == "discovery"
+    assert out["pass"]
 
 
 def test_the_gate_rejects_jobs_news_and_cex_ads():
@@ -174,7 +174,7 @@ def test_exchange_campaigns_and_offchain_offers_are_refused():
                            known=KNOWN)["excluded"], text
 
 
-def test_a_new_standard_needs_a_crypto_context_to_pass_discovery():
+def test_a_new_standard_needs_a_crypto_context_to_pass():
     moment = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     duck = ("DuckDB 2.0.0 LTS 发布，带来新的 SQL 标准 https://t.co/x")
     assert not rules.judge(duck, author="duckdb", created_at=moment, known=KNOWN,
@@ -182,7 +182,7 @@ def test_a_new_standard_needs_a_crypto_context_to_pass_discovery():
     chain = ("Introducing a new protocol for intents: a wallet on Solana https://t.co/x")
     out = rules.judge(chain, author="someone", created_at=moment, known=KNOWN,
                       family="discovery", source_official=True)
-    assert out["pass"] and out["track"] == "discovery"
+    assert out["pass"]
 
 
 def test_airdrop_claim_behavior_is_unchanged():
@@ -229,7 +229,6 @@ def test_nouns_and_base_points_do_not_open_the_gate():
                       family="network", known=KNOWN)
     assert not out["pass"]
     assert out["score"] >= rules.PASS_SCORE, "分数够了，仍然过不了，因为没有一个具体动作"
-    assert not out["track"]
 
 
 def test_lending_is_not_the_verb_lend():
@@ -973,6 +972,39 @@ def test_a_card_that_is_not_on_a_chain_is_retired(isolated_db, monkeypatch):
     assert row["status"] == "retired" and row["reason"] == "offchain"
 
 
+def test_an_archived_card_is_frozen(isolated_db):
+    """归档 / 删除是读者的决定：同一项目再有新材料也不覆盖它，补链也不再问。"""
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post"}
+    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
+                "frozen": 0}
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s")], [], counters)
+    slug = db.opportunity_items()[0]["slug"]
+    assert db.opportunity_user_state(slug, "archived")
+
+    again = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
+             "frozen": 0}
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s2")], [], again)
+    row = db.opportunity_items()[0]
+    assert row["summary"] == "s" and row["user_state"] == "archived"
+    assert again["frozen"] == 1
+    assert db.opportunity_unjudged() == [], "补链也不再问冻结的卡"
+
+
+def test_the_sweep_leaves_processed_cards_alone(isolated_db):
+    from app.opportunity import lifecycle
+
+    conn = db.connect()
+    conn.execute(
+        "INSERT INTO opportunities (slug, kind, title, ecosystem, status, deadline, user_state,"
+        " discovered_at, updated_at)"
+        " VALUES ('p', 'activity', 'Old', 'base', 'promoted', '2020-01-01', 'archived', 'x', 'x')")
+    conn.close()
+    assert lifecycle.sweep()["retired"] == 0
+
+
 def test_an_answer_without_a_listed_source_is_not_written(isolated_db, monkeypatch):
     from app.opportunity import chainsearch
 
@@ -1658,6 +1690,19 @@ def test_a_queue_limit_of_zero_lists_the_whole_pile(client, isolated_db):
     assert len(client.get("/api/v1/opportunity/queues").json()["trace_failed"]["top"]) == 6
     whole = client.get("/api/v1/opportunity/queues?limit=0").json()
     assert len(whole["trace_failed"]["top"]) == 8, "limit=0 表示整堆"
+
+
+def test_a_queue_scan_scope_only_counts_that_round(client, isolated_db):
+    for tweet, scan in (("s1", "a"), ("s2", "b")):
+        db.opportunity_post_put({"tweet_id": tweet, "handle": "someone", "text": "lead",
+                                 "posted_at": "2026-10-19T00:00:00+00:00", "url": "u" + tweet,
+                                 "source_target": "q", "first_seen_scan": scan, "score": 10,
+                                 "rules_json": "{}"})
+        db.opportunity_trace_put(tweet, "C", {"level": "C"})
+    assert client.get("/api/v1/opportunity/queues").json()["trace_failed"]["count"] == 2
+    scoped = client.get("/api/v1/opportunity/queues?scan=a").json()
+    assert scoped["trace_failed"]["count"] == 1
+    assert scoped["trace_failed"]["top"][0]["ref"] == "s1"
 
 
 # ------------------------------------------------------------------ 溯源（线索 → 官方家）
