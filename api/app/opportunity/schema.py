@@ -55,7 +55,7 @@ MATURITIES = ("实验性", "测试网", "主网")
 #: public chains is finite and known, so the job is to *judge* what the model wrote, not to
 #: restrict it (user, 2026-10-19). Adding a chain to this tuple only fixes its position and gives
 #: it aliases; a chain that is missing still works, it just sorts after the known ones.
-CHAINS = ("bitcoin", "ethereum", "solana", "base", "bsc", "arbitrum", "sui", "aptos", "near",
+CHAINS = ("bitcoin", "ethereum", "robinhood", "xlayer", "solana", "base", "bsc", "arbitrum", "sui", "aptos", "near",
           "avax", "cosmos", "starknet", "berachain", "megaeth")
 
 #: Every spelling that means one of the chains above. This is what makes "eth", "Ethereum" and
@@ -64,6 +64,8 @@ CHAINS = ("bitcoin", "ethereum", "solana", "base", "bsc", "arbitrum", "sui", "ap
 CHAIN_ALIASES = {
     "bitcoin": ("bitcoin", "btc", "比特币", "ordinals", "brc-20", "brc20", "runes", "lightning"),
     "ethereum": ("ethereum", "eth", "以太坊", "erc-20", "erc20", "mainnet eth"),
+    "robinhood": ("robinhood", "robinhood chain", "robinhood-chain", "robinhoodchain"),
+    "xlayer": ("xlayer", "x layer", "x-layer"),
     "solana": ("solana", "sol", "spl", "svm"),
     "base": ("base", "base chain", "coinbase base"),
     "bsc": ("bsc", "bnb", "bnb chain", "binance smart chain", "opbnb", "币安链"),
@@ -125,6 +127,8 @@ def canonical_ecosystem(raw: object) -> str:
 ECOSYSTEM_LABELS = {
     "bitcoin": "Bitcoin",
     "ethereum": "Ethereum",
+    "robinhood": "Robinhood",
+    "xlayer": "X Layer",
     "solana": "Solana",
     "base": "Base",
     "bsc": "BSC",
@@ -176,6 +180,53 @@ def order_ecosystems(values) -> list[str]:
     chains = sorted((name for name in seen if name not in (MULTI, UNJUDGED)),
                     key=lambda name: ecosystem_label(name).lower())
     return chains + [name for name in (MULTI, UNJUDGED) if name in seen]
+
+
+_EVENT_STOP = frozenset((
+    "the", "and", "for", "with", "from", "this", "that", "new", "live", "update",
+    "public", "ended", "last", "day", "now", "today",
+))
+_SALE_WORDS = ("公开发售", "公售", "发售", "public sale", "sale")
+_STATUS_WORDS = ("已结束", "结束", "剩余", "可询价", "最新", "更新", "公告", "上线", "开放", "mint", "铸造")
+
+
+def project_key(value: object) -> str:
+    """One project's normalized identity for card dedupe."""
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(value or "").lower()) or "unknown"
+
+
+def event_signature(project: object, title: object) -> str:
+    """A title reduced to the action, keeping tickers so two tokens stay two events."""
+    text = str(title or "").lower()
+    proj = " ".join(str(project or "").lower().split())
+    if proj:
+        text = re.sub(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(proj), " ", text)
+    for word in re.findall(r"[a-z]{4,}", proj):
+        text = re.sub(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(word), " ", text)
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"\b[a-z0-9-]+\.(?:com|net|org|io|xyz|fun|ai|finance|site|app)\b", " ", text)
+    text = re.sub(r"\b\d+(?:\.\d+)?\b", " ", text)
+    for word in ("btc", "eth", "usdt", "usdc", "usd", "per piece", "piece", "件"):
+        text = text.replace(word, " ")
+    for word in _SALE_WORDS:
+        text = text.replace(word, " sale ")
+    for word in _STATUS_WORDS:
+        text = text.replace(word, " ")
+    text = re.sub(r"[^0-9a-z\u4e00-\u9fff$]+", " ", text)
+    tokens = re.findall(r"\$[a-z0-9]+|[a-z]{3,}|[\u4e00-\u9fff]{2,}", text)
+    out = []
+    for token in tokens:
+        if token in _EVENT_STOP or token in out:
+            continue
+        out.append(token)
+    return "-".join(out)
+
+
+def event_key(project: object, kind: str, title: object) -> str:
+    """Stable identity for one project event; distinct tickers/actions stay apart."""
+    project_id = project_key(project)
+    signature = event_signature(project, title) or project_key(title)
+    return "%s|%s|%s" % (project_id, kind, signature)
 
 
 #: Lengths, as caps and never as rejections - the same rule `report/schema.py` follows: a

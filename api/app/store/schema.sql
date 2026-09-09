@@ -279,6 +279,8 @@ CREATE TABLE IF NOT EXISTS opportunity_posts (
   --: 官方页随这条线索存，因为它只为这条线索读一次，而抽取要拿它当材料（2026-10-19）。
   urls_json       TEXT,                     -- 帖子自带的链接（展开过的），溯源要用
   project_name    TEXT,                     -- 分类那一步给出的项目名，溯源用它搜官方号
+  project_handle  TEXT,                     -- 分组模型给出的候选官方号，溯源优先读它
+  project_urls_json TEXT,                   -- 分组模型给出的候选官网 / 文档链接
   trace_level     TEXT,                     -- A | B | C | NULL（没溯源）
   trace_json      TEXT,
   traced_at       TEXT,
@@ -305,7 +307,13 @@ CREATE TABLE IF NOT EXISTS opportunities (
   category        TEXT,                     -- 打新 / 挖矿 / ... or 新协议 / 新实验 / ...
   title           TEXT NOT NULL,
   organizer       TEXT,                     -- the official handle, when the material names one
+  project_key     TEXT,                     -- normalized project identity for dedupe
+  event_key       TEXT,                     -- project + kind + normalized event signature
+  event_group     TEXT,                     -- canonical card kept for one event
+  dedup_at        TEXT,                     -- last semantic dedupe pass
+  official_account TEXT,                    -- 溯源确认的官方 X 账号
   official_url    TEXT,
+  sources_json    TEXT,                     -- 卡片来源清单：官方 X / 官网 / 文档 / 原帖
   summary         TEXT,                     -- the project half: what it is, in one sentence
   trust           TEXT NOT NULL DEFAULT 'unjudged',  -- official | community | unjudged
   trust_basis     TEXT,                     -- which reading made it official (or why it is not)

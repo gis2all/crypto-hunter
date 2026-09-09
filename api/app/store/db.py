@@ -46,7 +46,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 21
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -99,6 +99,112 @@ def _normalise_opportunity_ecosystems(conn: sqlite3.Connection) -> int:
     return changed
 
 
+def _merge_same_source_official_duplicates(conn: sqlite3.Connection) -> int:
+    """Keep one official card when the same source post also produced a community card."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(opportunities)")}
+    if not {"source_ref", "trust", "sources_json"} <= columns:
+        return 0
+    groups = conn.execute(
+        "SELECT source_ref, count(*) AS n, sum(trust = 'official') AS officials"
+        " FROM opportunities WHERE source_ref IS NOT NULL AND source_ref != ''"
+        " GROUP BY source_ref HAVING n > 1 AND officials > 0").fetchall()
+    merged = 0
+    for group in groups:
+        source_ref = group["source_ref"]
+        official = conn.execute(
+            "SELECT * FROM opportunities WHERE source_ref = ? AND trust = 'official'"
+            " ORDER BY discovered_at ASC LIMIT 1", (source_ref,)).fetchone()
+        duplicates = conn.execute(
+            "SELECT * FROM opportunities WHERE source_ref = ? AND trust != 'official'"
+            " ORDER BY discovered_at DESC", (source_ref,)).fetchall()
+        if not official or not duplicates:
+            continue
+        latest = duplicates[0]
+        conn.execute(
+            "UPDATE opportunities SET kind = ?, category = ?, title = ?, organizer = ?,"
+            " summary = ?, risk = ?, barrier = ?, maturity = ?, started_at = ?, deadline = ?,"
+            " status = ?, reason = ?, heat = ?, heat_basis = ?, extract_version = ?,"
+            " novelty = ?, updated_at = ? WHERE slug = ?",
+            (latest["kind"], latest["category"], latest["title"],
+             latest["organizer"] or official["organizer"], latest["summary"], latest["risk"],
+             latest["barrier"], latest["maturity"], latest["started_at"], latest["deadline"],
+             latest["status"], latest["reason"], latest["heat"], latest["heat_basis"],
+             latest["extract_version"], latest["novelty"], now_iso(), official["slug"]))
+        steps = conn.execute(
+            "SELECT ordinal, title, body, source_url, source_at FROM opportunity_steps"
+            " WHERE slug = ? ORDER BY ordinal", (latest["slug"],)).fetchall()
+        if steps:
+            conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (official["slug"],))
+            for step in steps:
+                conn.execute(
+                    "INSERT INTO opportunity_steps (slug, ordinal, title, body, source_url, source_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (official["slug"], step["ordinal"], step["title"], step["body"],
+                     step["source_url"], step["source_at"]))
+        for duplicate in duplicates:
+            conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (duplicate["slug"],))
+            conn.execute("DELETE FROM opportunities WHERE slug = ?", (duplicate["slug"],))
+            merged += 1
+    return merged
+
+
+def _backfill_and_merge_opportunity_events(conn: sqlite3.Connection) -> int:
+    """Give every card a project/event key, then merge cards for the same event."""
+    from app.opportunity import schema
+
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(opportunities)")}
+    if not {"project_key", "event_key", "source_ref"} <= columns:
+        return 0
+    rows = conn.execute(
+        "SELECT o.*, p.project_name FROM opportunities o"
+        " LEFT JOIN opportunity_posts p ON p.url = o.source_ref").fetchall()
+    for row in rows:
+        project = row["project_name"] or row["organizer"] or row["title"]
+        project_id = schema.project_key(project)
+        event_id = schema.event_key(project, row["kind"], row["title"])
+        if project_id != row["project_key"] or event_id != row["event_key"]:
+            conn.execute("UPDATE opportunities SET project_key = ?, event_key = ? WHERE slug = ?",
+                         (project_id, event_id, row["slug"]))
+    groups = conn.execute(
+        "SELECT event_key FROM opportunities WHERE event_key IS NOT NULL"
+        " GROUP BY event_key HAVING count(*) > 1").fetchall()
+    merged = 0
+    for group in groups:
+        cards = conn.execute(
+            "SELECT * FROM opportunities WHERE event_key = ?"
+            " ORDER BY (trust = 'official') DESC, discovered_at ASC", (group["event_key"],)).fetchall()
+        if len(cards) < 2:
+            continue
+        keep = cards[0]
+        latest = max(cards, key=lambda row: row["discovered_at"] or "")
+        conn.execute(
+            "UPDATE opportunities SET kind = ?, category = ?, title = ?, organizer = ?,"
+            " summary = ?, risk = ?, barrier = ?, maturity = ?, started_at = ?, deadline = ?,"
+            " status = ?, reason = ?, heat = ?, heat_basis = ?, extract_version = ?,"
+            " novelty = ?, updated_at = ? WHERE slug = ?",
+            (latest["kind"], latest["category"], latest["title"],
+             latest["organizer"] or keep["organizer"], latest["summary"], latest["risk"],
+             latest["barrier"], latest["maturity"], latest["started_at"], latest["deadline"],
+             latest["status"], latest["reason"], latest["heat"], latest["heat_basis"],
+             latest["extract_version"], latest["novelty"], now_iso(), keep["slug"]))
+        steps = conn.execute(
+            "SELECT ordinal, title, body, source_url, source_at FROM opportunity_steps"
+            " WHERE slug = ? ORDER BY ordinal", (latest["slug"],)).fetchall()
+        if steps:
+            conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (keep["slug"],))
+            for step in steps:
+                conn.execute(
+                    "INSERT INTO opportunity_steps (slug, ordinal, title, body, source_url, source_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (keep["slug"], step["ordinal"], step["title"], step["body"],
+                     step["source_url"], step["source_at"]))
+        for card in cards[1:]:
+            conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (card["slug"],))
+            conn.execute("DELETE FROM opportunities WHERE slug = ?", (card["slug"],))
+            merged += 1
+    return merged
+
+
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -149,6 +255,8 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunity_posts", "rules_json", "TEXT"),
                   ("opportunity_posts", "urls_json", "TEXT"),
                   ("opportunity_posts", "project_name", "TEXT"),
+                  ("opportunity_posts", "project_handle", "TEXT"),
+                  ("opportunity_posts", "project_urls_json", "TEXT"),
                   ("opportunity_posts", "trace_level", "TEXT"),
                   ("opportunity_posts", "trace_json", "TEXT"),
                   ("opportunity_posts", "traced_at", "TEXT"),
@@ -158,6 +266,12 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunity_posts", "track", "TEXT NOT NULL DEFAULT 'actionable'"),
                   ("opportunities", "track", "TEXT NOT NULL DEFAULT 'actionable'"),
                   ("opportunities", "novelty", "TEXT"),
+                  ("opportunities", "official_account", "TEXT"),
+                  ("opportunities", "sources_json", "TEXT"),
+                  ("opportunities", "project_key", "TEXT"),
+                  ("opportunities", "event_key", "TEXT"),
+                  ("opportunities", "event_group", "TEXT"),
+                  ("opportunities", "dedup_at", "TEXT"),
                   #: 补链阶段已经问过这张卡了（搜到结果、但没有链也算问过）。NULL 表示还欠一次，
                   #: 网络失败也留 NULL，下一轮重试。
                   ("opportunities", "ecosystem_checked_at", "TEXT"))
@@ -239,9 +353,19 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
         # rows touched.
         from app.opportunity import watchlist as _watchlist
         _watchlist.migrate_catalog(rewrite=True)
-    if was < 14:
+    if was < 19:
         # `Tron`, `Flare` and `Bttc` were stored title-cased while the known chains were keys;
         # the panel printed both spellings side by side. The column is the key from now on.
+        renamed = _normalise_opportunity_ecosystems(conn)
+        if renamed:
+            log.info("opportunities: normalised %d ecosystem spellings", renamed)
+        merged = _merge_same_source_official_duplicates(conn)
+        if merged:
+            log.info("opportunities: merged %d community duplicates into official cards", merged)
+        events = _backfill_and_merge_opportunity_events(conn)
+        if events:
+            log.info("opportunities: merged %d cards into project events", events)
+    if was < 21:
         renamed = _normalise_opportunity_ecosystems(conn)
         if renamed:
             log.info("opportunities: normalised %d ecosystem spellings", renamed)
@@ -875,9 +999,11 @@ def opportunity_trace_queue(limit: int = 40) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT p.tweet_id AS ref, p.handle, p.text, p.url, p.urls_json, p.project_name,"
-            " p.source_target, p.classified FROM opportunity_posts p"
+            " p.project_handle, p.project_urls_json, p.source_target, p.classified"
+            " FROM opportunity_posts p"
             " JOIN opportunity_sources s ON s.target = p.source_target"
-            " WHERE p.trace_level IS NULL AND s.kind = 'query'"
+            " WHERE (p.trace_level IS NULL OR COALESCE(p.trace_json, '') NOT LIKE '%trace@4%')"
+            " AND s.kind = 'query'"
             " AND p.classified IN ('activity', 'project')"
             # 有名字的先溯：名字是二次搜索的输入，没名字的线索只能靠帖里的链接与账号，
             # 而社区帖基本两样都没有（2026-10-19 实测：没名字的线索一条 5 秒、全 C）。
@@ -918,8 +1044,10 @@ def opportunity_group_put(assignments: list[dict], irrelevant: list[str]) -> Non
         for row in assignments:
             conn.execute(
                 "UPDATE opportunity_posts SET classified = ?, classified_at = ?,"
-                " project_name = ? WHERE tweet_id = ? AND classified IS NULL",
-                (row["kind"], stamp, row["name"], row["ref"]),
+                " project_name = ?, project_handle = ?, project_urls_json = ?"
+                " WHERE tweet_id = ? AND classified IS NULL",
+                (row["kind"], stamp, row["name"], row.get("handle") or None,
+                 json.dumps(list(row.get("urls") or []), ensure_ascii=False), row["ref"]),
             )
         for ref in irrelevant:
             conn.execute(
@@ -936,18 +1064,94 @@ def opportunity_group_put(assignments: list[dict], irrelevant: list[str]) -> Non
 
 
 def opportunity_trace_put(tweet_id: str, level: str, payload: dict) -> None:
+    opportunity_trace_put_many([tweet_id], level, payload)
+
+
+def opportunity_trace_put_many(refs: list[str], level: str, payload: dict) -> None:
     """Record one lead's trace: its level and everything that was read to decide it.
 
     Written once per lead per scan that traced it. A later scan may trace it again (a project
     without a home today may have one tomorrow), and the newer verdict replaces the older one -
     the pages come with it, so what is stored always describes the same reading.
     """
+    refs = [str(ref) for ref in refs if str(ref or "")]
+    if not refs:
+        return
+    rank = {"A": 3, "B": 2, "C": 1}
+    version = str(payload.get("version") or "")
+    new_sources = len(payload.get("page_sources") or payload.get("sources") or [])
+    encoded = json.dumps(payload, ensure_ascii=False)
     conn = connect()
     try:
-        conn.execute(
-            "UPDATE opportunity_posts SET trace_level = ?, trace_json = ?, traced_at = ?"
-            " WHERE tweet_id = ?",
-            (level, json.dumps(payload, ensure_ascii=False), now_iso(), tweet_id))
+        rows = conn.execute(
+            "SELECT tweet_id, trace_level, trace_json FROM opportunity_posts"
+            " WHERE tweet_id IN (%s)" % ",".join("?" for _ in refs), refs).fetchall()
+        old = {row["tweet_id"]: row for row in rows}
+        for ref in refs:
+            previous = old.get(ref)
+            old_level = str(previous["trace_level"] or "") if previous else ""
+            old_payload = {}
+            if previous and previous["trace_json"]:
+                try:
+                    old_payload = json.loads(previous["trace_json"])
+                except (TypeError, ValueError):
+                    old_payload = {}
+            old_sources = len(old_payload.get("page_sources") or old_payload.get("sources") or [])
+            old_version = str(old_payload.get("version") or "")
+            old_rank = rank.get(old_level, 0)
+            new_rank = rank.get(level, 0)
+            # A trace never falls because a later search timed out. Same-level evidence may
+            # improve (more pages); a lower level is ignored.
+            replace = (not old_level or new_rank > old_rank
+                       or (new_rank == old_rank and (
+                           new_sources > old_sources
+                           or (version != old_version and new_sources >= old_sources))))
+            if not replace:
+                continue
+            conn.execute(
+                "UPDATE opportunity_posts SET extracted_at = NULL, trace_level = ?,"
+                " trace_json = ?, traced_at = ? WHERE tweet_id = ?",
+                (level, encoded, now_iso(), ref))
+    finally:
+        conn.close()
+
+
+def opportunity_official_by_source_ref(source_ref: str) -> dict | None:
+    """The already-official card for one source post, if this material was read before."""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM opportunities WHERE source_ref = ? AND trust = 'official'"
+            " ORDER BY discovered_at ASC LIMIT 1", (source_ref,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def opportunity_by_event_key(event_key: str) -> dict | None:
+    """The existing card for one project event, preferring an official one."""
+    if not event_key:
+        return None
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM opportunities WHERE event_key = ?"
+            " ORDER BY (trust = 'official') DESC, discovered_at ASC LIMIT 1",
+            (event_key,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def opportunity_delete_duplicate(slug: str, source_ref: str) -> int:
+    """Remove a non-official duplicate that came from the same source post."""
+    conn = connect()
+    try:
+        conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (slug,))
+        cursor = conn.execute(
+            "DELETE FROM opportunities WHERE slug = ? AND source_ref = ? AND trust != 'official'",
+            (slug, source_ref))
+        return cursor.rowcount or 0
     finally:
         conn.close()
 
@@ -965,22 +1169,25 @@ def opportunity_materials(unclassified: bool = True, limit: int = 40) -> list[di
     try:
         if unclassified:
             rows = conn.execute(
-                "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
-                " posted_at AS at, url, source_target, metrics_json, score, trace_level,"
-                " trace_json FROM opportunity_posts"
+                "SELECT p.tweet_id AS ref, 'post' AS source_kind, p.handle AS source, p.text,"
+                " p.posted_at AS at, p.url, p.source_target, p.metrics_json, p.score, p.trace_level,"
+                " p.trace_json, p.project_name, p.project_handle, p.project_urls_json, p.urls_json,"
+                " s.kind AS source_type FROM opportunity_posts p"
+                " LEFT JOIN opportunity_sources s ON s.target = p.source_target"
                 # 按免费闸的分排序，不按时间：每轮只问 60 条，按时间排会让**旧的但高分**的帖子
                 # 永远排不上（2026-10-19 实测：重建后 DarkHorse 的两条高分帖被饿死，用户发现
                 # "之前发现过、现在看不到"）。闸已经给每条打过分，这 60 个名额应该花在最好的上面。
-                " WHERE classified IS NULL"
-                " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+                " WHERE p.classified IS NULL"
+                " ORDER BY COALESCE(p.score, 0) DESC, p.posted_at DESC LIMIT ?", (limit,)).fetchall()
         else:
             rows = conn.execute(
-                "SELECT tweet_id AS ref, 'post' AS source_kind, handle AS source, text,"
-                " posted_at AS at, url, source_target, metrics_json, project_name,"
-                " trace_level, trace_json"
-                " FROM opportunity_posts"
-                " WHERE classified IN ('activity', 'project') AND extracted_at IS NULL"
-                " ORDER BY COALESCE(score, 0) DESC, posted_at DESC LIMIT ?", (limit,)).fetchall()
+                "SELECT p.tweet_id AS ref, 'post' AS source_kind, p.handle AS source, p.text,"
+                " p.posted_at AS at, p.url, p.source_target, p.metrics_json, p.project_name,"
+                " p.project_handle, p.project_urls_json, p.urls_json, p.trace_level, p.trace_json,"
+                " s.kind AS source_type FROM opportunity_posts p"
+                " LEFT JOIN opportunity_sources s ON s.target = p.source_target"
+                " WHERE p.classified IN ('activity', 'project') AND p.extracted_at IS NULL"
+                " ORDER BY COALESCE(p.score, 0) DESC, p.posted_at DESC LIMIT ?", (limit,)).fetchall()
     finally:
         conn.close()
     out = []
@@ -1027,14 +1234,18 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
     try:
         conn.execute("BEGIN")
         conn.execute(
-            "INSERT INTO opportunities (slug, kind, category, title, organizer, official_url,"
-            " summary, trust, trust_basis, ecosystem, source_type, risk, barrier, maturity,"
+            "INSERT INTO opportunities (slug, kind, category, title, organizer, project_key,"
+            " event_key, official_account,"
+            " official_url, sources_json, summary, trust, trust_basis, ecosystem, source_type,"
+            " risk, barrier, maturity,"
             " started_at, deadline, status, reason, heat, heat_basis, discovered_at, source_kind,"
             " source_ref, extract_version, novelty, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(slug) DO UPDATE SET"
             " kind = excluded.kind, category = excluded.category, title = excluded.title,"
-            " organizer = excluded.organizer, official_url = excluded.official_url,"
+            " organizer = excluded.organizer, project_key = excluded.project_key,"
+            " event_key = excluded.event_key, official_account = excluded.official_account,"
+            " official_url = excluded.official_url, sources_json = excluded.sources_json,"
             " summary = excluded.summary, trust = excluded.trust,"
             " trust_basis = excluded.trust_basis, ecosystem = excluded.ecosystem,"
             " source_type = excluded.source_type, risk = excluded.risk,"
@@ -1044,10 +1255,13 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
             " heat = excluded.heat, heat_basis = excluded.heat_basis,"
             " source_kind = excluded.source_kind, source_ref = excluded.source_ref,"
             " extract_version = excluded.extract_version, novelty = excluded.novelty,"
+            " event_group = NULL, dedup_at = NULL,"
             " ecosystem_checked_at = NULL,"
             " updated_at = excluded.updated_at",
             (entry["slug"], entry["kind"], entry.get("category"), entry["title"], entry.get("organizer"),
-             entry.get("official_url"), entry.get("summary"),
+             entry.get("project_key"), entry.get("event_key"),
+             entry.get("official_account"), entry.get("official_url"), entry.get("sources_json"),
+             entry.get("summary"),
              entry.get("trust") or "unjudged", entry.get("trust_basis"),
              entry.get("ecosystem"), entry.get("source_type"), entry.get("risk"),
              entry.get("barrier"), entry.get("maturity"), entry.get("started_at"),
