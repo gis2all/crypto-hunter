@@ -6,7 +6,7 @@ calls_per_scan: 40
 x_interval: 5.0
 classify_per_scan: 1000
 extract_per_scan: 40
-traces_per_scan: 8
+traces_per_scan: 200
 window_hours: 24
 slice_hours: 4
 pass_score: 30

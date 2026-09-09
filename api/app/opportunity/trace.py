@@ -29,6 +29,7 @@ import html
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 from ..search.base import handle_of, links_in, normalize_url
@@ -37,7 +38,7 @@ from ..search.identify import fetch_page
 log = logging.getLogger("crypto-hunter.opportunity")
 
 #: Bumped when the rules below change, so a stored verdict can say which rules made it.
-TRACE_VERSION = "trace@1"
+TRACE_VERSION = "trace@4"
 
 #: Hosts that are a channel rather than a home: a project's Discord or Telegram says where its
 #: people are, not where the project lives. `x.com` is here for the same reason - the account is
@@ -49,6 +50,8 @@ NOT_A_HOME = ("x.com", "twitter.com", "t.co", "discord.gg", "discord.com", "t.me
 #: mutual proof when one exists, and the trace runs for eight leads a scan.
 MAX_SITES = 2
 MAX_PROFILES = 3
+MAX_DOCS = 2
+_DOC_HINTS = ("docs", "documentation", "whitepaper", "gitbook", "learn", "developers")
 
 _QUOTED = re.compile(r"[\"“”'‘’]([^\"“”'‘’]{2,40})[\"“”'‘’]")
 _TITLE_RUN = re.compile(r"\b([A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){1,2})\b")
@@ -140,14 +143,17 @@ def verdict(*, name: str, handle: str, lead_text: str, site_texts: list[str],
     linked_hosts = {(urlsplit(link).hostname or "").lower() for link in profile_links}
     # 账号那一侧有两条路：资料页**正文里提到**这个域名，或资料页**链到**它 —— 后者正是我们
     # 找到这个官网的方式，也同样是"账号自己认领了这个站"。
-    account_side = bool(site_host) and (
+    linked = bool(site_host) and (
         any(mentions(text, site_host) for text in profile_texts) or site_host in linked_hosts)
-    if site_texts and profile_texts and site_side and account_side:
+    domain_match = bool(site_host) and _domain_matches_handle(handle, site_host)
+    account_side = linked or domain_match
+    plausible = similar(name, handle) if name else from_mention
+    if site_texts and profile_texts and site_side and account_side and plausible:
+        how = "资料页链回 %s" % site_host if linked else "官方号与域名 %s 匹配" % site_host
         return {"level": "A", "trust": "official",
-                "basis": "官网与官方号互证（官网提到 %s，资料页链回 %s）" % (name or handle, site_host)}
+                "basis": "官网与官方号互证（官网提到 %s，%s）" % (name or handle, how)}
     # 有名字就比名字（搜索来的账号必须过这一关，冒充号的风险在那里）；没有名字时只认
     # "帖子自己提到的账号" —— 那是这条线索唯一能证明"它在说这个账号"的东西。
-    plausible = similar(name, handle) if name else from_mention
     if profile_texts and plausible and any(
             shares_topic(text, lead_text) for text in profile_texts):
         return {"level": "B", "trust": "community",
@@ -210,7 +216,51 @@ def read_site(url: str, *, fetch=None, raw: bool = False) -> str:
     return page if raw else visible_text(page)
 
 
-def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
+def _page(url: str, *, fetch=None) -> tuple[str, list[str]]:
+    """One page as (visible text, links), read from the raw document."""
+    raw = read_site(url, fetch=fetch, raw=True)
+    return visible_text(raw), links_of(raw)
+
+
+def _docs(links: list[str]) -> list[str]:
+    """The first documentation-looking links on an official page."""
+    out: list[str] = []
+    for url in links:
+        low = str(url or "").lower()
+        if not low or not any(hint in low for hint in _DOC_HINTS):
+            continue
+        if low not in out:
+            out.append(low)
+        if len(out) >= MAX_DOCS:
+            break
+    return out
+
+
+def _add_source(sources: list[dict], kind: str, label: str, url: str) -> None:
+    url = str(url or "").strip()
+    if not url or any(item.get("url") == url for item in sources):
+        return
+    sources.append({"kind": kind, "label": label, "url": url})
+
+
+def _domain_matches_handle(handle: str, host: str) -> bool:
+    """Does the site's base name equal the handle without punctuation?"""
+    def word(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+    name = word(handle)
+    if not name:
+        return False
+    labels = [part for part in str(host or "").lower().split(".") if part]
+    while labels and labels[0] in ("www", "docs", "doc", "beta", "app"):
+        labels.pop(0)
+    if not labels:
+        return False
+    base = word(".".join(labels[:2]))
+    return name == base or name.startswith(base) or base.startswith(name)
+
+
+def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_search=None) -> dict:
     """One lead as its official home, or as the reason it has none.
 
     `lead` is a material row (text, handle, url, urls, name). `name` is the project name the
@@ -222,7 +272,10 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
     if author and author in {name.lstrip("@").lower() for name in known}:
         return {"level": "A", "trust": "official", "account": author, "site": "",
                 "basis": "来自我们在盯的官方号 @%s" % author, "version": TRACE_VERSION,
-                "pages": []}
+                "pages": [],
+                "sources": [{"kind": "official_account", "label": "官方 X",
+                             "url": "https://x.com/%s" % author}],
+                "page_sources": []}
 
     pointers = candidates(str(lead.get("text") or ""), handle=author, urls=lead.get("urls") or ())
     # 名字为空时不用发帖人兜底（那比的是另一个问题）：B 改看"这个账号是不是帖子自己提到的"。
@@ -230,10 +283,28 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
     name = str(lead.get("name") or "").strip() or pointers["name"]
     site = pointers["sites"][0] if pointers["sites"] else ""
     site_host = (urlsplit(site).hostname or "") if site else ""
-    site_texts = [read_site(site, fetch=fetch)] if site else []
-    site_texts = [text for text in site_texts if text]
+    site_texts: list[str] = []
+    page_sources: list[dict] = []
+    sources: list[dict] = []
+    site_links: list[str] = []
+    if site:
+        text, site_links = _page(site, fetch=fetch)
+        if text:
+            site_texts.append(text)
+            page_sources.append({"url": site, "text": text})
+            _add_source(sources, "official_site", "官网", site)
+    for url in _docs(site_links):
+        text, _links = _page(url, fetch=fetch)
+        if text:
+            site_texts.append(text)
+            page_sources.append({"url": url, "text": text})
+            _add_source(sources, "official_doc", "文档", url)
 
-    accounts = list(pointers["handles"])
+    accounts: list[str] = []
+    for handle in [str(lead.get("project_handle") or "").lstrip("@").lower(),
+                   *pointers["handles"]]:
+        if handle and handle != author and handle not in accounts:
+            accounts.append(handle)
     searched = True
     if not accounts and name and search is not None:
         # The post named nothing to follow, so the name is asked about: a search answers with
@@ -251,6 +322,11 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
             searched = False
             log.info("opportunity: the second search for %r did not answer: %r", name, exc)
 
+    # Prefer a handle that looks like the project name; the first mentioned account can be a
+    # person or an ecosystem account (e.g. `@justinsuntron` for AINFT / USDD).
+    if name:
+        accounts.sort(key=lambda handle: 0 if similar(name, handle) else 1)
+
     profile_texts: list[str] = []
     profile_links: list[str] = []
     account = accounts[0] if accounts else ""
@@ -259,6 +335,7 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
         if page:
             profile_texts.append(visible_text(page))
             profile_links.extend(links_of(page))
+            _add_source(sources, "official_account", "官方 X", "https://x.com/%s" % handle)
             if not account:
                 account = handle
     if not account and name and similar(name, author):
@@ -267,34 +344,91 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None) -> dict:
         text = read_site("https://x.com/%s" % author, fetch=fetch)
         if text:
             profile_texts.append(text)
+            _add_source(sources, "official_account", "官方 X", "https://x.com/%s" % author)
 
     # 帖子里没有官网时，从资料页里找：官方号链到的那个站就是它的官网，读它并与账号互证。
     if not site and profile_links:
         for candidate in profile_links[:MAX_SITES]:
-            body = read_site(candidate, fetch=fetch)
+            body, links = _page(candidate, fetch=fetch)
             if body and mentions(body, name, account):
                 site, site_host, site_texts = candidate, \
                     (urlsplit(candidate).hostname or "").lower(), [body]
+                page_sources.append({"url": candidate, "text": body})
+                is_doc = any(hint in candidate.lower() for hint in _DOC_HINTS)
+                _add_source(sources, "official_doc" if is_doc else "official_site",
+                            "文档" if is_doc else "官网", candidate)
+                for url in _docs(links):
+                    text, _links = _page(url, fetch=fetch)
+                    if text:
+                        site_texts.append(text)
+                        page_sources.append({"url": url, "text": text})
+                        _add_source(sources, "official_doc", "文档", url)
                 break
+
+    # X profiles sometimes hide their bio link behind a login wall. When the profile gave us
+    # nothing, ask the general web for the project's own site, then read the page and its docs.
+    if not site and name and web_search is not None:
+        query = "%s %s official website docs" % (name, account or "")
+        try:
+            rows = web_search(query.strip()) or []
+        except Exception as exc:  # noqa: BLE001
+            log.info("opportunity: web search for %r did not answer: %r", name, exc)
+            rows = []
+        buckets: dict[str, list[dict]] = {}
+        for row in rows[:8]:
+            host = (urlsplit(str(row.get("url") or "")).hostname or "").lower()
+            labels = [part for part in host.split(".") if part]
+            while labels and labels[0] in ("www", "docs", "doc", "beta", "app"):
+                labels.pop(0)
+            if len(labels) >= 2:
+                buckets.setdefault(".".join(labels[-2:]), []).append(row)
+        agreed = [group for group in buckets.values() if len(group) >= 2]
+        for group in agreed[:MAX_SITES]:
+            row = group[0]
+            candidate = str(row.get("url") or "")
+            host = (urlsplit(candidate).hostname or "").lower()
+            if not host or any(host == bad or host.endswith("." + bad) for bad in NOT_A_HOME):
+                continue
+            body, links = _page(candidate, fetch=fetch)
+            if not body or not mentions(body, name, account or author):
+                continue
+            site, site_host, site_texts = candidate, host, [body]
+            page_sources.append({"url": candidate, "text": body})
+            _add_source(sources, "official_site", "官网", candidate)
+            for url in _docs(links):
+                text, _links = _page(url, fetch=fetch)
+                if text:
+                    site_texts.append(text)
+                    page_sources.append({"url": url, "text": text})
+                    _add_source(sources, "official_doc", "文档", url)
+            break
 
     answer = verdict(name=name, handle=account or author, lead_text=str(lead.get("text") or ""),
                      site_texts=site_texts, profile_texts=profile_texts, site_host=site_host,
                      profile_links=profile_links,
                      from_mention=bool(account) and account in set(pointers["handles"]))
+    level = answer["level"]
+    labels = {"A": {"official_account": "官方 X", "official_site": "官网", "official_doc": "文档"},
+              "B": {"official_account": "候选 X（未互证）", "official_site": "候选官网（未互证）",
+                    "official_doc": "候选文档（未互证）"}}
+    for item in sources:
+        item["label"] = labels.get(level, {}).get(item["kind"], item["label"])
+        if level != "A":
+            item["kind"] = item["kind"].replace("official_", "candidate_")
     answer.update({"account": account, "site": site, "version": TRACE_VERSION,
-                   "searched": searched,
+                   "searched": searched, "sources": sources, "page_sources": page_sources,
                    "pages": [text for text in site_texts + profile_texts if text]})
     return answer
 
 
-#: How many leads one scan traces. A trace costs about a minute (one search, up to three profile
-#: reads, up to two site reads), so eight is the difference between a fifteen-minute scan and a
-#: two-hour one. Deduped by project: a dozen posts about the same thing are one trace.
-MAX_TRACES = 8
+#: How many projects one scan traces. Deduped by project: a dozen posts about the same thing are
+#: one trace. Four traces overlap, and the setting is the safety cap rather than a page size.
+MAX_TRACES = 200
+TRACE_WORKERS = 4
 
 
 def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
-        cancel=None, fetch=None, search=None) -> dict:
+        cancel=None, fetch=None, search=None, web_search=None) -> dict:
     """Trace what is waiting, newest first by the gate's score. Returns the pass's counters.
 
     Runs **after classification** on purpose: the project name comes from that pass, and a name is
@@ -305,52 +439,73 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
 
     from . import settings
 
-    limit = settings.value("traces_per_scan", MAX_TRACES) if limit is None else limit
+    limit = int(settings.value("traces_per_scan", MAX_TRACES) if limit is None else limit)
     counters = {"traced": {"A": 0, "B": 0, "C": 0}, "skipped": 0, "added": [], "failed": 0}
     queue = db.opportunity_trace_queue(limit=limit * 4)
-    total = len(queue) or 1
-    seen: list[str] = []
-    done = 0
+    groups: dict[str, list[dict]] = {}
     for material in queue:
-        if sum(counters["traced"].values()) >= limit:
-            counters["skipped"] += 1
-            continue
         key = str(material.get("project_name") or "").strip().lower() or \
             str(material.get("handle") or "").lower()
-        if key and key in seen:
-            counters["skipped"] += 1
-            continue
-        seen.append(key)
-        if cancel is not None and cancel.is_set():
-            raise RuntimeError("scan cancelled")
-        lead = {"text": material["text"], "handle": material["handle"],
-                "urls": json.loads(material.get("urls_json") or "[]"),
-                "name": material.get("project_name") or ""}
+        groups.setdefault(key, []).append(material)
+
+    selected = list(groups.values())[:limit]
+    counters["skipped"] = len(queue) - len(groups) + sum(
+        len(group) for group in list(groups.values())[limit:])
+    total = len(selected) or 1
+    done = 0
+
+    def ask(materials: list[dict]) -> tuple[list[dict], dict | None, Exception | None]:
+        material = materials[0]
         try:
-            answer = trace_lead(lead, known=known or set(),
-                                fetch=fetch, search=search)
+            urls = json.loads(material.get("urls_json") or "[]")
+        except (TypeError, ValueError):
+            urls = []
+        try:
+            project_urls = json.loads(material.get("project_urls_json") or "[]")
+        except (TypeError, ValueError):
+            project_urls = []
+        lead = {"text": material["text"], "handle": material["handle"],
+                "urls": list(dict.fromkeys([*urls, *project_urls])),
+                "name": material.get("project_name") or "",
+                "project_handle": material.get("project_handle") or ""}
+        try:
+            answer = trace_lead(lead, known=known or set(), fetch=fetch, search=search,
+                                web_search=web_search)
+            return materials, answer, None
         except Exception as exc:  # noqa: BLE001
+            return materials, None, exc
+
+    if cancel is not None and cancel.is_set():
+        raise RuntimeError("scan cancelled")
+    with ThreadPoolExecutor(max_workers=max(1, min(TRACE_WORKERS, total))) as pool:
+        futures = [pool.submit(ask, group) for group in selected]
+        for future in futures:
             if cancel is not None and cancel.is_set():
-                raise
-            counters["failed"] += 1
-            log.info("opportunity: trace of %r failed: %r", key, exc)
+                raise RuntimeError("scan cancelled")
+            materials, answer, error = future.result()
+            material = materials[0]
+            key = str(material.get("project_name") or "").strip().lower() or \
+                str(material.get("handle") or "").lower()
+            if error is not None:
+                counters["failed"] += 1
+                log.info("opportunity: trace of %r failed: %r", key, error)
+                done += 1
+                if tell:
+                    tell(done, total)
+                continue
+            counters["traced"][answer["level"]] = counters["traced"].get(answer["level"], 0) + 1
+            db.opportunity_trace_put_many([row["ref"] for row in materials], answer["level"], dict(answer))
+            if answer["level"] == "A" and answer["account"] and \
+                    answer["account"] not in (known or set()):
+                db.opportunity_source_put([{
+                    "target": answer["account"], "kind": "official",
+                    "ecosystem": answer.get("ecosystem") or "multi", "cluster": None,
+                    "enabled": True, "window_hours": 24, "slice_hours": 4, "max_results": 40,
+                    "note": "2026-10-20 溯源 A 级：%s" % answer["basis"],
+                    "added_at": db.now_iso(),
+                }])
+                counters["added"].append(answer["account"])
             done += 1
             if tell:
                 tell(done, total)
-            continue
-        counters["traced"][answer["level"]] = counters["traced"].get(answer["level"], 0) + 1
-        db.opportunity_trace_put(material["ref"], answer["level"], dict(answer))
-        if answer["level"] == "A" and answer["account"] and \
-                answer["account"] not in (known or set()):
-            db.opportunity_source_put([{
-                "target": answer["account"], "kind": "official",
-                "ecosystem": answer.get("ecosystem") or "multi", "cluster": None,
-                "enabled": True, "window_hours": 24, "slice_hours": 4, "max_results": 40,
-                "note": "2026-10-20 溯源 A 级：%s" % answer["basis"],
-                "added_at": db.now_iso(),
-            }])
-            counters["added"].append(answer["account"])
-        done += 1
-        if tell:
-            tell(done, total)
     return counters

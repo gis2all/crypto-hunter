@@ -46,11 +46,9 @@ POSTS_PER_SOURCE = 20
 #: were deferred is written on the scan row, so a rotation is never mistaken for coverage.
 MAX_SOURCES = 40
 
-#: How many leads one scan traces to their official home. A trace costs about a minute (a
-#: second search, up to three profile reads, up to two site reads), so eight of them is the
-#: difference between a fifteen-minute scan and a two-hour one. Deduped by project: a dozen posts
-#: about the same thing are one trace. The rest wait for the next scan, and say so in the pool.
-MAX_TRACES = 8
+#: Default trace cap. The live value is `traces_per_scan`; the trace layer dedupes by project and
+#: runs four at a time, so this is a safety cap rather than a per-page size.
+MAX_TRACES = 200
 
 #: ...and how many X **calls** one scan may spend, because a query row is not one call. Thirty
 #: query rows at six slices each is 180 calls - fifteen minutes of throttle and a rate limit for
