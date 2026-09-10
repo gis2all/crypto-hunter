@@ -12,6 +12,7 @@ least to say, every scan, forever.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,7 +23,8 @@ from . import heat as heat_scale
 from . import settings
 from . import topic as topics
 from . import model, probe, promote, trust
-from .schema import EXTRACT_VERSION, UNJUDGED, Entry, read_entries, slug_for
+from .schema import (EXTRACT_VERSION, UNJUDGED, Entry, event_key, project_key,
+                     read_entries, slug_for)
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -59,6 +61,11 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     counters["issues"] += len(issues)
     source = _source_row(material.get("source_target"))
     trace_level, trace_basis = _trace_of(material)
+    payload = _trace_payload(material)
+    official_source = (source or {}).get("kind") == "official"
+    source_ref = material.get("url") or material.get("ref")
+    existing_official = (db.opportunity_official_by_source_ref(source_ref)
+                         if source_ref else None)
     # 热度是来源帖自己的互动量，所以每条条目从它读到的那条材料上取；页面材料没有
     # 互动读数，heat 就是 None（未判定），不是 0。
     heat = heat_score(material.get("metrics"))
@@ -67,7 +74,14 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     # stage's job, after the card (and its own title) exists.
     fallback = probe.from_pages([page["text"] for page in _pages_of(material)])
     for entry in entries:
-        slug = slug_for(entry)
+        computed_slug = slug_for(entry)
+        project = topics.normalise(material.get("project") or material.get("project_name")
+                                   or entry.organizer or entry.title)
+        project_id = project_key(project)
+        event_id = event_key(project, entry.kind, entry.title)
+        existing_event = db.opportunity_by_event_key(event_id)
+        existing = existing_official or existing_event
+        slug = existing["slug"] if existing else computed_slug
         # 归档 / 删除的卡是读者冻结的：同一项目再有新材料也不覆盖它。
         if db.opportunity_state_of(slug) not in (None, "active"):
             counters["frozen"] += 1
@@ -82,13 +96,32 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
             how_official, basis = "community", trace_basis or basis
         elif trace_level == "C":
             status, reason = "candidate", "no_official_source"
+        official_account, official_url, sources = _card_sources(
+            material, entry, payload, trace_level, official_source)
+        if existing:
+            was_official = how_official == "official"
+            # The same post already produced an official card. Reuse it instead of creating a
+            # second community card when a later search temporarily failed.
+            if not was_official:
+                how_official = "official"
+                basis = existing.get("trust_basis") or basis
+                if trace_level == "C":
+                    status, reason = promote.verdict(entry)
+            official_account = existing.get("official_account") or official_account
+            official_url = existing.get("official_url") or official_url
+            sources = _merge_sources(existing.get("sources_json"), sources,
+                                     official_only=not was_official)
         row = {
             "slug": slug,
             "kind": entry.kind,
             "category": entry.category,
             "title": entry.title,
             "organizer": entry.organizer,
-            "official_url": entry.official_url,
+            "project_key": project_id,
+            "event_key": event_id,
+            "official_url": official_url,
+            "official_account": official_account,
+            "sources_json": json.dumps(sources, ensure_ascii=False),
             "summary": entry.summary,
             "trust": how_official,
             "trust_basis": basis,
@@ -119,6 +152,8 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
         }
         steps = [step.model_dump() for step in entry.steps]
         db.opportunity_put(row, steps)
+        if existing and computed_slug != slug:
+            db.opportunity_delete_duplicate(computed_slug, source_ref)
         counters["entries"] += 1
         counters["promoted" if status == promote.PROMOTED else "candidate"] += 1
     # 主题代表的那条帖与它的同组帖一起标记：否则下一轮会把它们各自再出一张卡，
@@ -191,6 +226,11 @@ def _pages_of(material: dict) -> list[dict]:
         payload = json.loads(raw)
     except (TypeError, ValueError):
         return []
+    page_sources = payload.get("page_sources") or []
+    if page_sources:
+        return [{"url": str(page.get("url") or "溯源读到的官方页"),
+                 "text": str(page.get("text") or "")}
+                for page in page_sources if str(page.get("text") or "").strip()]
     pages = payload.get("pages") or []
     site = str(payload.get("site") or "")
     out: list[dict] = []
@@ -214,6 +254,75 @@ def _trace_of(material: dict) -> tuple[str, str]:
     except (TypeError, ValueError):
         return str(material.get("trace_level") or ""), ""
     return str(payload.get("level") or ""), str(payload.get("basis") or "")
+
+
+def _trace_payload(material: dict) -> dict:
+    import json
+
+    raw = material.get("trace_json")
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _card_sources(material: dict, entry: Entry, payload: dict, level: str,
+                  official_source: bool) -> tuple[str | None, str | None, list[dict]]:
+    """The official account, primary URL, and readable source list for one card."""
+    official = level == "A" or official_source
+    account = str(payload.get("account") or entry.organizer or "").lstrip("@")
+    site = str(payload.get("site") or entry.official_url or "").strip()
+    out: list[dict] = []
+
+    def add(kind: str, label: str, url: str) -> None:
+        url = str(url or "").strip()
+        if url and not any(item.get("url") == url for item in out):
+            out.append({"kind": kind, "label": label, "url": url})
+
+    if account and (official or level in ("B", "C")):
+        add("official_account" if official else "candidate_account",
+            "官方 X" if official else "候选 X（未互证）",
+            "https://x.com/%s" % account)
+    account_url = "https://x.com/%s" % account if account else ""
+    for item in payload.get("sources") or []:
+        kind = str(item.get("kind") or "")
+        if kind in ("official_account", "candidate_account") and item.get("url") != account_url:
+            continue
+        if official:
+            if kind in ("official_account", "candidate_account"):
+                kind = "official_account"
+            elif kind in ("official_site", "candidate_site"):
+                kind = "official_site"
+            elif kind in ("official_doc", "candidate_doc"):
+                kind = "official_doc"
+        add(kind, str(item.get("label") or "来源"), str(item.get("url") or ""))
+    if site and official:
+        add("official_site", "官网", site)
+    original = str(material.get("url") or material.get("ref") or "")
+    add("post", "原文", original)
+    return (account if official else None,
+            site if official else None,
+            out)
+
+
+def _merge_sources(raw: str | None, fresh: list[dict], *, official_only: bool = False) -> list[dict]:
+    """Keep the official source list and add the new original-post link without duplicates."""
+    try:
+        old = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        old = []
+    out = [item for item in old if isinstance(item, dict) and item.get("url")]
+    for item in fresh:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        if official_only and item.get("kind") != "post":
+            continue
+        if not any(existing.get("url") == item["url"] for existing in out):
+            out.append(item)
+    return out
 
 
 def _source_row(target: str | None) -> dict | None:

@@ -71,6 +71,8 @@ def merge(materials: list[dict]) -> list[dict]:
         posts.sort(key=lambda row: float(row.get("score") or 0), reverse=True)
         kept = posts[:MAX_POSTS_PER_TOPIC]
         head = kept[0]
+        traced = next((row for row in posts if row.get("trace_level")), head)
+        source_types = {str(row.get("source_type") or "") for row in posts}
         topics.append({
             "key": key,
             "project": head.get("project_name") or head.get("source") or "",
@@ -80,8 +82,10 @@ def merge(materials: list[dict]) -> list[dict]:
             "url": head.get("url") or "",
             "at": head.get("at") or "",
             "source_target": head.get("source_target") or "",
-            "trace_level": head.get("trace_level") or "",
-            "trace_json": head.get("trace_json") or "",
+            "trace_level": traced.get("trace_level") or "",
+            "trace_json": traced.get("trace_json") or "",
+            "source_type": head.get("source_type") or "",
+            "resolved": bool(traced.get("trace_level")) or source_types == {"official"},
             "consumed": [row["ref"] for row in posts],
             "posts": len(kept),
             "score": max(float(row.get("score") or 0) for row in kept),
@@ -111,7 +115,7 @@ def materials(limit: int = TOPICS_PER_PASS, scan: int = SCAN_POSTS) -> list[dict
     # prompt. Read enough posts that the topic cap is not blocked by the old 120-post floor.
     scan = max(int(scan), int(limit) * MAX_POSTS_PER_TOPIC)
     rows = db.opportunity_materials(unclassified=False, limit=scan)
-    topics = merge(rows)[:limit]
+    topics = [topic for topic in merge(rows) if topic["resolved"]][:limit]
     for topic in topics:
         topic["official_pages"] = _pages_of(topic)
     return topics
@@ -126,6 +130,11 @@ def _pages_of(topic: dict) -> list[dict]:
         payload = json.loads(raw)
     except (TypeError, ValueError):
         return []
+    pages = payload.get("page_sources") or []
+    if pages:
+        return [{"url": str(page.get("url") or "溯源读到的官方页"),
+                 "text": str(page.get("text") or "")}
+                for page in pages if str(page.get("text") or "").strip()]
     site = str(payload.get("site") or "")
     out = []
     for index, body in enumerate(payload.get("pages") or []):

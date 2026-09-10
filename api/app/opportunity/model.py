@@ -69,11 +69,22 @@ def material_message(material: dict, *, chars: int) -> str:
         text,
     ]
     pages = material.get("official_pages") or []
+    level = str(material.get("trace_level") or "")
+    if level == "A":
+        evidence = "官方来源（官网与官方号互证）"
+    elif level == "B":
+        evidence = "候选官方页（同名账号，未互证）"
+    elif material.get("source_type") == "official":
+        evidence = "官方账号自述"
+    else:
+        evidence = "只有社区帖，未读到项目官方来源"
     if pages:
-        parts += ["", "## 官方来源（溯源读到的，优先用它）"]
+        parts += ["", "## 证据等级", evidence, "", "## 官方来源（溯源读到的，优先用它）"]
         for index, page in enumerate(pages[:PAGES_MAX], start=1):
             body = str(page.get("text") or "")[:PAGE_CHARS]
             parts += ["### 官方页 %d：%s" % (index, page.get("url") or ""), body, ""]
+    else:
+        parts += ["", "## 证据等级", evidence]
     return "\n".join(parts)
 
 

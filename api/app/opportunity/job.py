@@ -28,7 +28,7 @@ from uuid import uuid4
 
 from ..llm import client as llm
 from ..store import db
-from . import chainsearch, extract, group, lifecycle, scan as scanner, trace, watchlist
+from . import chainsearch, dedup, extract, group, lifecycle, scan as scanner, trace, watchlist
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -190,11 +190,17 @@ def run(job: dict, say) -> None:
         cancel=_flag(job["id"]),
         # 帖里既没有账号也没有链接时的那次搜索（user 补的那一步）。一片就够：问的是"现在谁在
         # 说这个名字"，而每一次调用都算进扫描的调用预算（`trace.run` 自己记）。
-        search=scanner.look_up)
+        search=scanner.look_up,
+        web_search=chainsearch.search)
 
     say("extract")
     counters["extract"] = extract.run(
         tell=lambda done, total: _tick(job, "extract", done, total))
+
+    # Semantic de-dupe runs after extraction: it only sees cards, and only candidate groups with
+    # at least one newly written/changed card are sent to the model. A failed call leaves the
+    # group for the next scan.
+    counters["dedup"] = dedup.run()
 
     # 补链在抽取之后：卡片自己的标题与摘要是最便宜、也最贴近事件的证据，而它们到这一步才存在。
     say("chain")

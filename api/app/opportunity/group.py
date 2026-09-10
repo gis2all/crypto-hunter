@@ -124,8 +124,12 @@ def _finalize(parts: list[dict], aliases: dict[str, dict]) -> dict:
         key = "handle:" + group["handle"].lower()
         if key not in merged:
             merged[key] = {"name": group["name"], "handle": group["handle"],
-                           "kind": group["kind"], "ids": []}
+                           "kind": group["kind"], "urls": list(group.get("urls") or []),
+                           "ids": []}
         merged[key]["ids"].extend(group["ids"])
+        for url in group.get("urls") or []:
+            if url not in merged[key]["urls"]:
+                merged[key]["urls"].append(url)
 
     by_name: dict[str, dict] = {}
     for group in merged.values():
@@ -144,10 +148,14 @@ def _finalize(parts: list[dict], aliases: dict[str, dict]) -> dict:
             key = "name:" + name
             if key not in merged:
                 merged[key] = {"name": group["name"], "handle": "",
-                               "kind": group["kind"], "ids": []}
+                               "kind": group["kind"], "urls": list(group.get("urls") or []),
+                               "ids": []}
                 by_name[name] = merged[key]
             target = merged[key]
         target["ids"].extend(group["ids"])
+        for url in group.get("urls") or []:
+            if url not in target["urls"]:
+                target["urls"].append(url)
 
     assigned: dict[str, dict] = {}
     duplicates = 0
@@ -220,7 +228,8 @@ def run(*, limit: int | None = None, tell=None) -> dict:
         final = _finalize(parts, aliases)
         repair_calls += 1
     assignments = [{"ref": aliases[ref]["ref"], "kind": group["kind"],
-                    "name": group["name"]}
+                    "name": group["name"], "handle": group.get("handle") or "",
+                    "urls": group.get("urls") or []}
                    for ref, group in final["assigned"].items()]
     unresolved = final["missing"] | final["uncertain"]
     if unresolved:
