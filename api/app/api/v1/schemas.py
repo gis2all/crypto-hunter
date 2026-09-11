@@ -622,6 +622,14 @@ class OpportunityStepOut(BaseModel):
     source_at: str | None = None
 
 
+class OpportunitySourceLinkOut(BaseModel):
+    """One clickable source on a card: official account, site, doc, or the original post."""
+
+    kind: str
+    label: str
+    url: str
+
+
 class OpportunityItemOut(BaseModel):
     """One entry: an activity with steps, or a project with a sentence.
 
@@ -635,7 +643,9 @@ class OpportunityItemOut(BaseModel):
     category: str | None = None
     title: str
     organizer: str | None = None
+    official_account: str | None = None
     official_url: str | None = None
+    sources: list[OpportunitySourceLinkOut] = []
     summary: str | None = None
     trust: str
     trust_basis: str | None = None

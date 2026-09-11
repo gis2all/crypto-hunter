@@ -210,6 +210,18 @@ function ScanPanel({ scan, open, form, stopping, onCancel }: {
       }
       return classify.asked === undefined ? "—" : `问了 ${classify.asked} 条`;
     }
+    if (key === "trace") {
+      const trace = (counters.trace ?? {}) as {
+        traced?: Record<string, number>;
+        skipped?: number;
+        failed?: number;
+      };
+      if (trace.traced === undefined) return "—";
+      return `A ${trace.traced.A ?? 0} · B ${trace.traced.B ?? 0}`
+        + ` · C ${trace.traced.C ?? 0}`
+        + (trace.skipped ? ` · 跳过 ${trace.skipped}` : "")
+        + (trace.failed ? ` · 失败 ${trace.failed}` : "");
+    }
     if (key === "extract") {
       return extract.entries === undefined
         ? "—"
@@ -472,11 +484,14 @@ function EntryCard({ item, trust, full, onState }: {
         )}
       </div>
       <div className="opp-foot">
-        {item.source_ref ? (
-          <a href={item.source_ref} target="_blank" rel="noreferrer">
-            原文 <Icon as={ExternalLink} size={12} />
+        {(item.sources?.length ? item.sources : item.source_ref
+          ? [{ kind: "post", label: "原文", url: item.source_ref }]
+          : []).map((source, index) => (
+          <a href={source.url} target="_blank" rel="noreferrer"
+             key={source.kind + ":" + source.url + ":" + index}>
+            {source.label} <Icon as={ExternalLink} size={12} />
           </a>
-        ) : null}
+        ))}
         {/* 这一页唯一的写动作，而且是读者自己的：归档＝知道但不优先，删除＝不想要（软删，
             行与证据都留着）。它不动管线那半 —— 卡片照样说清"为什么它不在列表上"。 */}
         <span className="opp-acts">
@@ -960,7 +975,7 @@ export function OpportunityView() {
               </div>
               {([
                 ["unclassified", "未分组", "抓到了，还没交给模型分组"],
-                ["unextracted", "未抽取", "已经分组，还没排到抽取（每轮有限额）"],
+                ["unextracted", "未抽取", "已经分组，等待官方解析或抽取"],
                 ["trace_failed", "溯源失败", "没找到官方来源，进了未晋升池"],
               ] as const)
                 .filter(([key]) => queueFilter === "all" || queueFilter === key)

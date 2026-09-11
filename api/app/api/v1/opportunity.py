@@ -10,6 +10,8 @@ watchlist 单独读；扫描可以启动、按 id 轮询与中止，另有队列
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query
 
 from ...opportunity import heat, job, promote, settings, watchlist
@@ -36,9 +38,23 @@ def _item(row: dict) -> OpportunityItemOut:
     Both are the same rule - the frontend does not decode anything.
     """
     barrier = [name for name in str(row.get("barrier") or "").split(",") if name]
+    sources = []
+    try:
+        sources = json.loads(row.get("sources_json") or "[]")
+    except (TypeError, ValueError):
+        sources = []
+    if not isinstance(sources, list):
+        sources = []
+    if not sources:
+        if row.get("official_url"):
+            sources.append({"kind": "official_site", "label": "官网",
+                            "url": row["official_url"]})
+        if row.get("source_ref"):
+            sources.append({"kind": "post", "label": "原文", "url": row["source_ref"]})
     return OpportunityItemOut(
         slug=row["slug"], kind=row["kind"], category=row.get("category"), title=row["title"],
-        organizer=row.get("organizer"), official_url=row.get("official_url"),
+        organizer=row.get("organizer"), official_account=row.get("official_account"),
+        official_url=row.get("official_url"), sources=sources,
         summary=row.get("summary"), trust=row.get("trust") or "unjudged",
         trust_basis=row.get("trust_basis"), ecosystem=row.get("ecosystem"),
         source_type=row.get("source_type"), risk=row.get("risk"), barrier=barrier,

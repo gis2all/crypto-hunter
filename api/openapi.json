@@ -3964,6 +3964,17 @@
       ],
       "title": "Organizer"
      },
+     "official_account": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Official Account"
+     },
      "official_url": {
       "anyOf": [
        {
@@ -3974,6 +3985,14 @@
        }
       ],
       "title": "Official Url"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySourceLinkOut"
+      },
+      "type": "array",
+      "title": "Sources",
+      "default": []
      },
      "summary": {
       "anyOf": [
@@ -4532,6 +4551,30 @@
     ],
     "title": "OpportunitySortOut",
     "description": "One sort key and the two directions it reads in, as (value, label) pairs."
+   },
+   "OpportunitySourceLinkOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "label",
+     "url"
+    ],
+    "title": "OpportunitySourceLinkOut",
+    "description": "One clickable source on a card: official account, site, doc, or the original post."
    },
    "OpportunitySourceOut": {
     "properties": {

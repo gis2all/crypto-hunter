@@ -1676,8 +1676,15 @@ export interface components {
             title: string;
             /** Organizer */
             organizer?: string | null;
+            /** Official Account */
+            official_account?: string | null;
             /** Official Url */
             official_url?: string | null;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["OpportunitySourceLinkOut"][];
             /** Summary */
             summary?: string | null;
             /** Trust */
@@ -1913,6 +1920,18 @@ export interface components {
                 string,
                 string
             ][];
+        };
+        /**
+         * OpportunitySourceLinkOut
+         * @description One clickable source on a card: official account, site, doc, or the original post.
+         */
+        OpportunitySourceLinkOut: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Url */
+            url: string;
         };
         /**
          * OpportunitySourceOut
