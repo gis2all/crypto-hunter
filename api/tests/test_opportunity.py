@@ -1173,6 +1173,7 @@ def test_extraction_is_capped_too(isolated_db, monkeypatch):
 def test_extraction_overlaps_model_calls(isolated_db, monkeypatch):
     for index in range(4):
         _classified_lead("parallel-%d" % index, name="Parallel %d" % index)
+        db.opportunity_trace_put("parallel-%d" % index, "A", {"level": "A", "basis": "test"})
     active = [0]
     peak = [0]
     lock = threading.Lock()
@@ -1423,6 +1424,64 @@ def test_a_lead_from_an_account_we_watch_is_never_queued(isolated_db):
     assert db.opportunity_trace_queue() == []
 
 
+def test_a_trace_change_requeues_the_material_for_extraction(isolated_db):
+    _query_source()
+    _classified_lead("t-requeue")
+    db.opportunity_mark("t-requeue", "post", extracted=True)
+
+    db.opportunity_trace_put("t-requeue", "A", {"level": "A", "basis": "test"})
+
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT trace_level, extracted_at FROM opportunity_posts"
+                           " WHERE tweet_id = 't-requeue'").fetchone()
+    finally:
+        conn.close()
+    assert row["trace_level"] == "A"
+    assert row["extracted_at"] is None, "补溯源后旧卡要重新排队抽取"
+
+
+def test_a_lower_trace_never_downgrades_an_official_reading(isolated_db):
+    db.opportunity_post_put({"tweet_id": "t-keep-a", "handle": "someone", "text": "x",
+                             "posted_at": "2026-10-18T00:00:00+00:00", "url": "u",
+                             "source_target": "q", "first_seen_scan": "s", "score": 80,
+                             "rules_json": "{}"})
+    db.opportunity_trace_put("t-keep-a", "A", {
+        "level": "A", "version": "trace@4", "page_sources": [{"url": "https://x.test", "text": "x"}]})
+    db.opportunity_trace_put("t-keep-a", "B", {"level": "B", "version": "trace@4"})
+
+    conn = db.connect()
+    try:
+        level = conn.execute("SELECT trace_level FROM opportunity_posts WHERE tweet_id = 't-keep-a'"
+                             ).fetchone()["trace_level"]
+    finally:
+        conn.close()
+    assert level == "A", "搜索超时不能把已互证的官方结果降成社区"
+
+
+def test_same_source_duplicates_keep_the_official_card(isolated_db):
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO opportunities (slug, kind, title, source_ref, trust, trust_basis,"
+            " sources_json, discovered_at, updated_at, status)"
+            " VALUES ('official', 'project', 'Old', 'post-1', 'official', '互证',"
+            " '[{\"kind\":\"official_site\",\"label\":\"官网\",\"url\":\"https://p.test\"}]',"
+            " '2026-10-20', '2026-10-20', 'promoted'),"
+            " ('community', 'project', 'New', 'post-1', 'community', '未互证',"
+            " '[]', '2026-10-21', '2026-10-21', 'promoted')")
+        merged = db._merge_same_source_official_duplicates(conn)
+        rows = conn.execute("SELECT slug, title, trust, sources_json FROM opportunities"
+                            " WHERE source_ref = 'post-1'").fetchall()
+    finally:
+        conn.close()
+    assert merged == 1
+    assert [row["slug"] for row in rows] == ["official"]
+    assert rows[0]["title"] == "New"
+    assert rows[0]["trust"] == "official"
+    assert "https://p.test" in rows[0]["sources_json"]
+
+
 def test_the_stage_is_capped_and_deduped(isolated_db, monkeypatch):
     """上限 8 个项目，同一项目只溯一次（十几条帖常常在说同一件事）。"""
     _query_source()
@@ -1490,6 +1549,80 @@ def test_the_accounts_own_link_closes_the_mutual_proof():
         profile_texts=["CONSO · reputation layer"],
         site_host="conso.xyz", profile_links=["https://conso.xyz/"])
     assert answer["level"] == "A" and answer["trust"] == "official"
+
+
+def test_a_person_or_ecosystem_account_is_not_the_project_official():
+    answer = trace.verdict(
+        name="AINFT Foundation", handle="justinsuntron", lead_text="AINFT Foundation 上线",
+        site_texts=["AINFT Foundation is an AI agent protocol"],
+        profile_texts=["Justin Sun official account"],
+        site_host="foundation.ainft.com",
+        profile_links=["https://foundation.ainft.com/"])
+    assert answer["level"] != "A", "只有域名互证不够，账号还要像项目本身"
+
+
+def test_trace_reads_profile_links_and_records_official_docs():
+    profile = ('<a href="https://docs.termix.ai/reputation">docs</a> '
+               'Termix AI Agent reputation layer')
+    docs = 'Termix Reputation is the on-chain reputation contract for Termix agents.'
+
+    def fetch(url):
+        if url.startswith("https://x.com/termix_ai"):
+            return profile
+        if url.startswith("https://docs.termix.ai"):
+            return docs
+        return ""
+
+    answer = trace.trace_lead(
+        {"text": "Termix AI Agent 链上信誉分机制", "handle": "writer", "urls": [],
+         "name": "Termix", "project_handle": "termix_ai"},
+        known=set(), fetch=fetch, search=None)
+
+    assert answer["level"] == "A", answer
+    assert answer["account"] == "termix_ai"
+    assert any(source["kind"] == "official_doc" for source in answer["sources"])
+    assert answer["page_sources"][0]["url"].startswith("https://docs.termix.ai")
+
+
+def test_web_search_uses_handle_and_domain_consensus():
+    def fetch(url):
+        if url.startswith("https://x.com/termix_ai"):
+            return "Termix AI Agent official"
+        if url.startswith("https://termix.ai"):
+            return '<a href="https://docs.termix.ai/">docs</a> Termix official'
+        if url.startswith("https://docs.termix.ai"):
+            return "Termix DOCS reputation and agent marketplace"
+        return "docs.termix.site is a different project"
+
+    def web_search(query):
+        assert "termix_ai" in query
+        return [{"url": "https://termix.ai/"},
+                {"url": "https://docs.termix.ai/"},
+                {"url": "https://docs.termix.site/"}]
+
+    answer = trace.trace_lead(
+        {"text": "Termix AI Agent 链上信誉分机制", "handle": "writer", "urls": [],
+         "name": "Termix", "project_handle": "termix_ai"},
+        known=set(), fetch=fetch, search=None, web_search=web_search)
+
+    assert answer["level"] == "A"
+    assert answer["site"] == "https://termix.ai/"
+    assert all("termix.site" not in source["url"] for source in answer["sources"])
+    assert any(source["kind"] == "official_doc" for source in answer["sources"])
+
+
+def test_a_card_records_its_official_sources():
+    entry = Entry(title="Termix AI Agent", kind="project", summary="链上信誉分机制",
+                  organizer="termix_ai")
+    payload = {"account": "termix_ai", "site": "https://termix.ai",
+               "sources": [{"kind": "official_doc", "label": "文档",
+                            "url": "https://docs.termix.ai"}]}
+    account, url, sources = extract._card_sources(
+        {"url": "https://x.com/writer/status/1"}, entry, payload, "A", False)
+
+    assert account == "termix_ai" and url == "https://termix.ai"
+    assert {source["kind"] for source in sources} >= {"official_account", "official_site",
+                                                      "official_doc", "post"}
 
 
 def test_the_grouped_project_name_drives_the_second_search():
@@ -1936,6 +2069,28 @@ def test_the_panel_prints_a_label_and_filters_by_the_key():
     assert ecosystem_label("multi-sig") == "Multi-Sig"
     assert ecosystem_label("多链") == "多链"
     assert ecosystem_label("未判定") == "未判定"
+
+
+def test_robinhood_chain_spellings_are_one_key():
+    from app.opportunity.schema import canonical_ecosystem, ecosystem_label
+
+    assert canonical_ecosystem("Robinhood") == "robinhood"
+    assert canonical_ecosystem("Robinhood Chain") == "robinhood"
+    assert ecosystem_label("robinhood") == "Robinhood"
+    assert canonical_ecosystem("X Layer") == "xlayer"
+    assert canonical_ecosystem("Xlayer") == "xlayer"
+    assert ecosystem_label("xlayer") == "X Layer"
+
+
+def test_event_key_merges_sale_variants_but_keeps_tickers_apart():
+    from app.opportunity.schema import event_key
+
+    one = event_key("In Development", "activity", "In Development 公开发售 0.002 BTC/件")
+    two = event_key("In Development", "activity", "In Development 公售（已结束）")
+    assert one == two
+    accru = event_key("Pons", "project", "Pons 新发射代币 $ACCRU")
+    equora = event_key("Pons", "project", "Pons 新发射代币 $EQUORA")
+    assert accru != equora
 
 
 def test_the_ecosystem_spellings_are_normalised_in_place(isolated_db):

@@ -86,6 +86,26 @@ def test_groups_merge_by_handle_and_invalid_or_empty_groups_are_dropped(isolated
     }
 
 
+def test_group_output_keeps_the_candidate_handle_and_urls(isolated_db, monkeypatch):
+    _post("t1")
+    monkeypatch.setattr(llm, "complete_json", lambda messages, **kw: _answer([
+        {"name": "Termix", "handle": "termix_ai", "urls": ["https://docs.termix.ai"],
+         "kind": "project", "ids": ["p1"]},
+    ]))
+
+    group.run(limit=10)
+
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT project_name, project_handle, project_urls_json"
+                           " FROM opportunity_posts WHERE tweet_id = 't1'").fetchone()
+    finally:
+        conn.close()
+    assert row["project_name"] == "Termix"
+    assert row["project_handle"] == "termix_ai"
+    assert row["project_urls_json"] == '["https://docs.termix.ai"]'
+
+
 def test_an_id_in_two_groups_goes_to_the_first_group(isolated_db, monkeypatch):
     _post("t1")
     _post("t2")
@@ -255,6 +275,8 @@ def test_the_topic_limit_is_not_blocked_by_the_post_scan_floor(isolated_db):
         for index in range(2):
             conn.execute("UPDATE opportunity_posts SET project_name = ? WHERE tweet_id = ?",
                          ("Project %d" % index, "topic-%d" % index))
+            conn.execute("UPDATE opportunity_posts SET trace_level = 'A' WHERE tweet_id = ?",
+                         ("topic-%d" % index,))
     finally:
         conn.close()
 
