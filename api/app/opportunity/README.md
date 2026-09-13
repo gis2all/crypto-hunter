@@ -74,7 +74,7 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | **生态从材料读出来**，不是从"谁发的帖"继承（2026-10-19, user）。 | 一个 Solana 账号宣布 Base 上的项目，条目就该写 `base`。继承来源行会把"项目在哪条链上"变成"我们在哪儿看到它"，那是两个问题。 |
 | **已知链走别名表**（`Ethereum`、`eth`、`以太坊` 都归 `ethereum`）；枚举外的真链保留自己，统一转小写。 | 自由文本会让面板每加一种拼法就多一行 —— 而面板那一组是读者浏览的轴。`Tron` 与 `tron` 不能是两行。 |
 | **`多链` 与 `未判定` 是两件事**：前者是"材料说它同时在好几条链上"，后者是"材料没说"。 | 它们 2026-10-19 之前是同一个值 `multi`，而那个值在种子里实际表示的是"我不知道"。 |
-| **抽完之后统一补链**（2026-10-24）：卡片标题与摘要里只点名一条链就直接用；否则读溯源页；再否则每个项目一次网页搜索（Exa 公共 MCP，失败换 Parallel），最后才让模型在给出的结果里选。 | 每轮只溯源 8 个项目、却抽取 40 个，大多数卡从没读过官网。搜索结果页在本机会被代理换内容，MCP 在厂商服务器上搜，绕开这一层。模型必须给出结果里的 `url` 作为证据，没证据就留 `未判定`。 |
+| **抽完之后统一补链**（2026-10-24）：卡片标题与摘要里只点名一条链就直接用；否则读溯源页；再否则每个项目一次网页搜索（Exa 公共 MCP，失败换 Parallel），最后才让模型在给出的结果里选。 | 搜索结果页在本机会被代理换内容，MCP 在厂商服务器上搜，绕开这一层。模型必须给出结果里的 `url` 作为证据，没证据就留 `未判定`。 |
 | 老的首字母大写值一次性回填成键（`Tron` → `tron`，`Multi` → `多链`，2026-10-24）。 | 回填前 8 行是 `Tron` / `Flare` / `Bttc` 这类显示名；不回填的话，新写的 `tron` 会和老行并存。 |
 
 ## 分组与抽取（Group / Extract）
@@ -127,7 +127,7 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | 表 | 主键 | 性质 | 存什么 |
 | --- | --- | --- | --- |
 | `opportunity_sources` | `id` | **可编辑**（操作者随时加账号 / 查询） | watchlist：`target` / `kind`（`official` / `query`）/ `ecosystem` / `cluster` / `enabled` / `window_hours` / `slice_hours` / `max_results` / `note` / `added_at` / `last_read_at` |
-| `opportunity_posts` | `tweet_id` | **只增不改**（原始事实） | 帖子原文与 `metrics_json`、`posted_at`、`url`、`source_target`、`score` / `rules_json`（免费闸的读数）、`classified`、`extracted_at` |
+| `opportunity_posts` | `tweet_id` | **只增不改**（原始事实） | 帖子原文与 `metrics_json`、`posted_at`、`url`、`source_target`、`score` / `rules_json`（免费闸的读数）、`project_name` / `project_handle` / `project_urls_json`、`trace_level` / `trace_json`、`classified`、`extracted_at` |
 | `opportunities` | `slug` | **可编辑**（重抽 / 人工修订） | `kind`（内部读数） / `category` / `title` / `organizer` / `official_url` / `summary` / `trust` / `trust_basis` / **`ecosystem`（材料读出来的链）** / `ecosystem_checked_at`（补链问过的时刻，NULL = 还欠一次） / `source_type`（我们怎么找到它的） / `risk` / `barrier` / `maturity` / `started_at` / `deadline` / `status` / `reason` / `heat` / `heat_basis` / `discovered_at` / `source_kind` / `source_ref` / `extract_version` |
 | `opportunity_steps` | `(slug, ordinal)` | 随条目一起重写 | 每一步：`title` / `body` / `source_url` / `source_at`（活动类才有行） |
 | `opportunity_scans` | `id` | 只增（回执，对标 `search_jobs`） | `status` / `stage` / `stages_json` / `counters_json` / `started_at` / `finished_at` / `error` |
@@ -203,7 +203,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 一轮扫描要多久（实测 2026-10-18） | 42 次 X 调用 = **6.2 分钟**（每次约 9 秒：CLI 8–10 秒 ＋ 节流 5 秒，所以慢在**调用次数**上）；分组（离线 pilot，2026-10-21）390 条完整正文约 **15 秒**、93,455 prompt tokens；抽取按 **4 并发**跑，单个慢调用仍会拉长这一轮。 |
 | 一次扫描的花费（含溯源，实测 2026-10-19） | 8 条溯源 × 约 1 分钟（1 次二次搜索 + 最多 3 个资料页 + 最多 2 个官网页）≈ 8 分钟，加在原来的 8.5 分钟上。二次搜索走时间切片但只有一片（问的是"现在谁在说这个名字"），它的 X 调用计入扫描的调用预算。 |
 | 一次扫描的七个阶段 | `job.py` `STAGES` | 读 watchlist / 抓材料 / 分组 / 溯源 / 抽取与落库 / 补链 / 生命周期；阶段与计数写在扫描行上，页面轮询它。**可中止**：旗子在子进程循环里轮询，停在下一次 X 调用。 |
-| **溯源接线** | `trace.py` + `settings.traces_per_scan`（默认 8） + `extract._trace_of` | 扫描时只对**查询来源**的线索溯源（官方号来源本来就权威）；按项目去重（名字猜的是同一个就是一次），按规则分排序，超上限的下一轮；**A 级账号自动进 watchlist**；A/B 的 `trust` 由溯源决定（A 官方 / B 社区·未互证），**C 级进未晋升池并写「未找到官方来源」**。溯源读到的官方页随材料进抽取（`model.material_message` 追加「官方来源」一节），生态也从那里读。 |
+| **溯源接线** | `trace.py` + `settings.traces_per_scan`（默认 200，并发 4） + `extract._trace_of` | 扫描时只对**查询来源**的线索溯源（官方号来源本来就权威）；按项目去重，读候选 X、官网和文档页；**A 级账号自动进 watchlist**；A/B 的 `trust` 由溯源决定（A 官方 / B 社区·未互证），**C 级进未晋升池并写「未找到官方来源」**。抽取只处理已解析的主题；官方页随材料进提示词，官方 X / 官网 / 文档 / 原帖随卡片落库。 |
 | X 读取器 | `xread.py` | 查询行的切片计划、一次请求一个子进程（带取消）、模块自己的节流（5 秒）。不复用 `XEngine.search` —— 那是按合约地址索引的筛币引擎，一条短语查询在它那里会**静默返回空**。 |
 | 端到端读取 | `GET /api/v1/opportunity` | 条目（含步骤）+ 计数 + 最近一次扫描 + **筛选面板与排序键**（`filters` / `sorts`，后端建）+ 页面文案，一次给全：页面只读，不拼装、不判定。 |
 | 阶段内的进度 | `job._tick` + `JobStageOut.done/total` | 一个六分钟的 collect 只写「running」两个字，页面看起来就是卡住了（user, 2026-10-18）—— 所以阶段行画 `6/40`、`33/60` 这样的读数。 |
@@ -272,7 +272,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 规则 | 说明 / 反例 |
 | --- | --- |
 | **A 级账号自动进 watchlist**（`official` 行），B 级不进。 | watchlist 的 `official` 行会让它**之后发的每一条帖子都自动变成官方**（`trust.py` 的规则），所以把一个可能是冒充的号加进去，等于把它以后所有内容都洗成官方。 |
-| **每轮溯源上限 8 个项目**（按规则分排序，按项目去重 —— 十几条帖子常常在说同一个项目）。 | 一条线索走完 ②③④ 约 40–60 秒（1 次搜索 + 最多 3 个资料页 + 3–5 页官方内容 + 2 次 LLM）；441 条过闸帖子全溯就是五小时。超上限的留在池子里，下一轮接着溯。 |
+| **默认每轮溯源上限 200 个项目**（按项目去重，4 个并发；可在设定页调整）。 | 一条线索走完解析、资料页、官网和文档约一分钟；不并发会把一轮拖成数小时。超上限的留在池子里，下一轮接着溯。 |
 | **溯源失败要记账**：进未晋升池，理由写「还没溯源」或「未找到官方来源」。 | 这正是"为什么它没上列表"的答案，也是以后回头看"当初太早"的凭据。 |
 | 读取器**复用 `search/`**（`identify.fetch_page` 含 Playwright 兜底、`base.links_in` / `host_of` / `handle_of`、`harvest.site_candidates`），不另写一份。 | 一个源一个适配器：读页面的那套已经写好了，第二份只会跟它漂移。 |
 | 要重写的是**验证**：`identify` 的证明是"这一页提到了这个 CA"，这里没有 CA，等价物是"官网 ↔ 账号互证"。 | 按名字匹配天然会撞上冒充号（同名、加 `_official`），所以证据必须分级。 |
@@ -295,7 +295,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 ④ 读官方内容（3–5 页）
         ↓
 ⑤ 出一张卡：这是什么 / 怎么做 / 有哪些限制
-   材料 = 官方若干页 + 支撑它的那几条帖；页脚放原文与归档 / 删除
+   材料 = 官方若干页 + 支撑它的那几条帖；页脚放官方 X / 官网 / 文档 / 原文与归档 / 删除
 ```
 
 | 规则 | 说明 / 反例 |
@@ -304,17 +304,17 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | **官方优先，社区帖只是线索与兜底**（user）：找到官方帖/官网就用官方材料写卡；只有社区帖时用社区帖写，`trust` 标为「社区」。 | 社区帖当材料写出来的卡，就是用户看到的「这么多社区贴很杂」——它们是**指向官方的线索**，不是权威内容。 |
 | **讲不清就不出卡**：`summary` 必须回答「这是什么」（不是复述帖子）；活动还要有具体步骤与官方入口，项目只要有官方入口与一句「是什么」。含糊的进未晋升池，理由写「材料没说清」。 | 只要求「有步骤」，于是「前往置顶帖互动，对作者 @x 的置顶帖子进行互动，申请站点白名单」也算过关 —— 用户原话：不明所以，看的一头雾水。 |
 | **生态是项目级事实**：从官方页读一次，该项目所有卡都带上。 | 现在是每条帖各读一次，于是同一个 Sui 项目有一堆「未判定」。 |
-| 卡片页脚只放**原文**与**归档 / 删除**，不再单独列来源构成（2026-10-24 卡片改版）。 | 页脚已经承担“去哪看原文”和读者状态两个动作；再塞来源构成会把一行挤成两行。 |
+| 卡片页脚列出**官方 X / 官网 / 文档 / 原文**，再接**归档 / 删除**；来源清单存 `sources_json`（2026-10-25）。 | 只给原文链接，读者无法判断这条机制说明来自项目自己还是社区转述。 |
 
 ### 施工图（已落地）
 
 | 件 | 内容 |
 | --- | --- |
 | `topic.py`（新） | 归并键 = 项目（`project_name` → 官方 handle → 规范化后的名字）；一个主题 = {项目, 帖集合, 官方页集合, 生态, trust} |
-| 流水线 | `sources → collect → group（一次分组）→ trace（按项目溯源）→ extract（按主题归并并抽取）→ chain（补链）→ sweep（生命周期）`；溯源默认 8 个项目/轮，可在设定页调整。 |
+| 流水线 | `sources → collect → group（一次分组）→ trace（按项目解析官方 X / 官网 / 文档）→ extract（只抽已解析主题）→ chain（补链）→ sweep（生命周期）`；溯源默认 200 个项目/轮、并发 4，可在设定页调整。 |
 | 门槛 | `promote.py` 加 `vague`（summary 复述/无具体动作）→ 理由「材料没说清」 |
 | 抽取 | 材料从「一条帖」变成「主题」：`model.material_message` 收多帖 + 官方页，提示词要求先回答「这是什么」 |
-| 卡片 | 页脚只放原文与归档 / 删除；trust 徽章仍区分官方 / 社区 / 未判定。 |
+| 卡片 | 页脚放官方 X / 官网 / 文档 / 原文，再接归档 / 删除；trust 徽章仍区分官方 / 社区 / 未判定。 |
 | 重建 | 已有 117 条**一次性重建**（user：重建）：清空 `opportunities` / `opportunity_steps`，帖子的 `classified` / `extracted_at` / `trace_*` 复位，重新走一遍 |
 
 ## 为什么这么定
