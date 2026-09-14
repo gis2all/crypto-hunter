@@ -27,7 +27,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: The version each answer was written by. Stored on the entry, because a rule change is
 #: otherwise indistinguishable from a judgement the model made under the old rules.
 CLASSIFY_VERSION = "classify.md@2"
-EXTRACT_VERSION = "extract.md@2"
+EXTRACT_VERSION = "extract.md@3"
 
 #: What a material can be. The first two are the ones that become entries; the rest are
 #: recorded so a scan can say what it read and did not use, which is what makes the funnel
@@ -36,10 +36,49 @@ MATERIAL_KINDS = ("activity", "project", "opinion", "news", "other")
 
 #: The categories, split by kind. Closed lists, because a category is a filter on the page and
 #: a free string is not a filter: two scans writing 挖矿 and 挖矿活动 make two categories.
-ACTIVITY_CATEGORIES = ("打新", "挖矿", "做任务", "空投", "测试网", "Mint", "白名单", "AMA", "其他")
+ACTIVITY_CATEGORIES = ("打新", "挖矿", "节点", "做任务", "交互", "空投", "测试网", "Mint",
+                       "白名单", "治理", "AMA", "其他")
 PROJECT_CATEGORIES = ("新协议", "新实验", "新工具", "新标准", "基础设施", "其他")
 NOVELTIES = ("protocol", "gameplay", "mechanism", "standard", "asset", "chain",
              "tooling", "market")
+
+#: The broad classes the panel filters by, in the order it prints them. A category is one
+#: leaf; a group is what a reader browses by ("今天有哪些投入型机会"), and the leaves stay on
+#: the card. Derived from `category` at read time - no column, no migration.
+#: Not to be confused with `opportunity_sources.family` (the 1–5 gate families): that one is
+#: how a query was collected, this one is how a card reads.
+CATEGORY_GROUPS = ("invest", "node", "qualify", "engage", "protocol", "tooling", "other")
+CATEGORY_GROUP_LABELS = {
+    "invest": "Mint / 挖矿 / 打新（投入型）",
+    "node": "节点 / 验证（投入型）",
+    "qualify": "空投 / 白名单（资格型）",
+    "engage": "测试网 / 做任务 / 交互 / 治理（参与型）",
+    "protocol": "新协议 / 新实验（观察型）",
+    "tooling": "新工具 / 基础设施 / 新标准（观察型）",
+    "other": "其他",
+}
+
+#: One category belongs to exactly one group, grouped by what the reader has to put in:
+#: 投入型 (mint / mine / subscribe), 节点 (VPS / uptime / stake), 资格型 (claim / allowlist),
+#: 参与型 (testnet / quest / interaction / governance), then the two observation groups.
+#: 治理 sits in 参与型 because only one card carried the leaf after the backfill - give it its
+#: own row when it grows. `挖矿` still covers both liquidity and hardware mining; it stays in
+#: 投入型 until the extraction splits them. `其他` - and anything the vocabulary does not know -
+#: is its own group.
+CATEGORY_GROUP = {
+    "mint": "invest", "挖矿": "invest", "打新": "invest", "节点": "node",
+    "空投": "qualify", "白名单": "qualify",
+    "测试网": "engage", "做任务": "engage", "交互": "engage", "治理": "engage",
+    "新协议": "protocol", "新实验": "protocol",
+    "新工具": "tooling", "基础设施": "tooling", "新标准": "tooling",
+    "ama": "other", "其他": "other",
+}
+
+
+def category_group_for(category: object, kind: object = "") -> str:
+    """The broad class a card belongs to. Never empty: `other` is a reading, not a missing one."""
+    token = str(category or "").strip().lower()
+    return CATEGORY_GROUP.get(token, "other")
 
 #: The eight barriers an activity can carry. Multi-select, and "none of them" means the
 #: material did not say - never "no barrier": that is the one reading this field exists to

@@ -8,6 +8,6 @@
 
 from __future__ import annotations
 
-from . import job, promote, schema, trust, watchlist  # noqa: F401  (the module's front door)
+from . import job, promote, recategorize, schema, trust, watchlist  # noqa: F401  (the module's front door)
 
-__all__ = ["job", "promote", "schema", "trust", "watchlist"]
+__all__ = ["job", "promote", "recategorize", "schema", "trust", "watchlist"]

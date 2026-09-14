@@ -1670,6 +1670,8 @@ export interface components {
             slug: string;
             /** Kind */
             kind: string;
+            /** Category Group */
+            category_group: string;
             /** Category */
             category?: string | null;
             /** Title */

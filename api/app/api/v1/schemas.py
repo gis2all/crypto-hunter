@@ -640,6 +640,9 @@ class OpportunityItemOut(BaseModel):
 
     slug: str
     kind: str
+    #: 大类：category 的上层读法（Mint / 挖矿 / 打新 …），面板按它筛选。
+    #: 与 `OpportunitySourceOut.family`（查询的 1–5 机会族）不是同一个字段。
+    category_group: str
     category: str | None = None
     title: str
     organizer: str | None = None

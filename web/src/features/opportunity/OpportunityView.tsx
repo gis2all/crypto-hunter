@@ -88,6 +88,8 @@ function matches(item: OpportunityItem, key: string, value: string): boolean {
     return true;
   }
   switch (key) {
+    case "category_group":
+      return item.category_group === value;
     case "status":
       return item.status === value;
     case "kind":
@@ -613,10 +615,14 @@ export function OpportunityView() {
     queues: (queues.data?.unclassified.count ?? 0) + (queues.data?.unextracted.count ?? 0)
       + (queues.data?.trace_failed.count ?? 0),
   };
+  // 状态计数跟着大类 / 生态的当前选择走，但不跟着状态自己走：否则选了一条链，左边状态
+  // 还在报全库的数，「可参与 161」与列表里的十几张卡对不上。
   const statusScope = roundItems.filter((item) => (
-    tab === "archived" ? item.user_state === "archived"
+    (tab === "archived" ? item.user_state === "archived"
       : tab === "deleted" ? item.user_state === "deleted"
-        : item.user_state === "active"));
+        : item.user_state === "active")
+    && matches(item, "category_group", value("category_group"))
+    && matches(item, "ecosystem", value("ecosystem"))));
   /** 已处理：读者自己按下去的两个桶。「全部」是可见的退出口，和生态 / 状态同一套结构。 */
   const processedTotal = tabCounts.archived + tabCounts.deleted;
   const showProcessed = processedTotal > 0 || tab === "archived" || tab === "deleted";
@@ -638,10 +644,9 @@ export function OpportunityView() {
     setTab("queues");
   };
 
-  /** 生态面板只列当前视野里真有卡片的链。状态 / 分栏 / 搜索已经筛掉的东西，不该还留着一个
-   *  点进去为空的选项（Aleo 只有未晋升的卡，切到「可参与」时点它就是空白）。生态自己那一维
-   *  不参与，否则选中的链会把自己从面板上删掉。 */
-  const facetItems = useMemo(() => {
+  /** 面板里两个 facet（大类 / 生态）互相排除自己：否则选中的那一项会把自己从面板上删掉，
+   *  其他项的计数也会被自己筛成 0。状态 / 分栏 / 搜索照常参与。 */
+  const facetBase = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return items.filter((item) => {
       if (!inTab(item)) {
@@ -655,21 +660,50 @@ export function OpportunityView() {
         }
       }
       return groups.every((group) => group.key === "ecosystem"
+        || group.key === "category_group"
         || matches(item, group.key, value(group.key)));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, groups, picked, tab, pickedScan, scans.data, search]);
 
-  const liveEcosystems = useMemo(
-    () => new Set(facetItems.map((item) => item.ecosystem ?? "")),
-    [facetItems],
+  /** 大类计数范围：除大类自己以外的筛选都算。 */
+  const categoryGroupItems = useMemo(
+    () => facetBase.filter((item) => matches(item, "ecosystem", value("ecosystem"))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [facetBase, picked.ecosystem],
+  );
+  /** 生态计数范围：除生态自己以外的筛选都算。 */
+  const ecosystemItems = useMemo(
+    () => facetBase.filter(
+      (item) => matches(item, "category_group", value("category_group"))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [facetBase, picked.category_group],
   );
 
-  const panelGroups = useMemo(() => groups.map((group) => (group.key !== "ecosystem"
-    ? group
-    : { ...group, options: group.options.filter(
-      (option) => option.value === "" || liveEcosystems.has(option.value)) })),
-  [groups, liveEcosystems]);
+  const liveCategoryGroups = useMemo(
+    () => new Set(categoryGroupItems.map((item) => item.category_group ?? "")),
+    [categoryGroupItems],
+  );
+  const liveEcosystems = useMemo(
+    () => new Set(ecosystemItems.map((item) => item.ecosystem ?? "")),
+    [ecosystemItems],
+  );
+
+  const panelGroups = useMemo(() => groups.map((group) => {
+    const live = group.key === "category_group" ? liveCategoryGroups
+      : group.key === "ecosystem" ? liveEcosystems : null;
+    return live === null ? group : {
+      ...group,
+      options: group.options.filter((option) => option.value === "" || live.has(option.value)),
+    };
+  }), [groups, liveCategoryGroups, liveEcosystems]);
+
+  useEffect(() => {
+    const chosen = picked.category_group;
+    if (chosen && !liveCategoryGroups.has(chosen)) {
+      setPicked((prev) => ({ ...prev, category_group: "" }));
+    }
+  }, [liveCategoryGroups, picked.category_group]);
 
   useEffect(() => {
     const chosen = picked.ecosystem;
@@ -868,8 +902,8 @@ export function OpportunityView() {
               <div className="fav-opts">
                 {group.options.map((option) => {
                   // 状态是这一页自己的计数：选中某一轮后按那一轮重数，不能继续报全库的数。
-                  // 生态同理，但它的 scope 要排除生态自己（facetCounts 已经排除），否则选中
-                  // 一条链之后其他链会全部变成 0。
+                  // 大类与生态同理，但各自的 scope 都排除了自己，否则选中一项之后同类其他项
+                  // 会全部变成 0。
                   let count = option.count;
                   if (group.key === "status") {
                     count = option.value
@@ -877,8 +911,13 @@ export function OpportunityView() {
                       : statusScope.length;
                   } else if (group.key === "ecosystem") {
                     count = option.value
-                      ? facetItems.filter((item) => item.ecosystem === option.value).length
-                      : facetItems.length;
+                      ? ecosystemItems.filter((item) => item.ecosystem === option.value).length
+                      : ecosystemItems.length;
+                  } else if (group.key === "category_group") {
+                    count = option.value
+                      ? categoryGroupItems.filter(
+                        (item) => item.category_group === option.value).length
+                      : categoryGroupItems.length;
                   }
                   return (
                     <div

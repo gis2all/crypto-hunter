@@ -14,7 +14,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...opportunity import heat, job, promote, settings, watchlist
+from ...opportunity import heat, job, promote, schema, settings, watchlist
 from ...store import db
 from . import forms
 from .schemas import (OpportunityItemOut, OpportunityListOut, OpportunityScanOut,
@@ -52,7 +52,9 @@ def _item(row: dict) -> OpportunityItemOut:
         if row.get("source_ref"):
             sources.append({"kind": "post", "label": "原文", "url": row["source_ref"]})
     return OpportunityItemOut(
-        slug=row["slug"], kind=row["kind"], category=row.get("category"), title=row["title"],
+        slug=row["slug"], kind=row["kind"],
+        category_group=schema.category_group_for(row.get("category"), row.get("kind")),
+        category=row.get("category"), title=row["title"],
         organizer=row.get("organizer"), official_account=row.get("official_account"),
         official_url=row.get("official_url"), sources=sources,
         summary=row.get("summary"), trust=row.get("trust") or "unjudged",

@@ -3938,6 +3938,10 @@
       "type": "string",
       "title": "Kind"
      },
+     "category_group": {
+      "type": "string",
+      "title": "Category Group"
+     },
      "category": {
       "anyOf": [
        {
@@ -4202,6 +4206,7 @@
     "required": [
      "slug",
      "kind",
+     "category_group",
      "title",
      "trust",
      "status",

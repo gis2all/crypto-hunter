@@ -1459,6 +1459,18 @@ def opportunity_user_state(slug: str, state: str) -> bool:
         conn.close()
 
 
+def opportunity_set_category(slug: str, category: str) -> bool:
+    """Rewrite one card's category. Used by the one-off 其他 re-reader only."""
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET category = ?, updated_at = ? WHERE slug = ?",
+            (category, now_iso(), slug))
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
 def opportunity_heat_inputs() -> list[dict]:
     """Every entry that has a source post, with that post's own numbers.
 

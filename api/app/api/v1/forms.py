@@ -711,18 +711,30 @@ def _present(values, keep: tuple[str, ...] = ()) -> list[str]:
 
 
 def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
-    """The panel: **生态, then 状态** - two groups, and that is the whole panel (2026-10-19, user).
+    """The panel: **大类, 生态, then 状态** - three groups (2026-10-26, user).
 
-    The chain is the axis a reader actually browses by ("BTC 生态有什么、Eth 生态有什么"), and
-    状态 is the one question the page has to keep answerable: why is this not on the list. Every
-    other group was noise - 类别 duplicated 类目, 核实 collapses once entries trace to an official
-    home, and 类目 / 门槛 / 热度 / 来源 are all readings the card itself already prints.
+    大类 is the upper reading of `category` (发行与分配 / 使用与增长 / …); 生态 is the axis a
+    reader actually browses by ("BTC 生态有什么"); 状态 is the one question the page has to keep
+    answerable: why is this not on the list. Every other group was noise - 类别 duplicated 类目,
+    核实 collapses once entries trace to an official home, and 门槛 / 热度 / 来源 are readings
+    the card itself already prints.
 
     A group is only sent when it has at least two choices: 生态 with a single ecosystem present is
     not a choice, and a group that can only empty the page is the kind of control this app does
     not ship.
     """
     groups: list[dict] = []
+
+    # 大类：category 的上一层读法。顺序固定在 schema.CATEGORY_GROUPS，只列真的出现过的那些。
+    categories = _present(
+        (item.get("category_group")
+         or schema.category_group_for(item.get("category"), item.get("kind"))
+         for item in items), schema.CATEGORY_GROUPS)
+    if len(categories) > 1:
+        groups.append({"key": "category_group", "title": "大类", "options":
+                       [{"value": "", "label": "全部"}] + [
+                           {"value": name, "label": schema.CATEGORY_GROUP_LABELS.get(name, name)}
+                           for name in categories]})
 
     # 已知链按 `CHAINS` 的顺序，枚举外的新链排在它们后面（按字母），多链与未判定永远最后。
     ecosystems = schema.order_ecosystems(item.get("ecosystem") for item in items)
