@@ -1954,15 +1954,21 @@ def test_the_panel_only_offers_choices_that_exist():
     assert [group["key"] for group in groups] == ["status"], "只有一个生态时，生态那组不发"
 
 
-def test_the_panel_is_two_groups_ecosystem_first():
-    """面板只有两组：生态（第一）与状态（2026-10-19, user：其他筛选去繁化简）。"""
+def test_the_panel_is_three_groups_category_group_ecosystem_status():
+    """面板三组：大类（第一）、生态、状态（2026-10-26, user）。"""
     from app.api.v1 import forms
 
     items = [_panel_item(), _panel_item(slug="t", kind="project", ecosystem="bitcoin",
                                         category="新协议", heat=None)]
     groups = {group["key"]: group for group in forms.opportunity_filters(
         items, {"promoted:activity": 1, "retired:project": 1})}
-    assert list(groups) == ["ecosystem", "status"], "生态是主轴，排第一"
+    assert list(groups) == ["category_group", "ecosystem", "status"], \
+        "大类在前，生态其次，状态最后"
+    # 大类按 CATEGORY_GROUPS 的顺序，标签是给读者看的中文
+    assert [option["value"] for option in groups["category_group"]["options"]] == \
+        ["", "qualify", "protocol"]
+    assert [option["label"] for option in groups["category_group"]["options"]] == \
+        ["全部", "空投 / 白名单（资格型）", "新协议 / 新实验（观察型）"]
     # 生态按枚举自己的顺序，不按字母序 —— 面板两次读起来要一样
     assert [option["value"] for option in groups["ecosystem"]["options"]] == \
         ["", "bitcoin", "solana"]
@@ -1983,6 +1989,75 @@ def test_the_dropped_groups_are_gone_for_good():
     assert not keys & {"kind", "trust", "category", "barrier", "heat_band", "source_type"}
 
 
+def test_every_category_belongs_to_a_group():
+    from app.opportunity import schema
+
+    for category in schema.ACTIVITY_CATEGORIES:
+        assert schema.category_group_for(category, "activity") in schema.CATEGORY_GROUPS
+    for category in schema.PROJECT_CATEGORIES:
+        assert schema.category_group_for(category, "project") in schema.CATEGORY_GROUPS
+    assert schema.category_group_for("空投") == "qualify"
+    assert schema.category_group_for("白名单") == "qualify"
+    assert schema.category_group_for("测试网") == "engage"
+    assert schema.category_group_for("做任务") == "engage"
+    assert schema.category_group_for("挖矿") == "invest"
+    assert schema.category_group_for("Mint") == "invest"
+    assert schema.category_group_for("节点") == "node"
+    assert schema.category_group_for("交互") == "engage"
+    assert schema.category_group_for("治理") == "engage", "治理只有个位数，先并回参与型"
+    assert schema.category_group_for("新协议", "project") == "protocol"
+    assert schema.category_group_for("基础设施", "project") == "tooling"
+    assert schema.category_group_for("AMA") == "other"
+    assert schema.category_group_for("其他", "activity") == "other"
+    assert schema.category_group_for("其他", "project") == "other", \
+        "项目其他也归其他（41 / 76 口径）"
+    assert schema.category_group_for(None, "project") == "other"
+    assert schema.category_group_for("不存在", "activity") == "other"
+
+
+def test_the_page_puts_category_group_first_and_sends_it_on_every_card(isolated_db, client):
+    _an_entry("opp-issuance", category="空投")
+    _an_entry("opp-discovery", category="新协议", kind="project", title="New Protocol")
+
+    body = client.get("/api/v1/opportunity").json()
+
+    assert [group["key"] for group in body["filters"]] == ["category_group", "status"]
+    assert [option["value"] for option in body["filters"][0]["options"]] == \
+        ["", "qualify", "protocol"]
+    assert {item["slug"]: item["category_group"] for item in body["items"]} == \
+        {"opp-issuance": "qualify", "opp-discovery": "protocol"}
+
+
+def test_the_other_backfill_only_writes_valid_categories(isolated_db, monkeypatch):
+    from app.llm import client as llm
+    from app.opportunity import recategorize
+
+    _an_entry("opp-node", category="其他", title="Run a validator node")
+    _an_entry("opp-project", category="其他", kind="project", title="New protocol")
+    _an_entry("opp-keep", category="其他", title="Something vague")
+    _an_entry("opp-done", category="空投")
+
+    def fake(messages, purpose, prompt_version):
+        assert purpose == "opportunity_recategorize"
+        assert prompt_version == recategorize.RECATEGORIZE_VERSION
+        return {"items": [
+            {"slug": "opp-node", "category": "节点"},
+            {"slug": "opp-project", "category": "新协议"},
+            {"slug": "opp-keep", "category": "其他"},
+            {"slug": "not-in-this-batch", "category": "交互"},
+        ]}
+
+    monkeypatch.setattr(llm, "complete_json", fake)
+    got = recategorize.run()
+
+    assert got == {"checked": 3, "updated": 2, "left": 1,
+                   "unknown": ["not-in-this-batch"]}
+    assert db.opportunity_item("opp-node")["category"] == "节点"
+    assert db.opportunity_item("opp-project")["category"] == "新协议"
+    assert db.opportunity_item("opp-keep")["category"] == "其他", "说不清就留在其他"
+    assert db.opportunity_item("opp-done")["category"] == "空投", "非其他不参与回填"
+
+
 def test_the_sorts_are_two_keys_and_heat_is_not_one_of_them():
     from app.api.v1 import forms
 
@@ -1996,6 +2071,7 @@ def test_the_endpoint_sends_the_panel_and_the_new_fields(client):
     assert body["filters"] and body["filters"][0]["key"] == "status"
     assert body["sorts"] and {row["value"] for row in body["sorts"]} == {"discovered", "deadline"}
     assert "ecosystem" in body["items"][0] if body["items"] else True
+    assert "category_group" in body["items"][0] if body["items"] else True
 
 
 def test_the_ecosystem_is_read_from_the_material_not_from_who_posted_it(isolated_db, monkeypatch):
