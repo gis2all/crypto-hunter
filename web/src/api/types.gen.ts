@@ -1644,6 +1644,8 @@ export interface components {
             label: string;
             /** Count */
             count?: number | null;
+            /** Type */
+            type?: string | null;
         };
         /**
          * OpportunityFilterOut
@@ -1695,6 +1697,16 @@ export interface components {
             trust_basis?: string | null;
             /** Ecosystem */
             ecosystem?: string | null;
+            /**
+             * Chain Type
+             * @default unknown
+             */
+            chain_type: string;
+            /**
+             * Chain Public
+             * @default false
+             */
+            chain_public: boolean;
             /** Source Type */
             source_type?: string | null;
             /** Risk */

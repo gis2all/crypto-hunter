@@ -684,7 +684,7 @@ OPPORTUNITY_TRUST = {
 #: 新机会的筛选面板：分组顺序、键名与它们读的字段。选项由数据决定（只有真的出现过的
 #: 类目 / 门槛 / 生态才成为一行），标题与说法在这里，前端不识别任何一条。
 OPPORTUNITY_STATUS = (("promoted", "可参与"), ("candidate", "未晋升"), ("retired", "已结束"))
-#: 来源类型只有两种（2026-10-18 起 X 单源）：一个账号的时间线，或一条查询。
+#: 来源类型只有两种（2026-10-18 起 X 单源）：一个账号（身份库，不再读时间线），或一条查询。
 OPPORTUNITY_SOURCE_LABELS = {
     "official": "官方账号",
     "query": "查询",
@@ -737,11 +737,16 @@ def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
                            for name in categories]})
 
     # 已知链按 `CHAINS` 的顺序，枚举外的新链排在它们后面（按字母），多链与未判定永远最后。
+    # 未验证 / 未上线的链也留在这里，用 type 标明状态，不再另开一组。
     ecosystems = schema.order_ecosystems(item.get("ecosystem") for item in items)
     if len(ecosystems) > 1:
         groups.append({"key": "ecosystem", "title": "生态", "options":
                        [{"value": "", "label": "全部"}] +
-                       [{"value": name, "label": schema.ecosystem_label(name)}
+                       [{"value": name, "label": schema.ecosystem_label(name),
+                         "type": (None if name in (schema.MULTI, schema.UNJUDGED)
+                                  else (schema.chain_type(name)
+                                        if schema.chain_type(name) != "unknown"
+                                        else "unverified"))}
                         for name in ecosystems]})
 
     status = [{"value": "", "label": "全部", "count": None}] + [
@@ -775,7 +780,8 @@ def opportunity_form() -> dict:
         # 热度口径挂在徽章的 tooltip 上，不占一行字。
         "trust": OPPORTUNITY_TRUST,
         "sources_title": "watchlist",
-        "sources_lead": ("扫描会读的东西：官方账号的时间线，以及查询行（每条查询按时间切片）。"
+        "sources_lead": ("扫描只读查询行（每条查询按时间切片）。官方账号已停读，"
+                         "只作为已知项目身份保留；项目官网与文档的刷新是下一步。"
                          "种子来自 seeds/watchlist.yaml，之后以这张表为准。"),
         "empty": "还没有扫描过。点「开始扫描」跑一次。",
     }

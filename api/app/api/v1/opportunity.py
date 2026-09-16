@@ -59,6 +59,8 @@ def _item(row: dict) -> OpportunityItemOut:
         official_url=row.get("official_url"), sources=sources,
         summary=row.get("summary"), trust=row.get("trust") or "unjudged",
         trust_basis=row.get("trust_basis"), ecosystem=row.get("ecosystem"),
+        chain_type=schema.chain_type(row.get("ecosystem")),
+        chain_public=schema.chain_is_public(row.get("ecosystem")),
         source_type=row.get("source_type"), risk=row.get("risk"), barrier=barrier,
         maturity=row.get("maturity"), started_at=row.get("started_at"),
         deadline=row.get("deadline"), status=row.get("status") or "candidate",

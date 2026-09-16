@@ -168,10 +168,9 @@ function pillClass(tone: string): string {
 
 /** The scan, as a step list. Drawn with the round panel's own stylesheet and marker, so
  *  抓材料 here and 拉取扫描源 there are the same kind of row. */
-function ScanPanel({ scan, open, form, stopping, onCancel }: {
+function ScanPanel({ scan, open, stopping, onCancel }: {
   scan: OpportunityScan | null | undefined;
   open: boolean;
-  form: OpportunityForm;
   stopping?: boolean;
   onCancel?: () => void;
 }) {
@@ -255,22 +254,29 @@ function ScanPanel({ scan, open, form, stopping, onCancel }: {
     const timer = window.setTimeout(() => setArmed(false), 10000);
     return () => window.clearTimeout(timer);
   }, [armed]);
+  // 与 Arc 一轮同一条读法：一句漏斗 + 一句状态，不重复轮次条上已有的时间。
+  const funnel = collect.posts === undefined
+    ? ""
+    : `帖子 ${collect.posts} → 分组 ${classify.groups ?? 0} → 出卡 ${extract.entries ?? 0}`;
   const foot = !scan
-    ? String(form.empty ?? "还没有扫描过。")
+    ? "本轮待运行 · 跑完自动落库"
     : failed
       ? "扫描失败：" + (scan.error ?? "未记录原因")
-      : running
-        ? "正在扫描 · 跑完自动落库"
-        : `最近一次扫描 · ${stamp(scan.finished_at)}`;
+      : cancelled
+        ? (funnel ? funnel + " · 本次已中止" : "本次已中止")
+        : running
+          ? (funnel ? funnel + " · 跑完自动落库" : "正在扫描 · 跑完自动落库")
+          : (funnel ? funnel + " · 阶段结果取数据库里的真实状态"
+            : `最近一次扫描 · ${stamp(scan.finished_at)}`);
 
   return (
     <div className="runpanel" id="opppanel" hidden={!open}>
       <div className="rp-h">
         <b>
-          {!scan ? "还没有扫描记录"
-            : failed ? "扫描失败"
-              : cancelled ? "已中止 · 本次"
-                : running ? "正在扫描" : "扫描完成"}
+          {!scan ? "本轮 · 待运行"
+            : failed ? "本轮失败"
+              : cancelled ? "已中止 · 本轮"
+                : running ? "正在扫描 · 本轮" : "扫描完成 · 本轮"}
         </b>
         {scan ? (
           <span className="rp-el">{running ? "已用 " : "用时 "}{mmss(Math.round(seconds))}</span>
@@ -688,7 +694,6 @@ export function OpportunityView() {
     () => new Set(ecosystemItems.map((item) => item.ecosystem ?? "")),
     [ecosystemItems],
   );
-
   const panelGroups = useMemo(() => groups.map((group) => {
     const live = group.key === "category_group" ? liveCategoryGroups
       : group.key === "ecosystem" ? liveEcosystems : null;
@@ -711,6 +716,7 @@ export function OpportunityView() {
       setPicked((prev) => ({ ...prev, ecosystem: "" }));
     }
   }, [liveEcosystems, picked.ecosystem]);
+
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -834,7 +840,16 @@ export function OpportunityView() {
         </div>
       </header>
 
-      {/* 轮次条与雷达同一条：报告 / 设定 下面一行，左右箭头翻历史。 */}
+      {/* 运行面板紧贴顶栏，与 Arc 一轮同一条：面板 → 轮次条 → 卡片。 */}
+      <ScanPanel scan={data?.scan} open={panelOpen} stopping={stopping}
+                 onCancel={() => {
+                   setStopping(true);
+                   stopScan.mutate(data?.scan?.id ?? "", {
+                     onError: (exc) => { setStopping(false); setError(errorText(exc)); },
+                   });
+                 }} />
+
+      {/* 轮次条与雷达同一条：运行面板下面一行，左右箭头翻历史。 */}
       {view === "report" && currentScan ? (
         <div className="bhead opp-roundbar">
           <div className="batch">
@@ -870,14 +885,6 @@ export function OpportunityView() {
           <span className="spacer" />
         </div>
       ) : null}
-
-      <ScanPanel scan={data?.scan} open={panelOpen} form={form} stopping={stopping}
-                 onCancel={() => {
-                   setStopping(true);
-                   stopScan.mutate(data?.scan?.id ?? "", {
-                     onError: (exc) => { setStopping(false); setError(errorText(exc)); },
-                   });
-                 }} />
 
       {error ? (
         <div className="note-bar bad">
@@ -933,6 +940,9 @@ export function OpportunityView() {
                       }}
                     >
                       {option.label}
+                      {option.type ? (
+                        <span className="opp-opt-type">{option.type.toUpperCase()}</span>
+                      ) : null}
                       {count === null || count === undefined
                         ? null
                         : <span className="opp-opt-count">{count}</span>}

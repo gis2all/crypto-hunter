@@ -654,6 +654,9 @@ class OpportunityItemOut(BaseModel):
     trust_basis: str | None = None
     #: 这条条目是从哪类来源读到的（生态与来源类型都随条目存下来，页面按它们筛选）。
     ecosystem: str | None = None
+    #: 链的两层读数：l1/l2/appchain（未注册为 unknown），以及是否已验证为公开网络。
+    chain_type: str = "unknown"
+    chain_public: bool = False
     source_type: str | None = None
     risk: str | None = None
     #: The barriers as the reader sees them; the column holds a comma-joined list.
@@ -718,6 +721,8 @@ class OpportunityFilterOptionOut(BaseModel):
     #: Only the status group carries counts: those three numbers used to live in the page's
     #: header, and a filter panel that hides them would lose the reading that was there.
     count: int | None = None
+    #: The ecosystem group's chain type (l1 / l2 / appchain); empty elsewhere.
+    type: str | None = None
 
 
 class OpportunityFilterOut(BaseModel):

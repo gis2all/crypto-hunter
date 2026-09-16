@@ -46,7 +46,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -902,6 +902,65 @@ def opportunity_sources_enabled() -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def opportunity_official_targets() -> list[str]:
+    """Every official handle the module has ever verified, enabled or not.
+
+    Disabling an account stops the scan from reading its timeline; it must not erase the identity.
+    The gate uses this list to tell "a known project speaking" from "a stranger announcing".
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT target FROM opportunity_sources WHERE kind = 'official'"
+            " ORDER BY target").fetchall()
+    finally:
+        conn.close()
+    return [str(row["target"]) for row in rows]
+
+
+def chain_registry_all() -> dict[str, dict]:
+    """The chain registry as key -> row. Read by the page and by the filter."""
+    conn = connect()
+    try:
+        rows = conn.execute("SELECT * FROM chain_registry").fetchall()
+    finally:
+        conn.close()
+    return {str(row["key"]): dict(row) for row in rows}
+
+
+def chain_registry_put(rows: list[dict]) -> int:
+    """Upsert registry rows. The caller owns source priority and only sends winners."""
+    if not rows:
+        return 0
+    written = 0
+    conn = connect()
+    try:
+        for row in rows:
+            key = str(row.get("key") or "").strip().lower()
+            if not key:
+                continue
+            conn.execute(
+                "INSERT INTO chain_registry"
+                " (key, label, type, is_public, source, evidence_url, confidence,"
+                "  verified_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET"
+                " label = excluded.label, type = excluded.type,"
+                " is_public = excluded.is_public, source = excluded.source,"
+                " evidence_url = excluded.evidence_url,"
+                " confidence = excluded.confidence,"
+                " verified_at = excluded.verified_at, updated_at = excluded.updated_at",
+                (key, row.get("label") or key, row.get("type") or "unverified",
+                 1 if row.get("is_public") else 0, row.get("source"),
+                 row.get("evidence_url"), row.get("confidence"),
+                 row.get("verified_at") or now_iso(), now_iso()),
+            )
+            written += 1
+    finally:
+        conn.close()
+    return written
+
+
 def opportunity_source_touched(target: str) -> None:
     """Record that a scan read this source, whatever it found."""
     conn = connect()
@@ -1339,6 +1398,32 @@ def opportunity_unjudged() -> list[dict]:
             "   AND o.status != 'retired' AND o.user_state = 'active'"
             " ORDER BY o.discovered_at DESC").fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def opportunity_rechain(slug: str, ecosystem: str) -> int:
+    """Rewrite a 多链 card to the one chain its own text names. Re-audit only."""
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET ecosystem = ?, ecosystem_checked_at = ?, updated_at = ?"
+            " WHERE slug = ? AND ecosystem = '多链'",
+            (ecosystem, now_iso(), now_iso(), slug))
+        return cursor.rowcount or 0
+    finally:
+        conn.close()
+
+
+def opportunity_force_ecosystem(slug: str, ecosystem: str) -> int:
+    """Set a card's chain from a project registry (DefiLlama twitter match), overwriting a reading."""
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET ecosystem = ?, ecosystem_checked_at = ?, updated_at = ?"
+            " WHERE slug = ? AND user_state = 'active'",
+            (ecosystem, now_iso(), now_iso(), slug))
+        return cursor.rowcount or 0
     finally:
         conn.close()
 

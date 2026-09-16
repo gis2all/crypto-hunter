@@ -5,7 +5,7 @@
 
 1. 卡片自己的标题与摘要 - 零成本，而且说的是这张卡讲的那件事；
 2. 溯源已经读到的页 - 零成本；
-3. 通用网页搜索 - 每个项目一次，取前三条结果；
+3. 通用网页搜索 - 每个项目最多两种 query，取前五条结果；
 4. 规则读不出来的，攒成一批交给模型，只允许在给出的结果里选。
 
 搜索引擎走普通 HTTP（DDG Lite，被拦就换 Bing），不占 X 调用预算；失败就留 `未判定`，
@@ -37,7 +37,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 SEARCH_VERSION = "chain@1"
 
 #: Three results are enough for a name and a chain sentence; five only makes the prompt longer.
-MAX_RESULTS = 3
+MAX_RESULTS = 5
 
 #: Search requests overlap; the host pacer still serialises each engine.
 SEARCH_WORKERS = 6
@@ -220,8 +220,8 @@ def _relevant(rows: list[dict], term: str) -> list[dict]:
     return out
 
 
-def search(term: str, get=http.get) -> list[dict]:
-    """The first three web results for one project, or `[]` when every lane refuses.
+def search(term: str, get=http.get, *, match: str | None = None) -> list[dict]:
+    """The first five web results for one project, or `[]` when every lane refuses.
 
     The MCP lanes run the search on the vendor's servers, so they are tried first; the HTML
     lanes stay as the last resort for a machine whose proxy lets them through.
@@ -236,6 +236,10 @@ def search(term: str, get=http.get) -> list[dict]:
     for name, call in lanes:
         try:
             rows = [row for row in call() if row["url"]]
+            # MCP runs the search on the vendor's side, but relevance is still ours to check: a
+            # query for `Flap chain` once answered with a GMGN page that merely mentioned Flap,
+            # and the model cited it. Same filter as the HTML lanes.
+            rows = _relevant(rows, match or term)
         except Exception as exc:
             log.info("opportunity: chain search on %s failed: %r", name, exc)
             continue
@@ -254,7 +258,7 @@ def search(term: str, get=http.get) -> list[dict]:
             log.info("opportunity: chain search on %s failed: %r", host, exc)
             continue
         rows = [row for row in parse(page) if row["url"] and row["title"]]
-        rows = _relevant(rows, term)[:MAX_RESULTS]
+        rows = _relevant(rows, match or term)[:MAX_RESULTS]
         if rows:
             return rows
     return []
@@ -262,7 +266,25 @@ def search(term: str, get=http.get) -> list[dict]:
 
 def _query(card: dict) -> str:
     name = str(card.get("project_name") or card.get("organizer") or card.get("title") or "")
+    name = re.split(r"[：:\-|·，,（(]", name)[0].strip()
     return ("%s blockchain" % name).strip()
+
+
+def _search_card(card: dict) -> list[dict]:
+    """One project, up to two query shapes; a page that names the chain is the goal."""
+    name = str(card.get("project_name") or card.get("organizer")
+               or card.get("title") or "")
+    name = re.split(r"[：:\-|·，,（(]", name)[0].strip()
+    rows = search(_query(card))
+    if _from_results(rows):
+        return rows
+    more = search(("%s chain" % name).strip())
+    seen = {row["url"] for row in rows}
+    for row in more:
+        if row["url"] not in seen:
+            seen.add(row["url"])
+            rows.append(row)
+    return rows
 
 
 def _named(text: str) -> str:
@@ -343,7 +365,7 @@ OFFCHAIN = frozenset(("not_onchain", "not-onchain", "not onchain", "offchain", "
 
 
 def _decide(batch: list[tuple[dict, list[dict]]]) -> dict[str, tuple[str, str, bool]] | None:
-    """One model call over a batch of cards and their three results each.
+    """One model call over a batch of cards and their result set each.
 
     `None` means the model did not answer, which must not be recorded as "we asked and there is
     no chain": that reading would keep the card 未判定 forever.
@@ -412,7 +434,7 @@ def run(tell=None) -> dict:
         return counters
 
     with ThreadPoolExecutor(max_workers=min(SEARCH_WORKERS, len(pending))) as pool:
-        found = list(pool.map(lambda card: search(_query(card)), pending))
+        found = list(pool.map(_search_card, pending))
 
     leftovers: list[tuple[dict, list[dict]]] = []
     for card, rows in zip(pending, found):

@@ -3891,6 +3891,17 @@
        }
       ],
       "title": "Count"
+     },
+     "type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Type"
      }
     },
     "type": "object",
@@ -4034,6 +4045,16 @@
        }
       ],
       "title": "Ecosystem"
+     },
+     "chain_type": {
+      "type": "string",
+      "title": "Chain Type",
+      "default": "unknown"
+     },
+     "chain_public": {
+      "type": "boolean",
+      "title": "Chain Public",
+      "default": false
      },
      "source_type": {
       "anyOf": [

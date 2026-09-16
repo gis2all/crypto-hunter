@@ -373,5 +373,19 @@ CREATE TABLE IF NOT EXISTS opportunity_scans (
   finished_at   TEXT
 );
 
+-- 链注册表：由 chainverify 从 Chainlist / CoinGecko / DefiLlama / 官方文档自动核验。
+-- 页面只读这里，不在请求时联网；`unverified` 仍然保留，只是不算公开网络。
+CREATE TABLE IF NOT EXISTS chain_registry (
+  key           TEXT PRIMARY KEY,
+  label         TEXT,
+  type          TEXT NOT NULL DEFAULT 'unverified',  -- l1 | l2 | appchain | unverified
+  is_public     INTEGER NOT NULL DEFAULT 0,
+  source        TEXT,                                 -- chainlist | coingecko | defillama | official_docs | seed
+  evidence_url  TEXT,
+  confidence    TEXT,                                 -- high | medium | low
+  verified_at   TEXT,
+  updated_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_opportunity_status ON opportunities(status, kind, discovered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_opportunity_posts_handle ON opportunity_posts(handle, posted_at DESC);

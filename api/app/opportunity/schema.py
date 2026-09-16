@@ -26,8 +26,8 @@ log = logging.getLogger("crypto-hunter.opportunity")
 
 #: The version each answer was written by. Stored on the entry, because a rule change is
 #: otherwise indistinguishable from a judgement the model made under the old rules.
-CLASSIFY_VERSION = "classify.md@2"
-EXTRACT_VERSION = "extract.md@3"
+CLASSIFY_VERSION = "classify.md@3"
+EXTRACT_VERSION = "extract.md@5"
 
 #: What a material can be. The first two are the ones that become entries; the rest are
 #: recorded so a scan can say what it read and did not use, which is what makes the funnel
@@ -37,7 +37,7 @@ MATERIAL_KINDS = ("activity", "project", "opinion", "news", "other")
 #: The categories, split by kind. Closed lists, because a category is a filter on the page and
 #: a free string is not a filter: two scans writing 挖矿 and 挖矿活动 make two categories.
 ACTIVITY_CATEGORIES = ("打新", "挖矿", "节点", "做任务", "交互", "空投", "测试网", "Mint",
-                       "白名单", "治理", "AMA", "其他")
+                       "白名单", "治理", "其他")
 PROJECT_CATEGORIES = ("新协议", "新实验", "新工具", "新标准", "基础设施", "其他")
 NOVELTIES = ("protocol", "gameplay", "mechanism", "standard", "asset", "chain",
              "tooling", "market")
@@ -71,7 +71,7 @@ CATEGORY_GROUP = {
     "测试网": "engage", "做任务": "engage", "交互": "engage", "治理": "engage",
     "新协议": "protocol", "新实验": "protocol",
     "新工具": "tooling", "基础设施": "tooling", "新标准": "tooling",
-    "ama": "other", "其他": "other",
+    "其他": "other",
 }
 
 
@@ -108,7 +108,7 @@ CHAIN_ALIASES = {
     "solana": ("solana", "sol", "spl", "svm"),
     "base": ("base", "base chain", "coinbase base"),
     "bsc": ("bsc", "bnb", "bnb chain", "binance smart chain", "opbnb", "币安链"),
-    "arbitrum": ("arbitrum", "arb", "arb one", "arbitrum one", "nova"),
+    "arbitrum": ("arbitrum", "arb", "arb one", "arbitrum one"),
     "sui": ("sui", "sui network"),
     "aptos": ("aptos", "apt"),
     "near": ("near", "near protocol"),
@@ -193,6 +193,48 @@ ECOSYSTEM_LABELS = {
 #: Words that stay upper-case when a new chain is title-cased by the fallback.
 ECOSYSTEM_ACRONYMS = frozenset(("bsc", "bttc", "avax", "evm", "l2", "rwa", "dao", "defi", "nft"))
 
+#: Verified public networks, with what they are. The panel's 生态 filter only offers these;
+#: `多链` / `未判定` stay as readings, and a name that is not registered is not offered at all.
+#: 2026-10-27: Asentum, Elyon, Interlink, Sovren, Strium and Txflow were read off their own
+#: docs/sites and are public L1s (Elyon's site calls itself an L2 ecosystem, its chain docs an
+#: EVM L1; registered as L1 and flagged for a later look). Type is `l1` / `l2` / `appchain`.
+CHAIN_TYPES = {
+    "bitcoin": "l1", "ethereum": "l1", "solana": "l1", "bsc": "l1", "tron": "l1",
+    "near": "l1", "cardano": "l1", "stacks": "l2", "kaspa": "l1", "aleo": "l1",
+    "flare": "l1", "hyperliquid": "l1", "monero": "l1", "zcash": "l1",
+    "multiversx": "l1", "icp": "l1", "cosmos": "l1", "osmosis": "appchain",
+    "stellar": "l1", "sui": "l1", "aptos": "l1", "avax": "l1", "sei": "l1",
+    "injective": "appchain", "sonic": "l1", "monad": "l1", "berachain": "l1",
+    "megaeth": "l2", "somnia": "l1", "pharos": "l1", "zig": "l1",
+    "assetchain": "l1", "rayls": "l1", "asentum": "l1", "elyon": "l1",
+    "interlink": "l1", "sovren": "l1", "strium": "l1", "txflow": "l1",
+    "kite": "l1", "metal": "l1", "bttc": "l1",
+    "base": "l2", "arbitrum": "l2", "optimism": "l2", "polygon": "l2",
+    "ink": "l2", "xlayer": "l2", "robinhood": "l2", "giwa": "l2",
+    "starknet": "l2", "blast": "l2", "mantle": "l2", "linea": "l2",
+    "scroll": "l2", "zksync": "l2", "ronin": "appchain", "arc": "l1",
+}
+
+
+def chain_type(name: object) -> str:
+    """l1 / l2 / appchain for a verified public network, `unknown` otherwise."""
+    key = str(name or "").strip().lower()
+    from .chains import meta
+    row = meta(key)
+    if row:
+        return str(row.get("type") or "unverified")
+    return CHAIN_TYPES.get(key, "unknown")
+
+
+def chain_is_public(name: object) -> bool:
+    """Whether this key is a verified public network (and therefore belongs in 生态)."""
+    key = str(name or "").strip().lower()
+    from .chains import meta
+    row = meta(key)
+    if row:
+        return bool(row.get("is_public"))
+    return key in CHAIN_TYPES
+
 
 def ecosystem_label(name: object) -> str:
     """The stored key as the panel prints it. Unknown chains still read as a name, not a key."""
@@ -202,6 +244,10 @@ def ecosystem_label(name: object) -> str:
     lowered = text.lower()
     if lowered in ECOSYSTEM_LABELS:
         return ECOSYSTEM_LABELS[lowered]
+    from .chains import meta
+    row = meta(lowered)
+    if row and row.get("label"):
+        return str(row["label"])
     parts = re.split(r"([\s\-]+)", lowered)
     return "".join(part.upper() if part in ECOSYSTEM_ACRONYMS
                    else (part[:1].upper() + part[1:] if part else part)
