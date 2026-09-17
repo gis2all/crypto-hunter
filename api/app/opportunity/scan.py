@@ -138,6 +138,21 @@ def _rules_json(verdict: dict) -> str:
                       ensure_ascii=False)
 
 
+def known_handles(sources: list[dict]) -> set[str]:
+    """Every official handle the module knows, including accounts it no longer reads.
+
+    Official timelines are not read any more (their rows are disabled; project updates move to
+    the site lane). The handles still matter as **identity**: a query result from a known project
+    must not be judged as a stranger's announcement. Hence the union with the whole table, not
+    just this scan's batch.
+    """
+    known = {str(row.get("target") or "").lstrip("@").lower()
+             for row in sources if row.get("kind") == "official"}
+    known.update(str(target).lstrip("@").lower()
+                 for target in db.opportunity_official_targets())
+    return known
+
+
 def collect(scan_id: str, sources: list[dict], tell=None,
             cancel: threading.Event | None = None) -> dict:
     """Read up to `MAX_SOURCES` of the enabled sources once. A source that fails is a count,
@@ -162,8 +177,7 @@ def collect(scan_id: str, sources: list[dict], tell=None,
                 }
     # The accounts this watchlist already knows, injected into the gate: a post from one of them
     # is normal, a post from a stranger that announces something is a lead (rules.py).
-    known = {str(row.get("target") or "").lstrip("@").lower()
-             for row in sources if row.get("kind") == "official"}
+    known = known_handles(sources)
     batch = sources[:room]
     total = len(batch) or 1
     for index, source in enumerate(batch, start=1):

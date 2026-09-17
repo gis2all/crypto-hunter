@@ -22,7 +22,7 @@ from ..store import db
 from . import heat as heat_scale
 from . import settings
 from . import topic as topics
-from . import model, probe, promote, trust
+from . import model, probe, promote, rules, trust
 from .schema import (EXTRACT_VERSION, UNJUDGED, Entry, event_key, project_key,
                      read_entries, slug_for)
 
@@ -59,6 +59,26 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     """Judge and write one material. Called only on the coordinator thread."""
     counters["materials"] += 1
     counters["issues"] += len(issues)
+    # 抽取之前先问一句“这是不是加密内容”。闸已经挡过一层，这里仍要看材料本身：一个没有
+    # 任何链/代币/钱包/合约/NFT/DeFi 锚点的帖子，不该被写成一机会（演出、SaaS、硬件、订阅）。
+    entry_text = " ".join(
+        " ".join([entry.title or "", entry.summary or "", entry.ecosystem or "",
+                  entry.official_url or "", " ".join(step.body for step in entry.steps)])
+        for entry in entries)
+    context_text = " ".join([
+        str(material.get("text") or ""),
+        " ".join(str(page.get("text") or "") for page in _pages_of(material)),
+        " ".join(str(url) for url in material.get("urls") or []),
+        entry_text,
+    ])
+    # A known chain on the entry is itself an anchor, even when the material is a terse post.
+    has_chain = any(str(entry.ecosystem or "").strip() not in ("", UNJUDGED)
+                    for entry in entries)
+    if not has_chain and not rules.crypto_context(context_text):
+        counters["offtopic"] = counters.get("offtopic", 0) + 1
+        for ref in topics.consumed_refs(material):
+            db.opportunity_mark(ref, "post", extracted=True)
+        return
     source = _source_row(material.get("source_target"))
     trace_level, trace_basis = _trace_of(material)
     payload = _trace_payload(material)
@@ -165,7 +185,7 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
 def run(limit: int | None = None, tell=None) -> dict:
     """Read, judge and store. Model calls overlap; the coordinator owns every write."""
     counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
-                "frozen": 0}
+                "frozen": 0, "offtopic": 0}
     # 一张卡 = 一个主题（user, 2026-10-19）：同一项目的多条帖合成一份材料，官方页附在后面。
     materials = topics.materials(
         limit=limit or settings.value("extract_per_scan", MAX_EXTRACT))

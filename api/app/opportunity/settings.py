@@ -33,11 +33,12 @@ LIVE_PATH = Path(str(config.ROOT / "config" / "opportunity.yaml"))
 #: the truth**; the yaml only overrides them, which is what keeps a missing file harmless.
 FIELDS = (
     {"key": "sources_per_scan", "label": "读源数", "default": 40, "min": 1, "max": 200,
-     "hint": "一次扫描读 watchlist 的前 N 个（按最久没读过的先读）。127 个源全读一轮要十几分钟。"},
+     "hint": "一次扫描读 watchlist 的前 N 个（按最久没读过的先读）。只算查询行；"
+             "17 条查询全读一轮约 22 分钟。"},
     {"key": "calls_per_scan", "label": "X 调用上限", "default": 40, "min": 1, "max": 300,
      "hint": "查询行一条会切成好几片，所以预算按调用次数算，不按行数。40 次约 6 分钟。"},
     {"key": "x_interval", "label": "调用间隔（秒）", "default": 5.0, "min": 1.0, "max": 60.0,
-     "hint": "实测 2.5 秒时第 13 个连续时间线开始 429，而 CLI 自己的退避把每个失败变成四十秒。"},
+     "hint": "实测 2.5 秒时第 13 个连续请求开始 429，而 CLI 自己的退避把每个失败变成四十秒。"},
     {"key": "classify_per_scan", "label": "分组帖子上限", "default": 1000, "min": 1, "max": 2000,
      "hint": "一次分组最多 N 条；完整正文不截断，超过上限直接报错，不拆批、不留下轮。"},
     {"key": "extract_per_scan", "label": "抽取项目上限", "default": 40, "min": 1, "max": 200,

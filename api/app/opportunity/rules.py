@@ -36,6 +36,49 @@ CASHTAG = re.compile(r"(^|\s)\$[A-Za-z][A-Za-z0-9_]{1,9}")
 URL = re.compile(r"https?://", re.IGNORECASE)
 EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
+#: Broad enough to recognize a crypto post without mistaking ordinary commerce for one.
+#: Generic words that non-crypto posts also use (`sale`, `subscription`, `points`, `quest`,
+#: `early access`) are deliberately absent - those are the words that let a concert ticket sale
+#: or a bookmark manager through.
+CRYPTO_WORDS = (
+    "crypto", "cryptocurrency", "blockchain", "onchain", "on-chain", "web3", "web 3",
+    "token", "tokenomics", "tokenized", "memecoin", "stablecoin", "altcoin",
+    "defi", "dapp", "dapps", "dao", "nft", "nfts", "smart contract", "wallet",
+    "seed phrase", "private key", "gas fee", "mainnet", "testnet", "devnet", "faucet",
+    "staking", "restaking", "validator", "sequencer", "prover", "rollup", "node",
+    "l1", "l2", "layer 1", "layer 2", "bridge", "dex", "cex", "liquidity",
+    "yield farming", "launchpad", "airdrop", "allowlist", "whitelist", "mint",
+    "fair launch", "bonding curve", "token sale", "tge", "ido", "ico", "lbp",
+    "rwa", "depin", "ordinal", "inscription", "brc-20", "erc-20", "spl token",
+    "block explorer", "crypto exchange", "web3 wallet", "digital asset",
+    "digital collectible", "nft marketplace", "protocol",
+    "bitcoin", "btc", "ethereum", "eth", "solana", "base chain", "on base",
+    "built on base", "bnb chain", "bsc", "binance smart chain", "arbitrum",
+    "optimism", "polygon", "avalanche", "tron", "sui", "aptos", "near protocol",
+    "cosmos", "celestia", "monad", "berachain", "hyperliquid", "robinhood chain",
+    "x layer", "starknet", "zksync", "scroll", "linea", "mantle", "blast", "sei",
+    "injective", "stacks", "cardano", "kaspa", "aleo", "flare", "sonic", "unichain",
+    "apechain", "moonbeam", "gnosis", "fantom", "metis", "taiko", "fuel", "initia",
+    "加密", "加密货币", "区块链", "链上", "公链", "主网", "测试网", "水龙头",
+    "代币", "通证", "稳定币", "钱包", "私钥", "助记词", "合约", "智能合约",
+    "空投", "铸造", "白名单", "打新", "认购", "质押", "验证者", "验证节点",
+    "矿工", "挖矿", "流动性", "交易对", "去中心化", "数字藏品", "铭文", "符文",
+    "链上游戏", "元宇宙", "代币经济", "加密交易所", "节点", "协议",
+    "比特币", "以太坊", "币安链", "币安智能链", "波场", "索拉纳",
+)
+
+#: A post that links to an explorer / market / quest platform is a crypto post even when the
+#: text itself is terse.
+CRYPTO_DOMAINS = (
+    "etherscan.io", "bscscan.com", "basescan.org", "arbiscan.io", "tronscan.org",
+    "solscan.io", "suiscan.xyz", "dexscreener.com", "coinmarketcap.com", "coingecko.com",
+    "galxe.com", "layer3.xyz", "zealy.io", "intract.io", "mirror.xyz", "paragraph.xyz",
+    "zora.co", "opensea.io", "blur.io", "pump.fun", "four.meme", "clanker.world",
+)
+
+_CASHTAG_ANY = re.compile(r"\$[A-Za-z][A-Za-z0-9_]{1,9}\b")
+_EVM_ADDRESS = re.compile(r"(?<![0-9a-z])0x[0-9a-f]{40}(?![0-9a-z])", re.IGNORECASE)
+
 #: The floor a post has to reach *after* it has qualified. The score is a ranking number, not the
 #: decision: the decision is whether a rule marked `qualify` was hit, and only a concrete action
 #: is allowed to carry that mark. Kept as a floor so a rule set that drifts towards small weights
@@ -76,6 +119,24 @@ def word_hit(value: str, text_lower: str) -> bool:
     return value in text_lower
 
 
+def crypto_context(text: str) -> bool:
+    """Is there a crypto anchor anywhere in this text?
+
+    Used by the gate (a non-crypto post must not qualify on `public sale` / `early access`) and
+    by extraction (a material with no anchor produces no entries). The vocabulary is deliberately
+    wide - chains, tokens, wallets, contracts, DeFi, staking, gas, mainnet/testnet, Chinese terms,
+    cashtags, EVM addresses and crypto-native domains - because the failure mode we are fixing
+    was a false *positive*, not a false negative.
+    """
+    body = str(text or "")
+    low = body.lower()
+    if _CASHTAG_ANY.search(body) or _EVM_ADDRESS.search(body):
+        return True
+    if any(domain in low for domain in CRYPTO_DOMAINS):
+        return True
+    return any(word_hit(word, low) for word in CRYPTO_WORDS)
+
+
 def features(text: str, *, author: str = "", metrics: dict | None = None,
              created_at: str | None = None, now: datetime | None = None,
              known: set[str] | None = None, source_official: bool = False) -> dict:
@@ -111,6 +172,7 @@ def features(text: str, *, author: str = "", metrics: dict | None = None,
         "has_hashtag": bool(HASHTAG.search(body)),
         "has_cashtag": bool(CASHTAG.search(body)),
         "has_emoji": bool(EMOJI.search(body)),
+        "crypto_context": crypto_context(body),
         "is_retweet": lowered.startswith("rt @"),
         "is_reply": lowered.startswith("@"),
         "source_official": bool(source_official),
@@ -125,6 +187,8 @@ def condition_hit(condition: dict, facts: dict) -> bool:
         return any(value in facts["text_lower"] for value in values)
     if kind == "text_not_contains_any":
         return bool(values) and not any(value in facts["text_lower"] for value in values)
+    if kind == "crypto_context_missing":
+        return not facts.get("crypto_context")
     if kind == "text_word_any":
         return any(word_hit(value, facts["text_lower"]) for value in values)
     if kind == "text_word_not_any":

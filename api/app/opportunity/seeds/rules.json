@@ -1,10 +1,10 @@
 {
-  "version": 3,
+  "version": 5,
   "kind": "opportunity_rules",
   "meta": {
     "name": "新机会的免费闸",
     "description": "资格规则决定过闸，分数只决定先后。动作必须是具体动作短语，名词只计分。1–5 可参与机会与独立发现轨道。",
-    "updated_at": "2026-10-22"
+    "updated_at": "2026-10-27"
   },
   "levels": [
     {
@@ -24,6 +24,22 @@
     }
   ],
   "rules": [
+    {
+      "id": "exclude-noncrypto-context",
+      "name": "排除没有加密锚点的内容",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "crypto_context_missing"
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
     {
       "id": "exclude-trade-gated",
       "name": "排除交易门槛类",
@@ -204,6 +220,42 @@
             "career",
             "招聘",
             "求职"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-chain-game",
+      "name": "排除链游",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "链游",
+            "链上游戏",
+            "游戏",
+            "游戏化",
+            "gamefi",
+            "game-fi",
+            "game",
+            "games",
+            "gaming",
+            "play-to-earn",
+            "play to earn",
+            "playtoearn",
+            "p2e",
+            "web3 game",
+            "web3game",
+            "blockchain game",
+            "nft game",
+            "nftgame"
           ]
         }
       ],
@@ -474,7 +526,10 @@
             "rt to win",
             "like and retweet",
             "follow to enter",
-            "抽奖"
+            "抽奖",
+            "raffle",
+            "lottery",
+            "lucky draw"
           ]
         }
       ],

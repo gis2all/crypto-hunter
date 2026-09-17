@@ -500,7 +500,8 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
                 db.opportunity_source_put([{
                     "target": answer["account"], "kind": "official",
                     "ecosystem": answer.get("ecosystem") or "multi", "cluster": None,
-                    "enabled": True, "window_hours": 24, "slice_hours": 4, "max_results": 40,
+                    # 身份库：记下 handle，但不再读它的时间线（2026-10-27 起 X 只跑查询）。
+                    "enabled": False, "window_hours": 24, "slice_hours": 4, "max_results": 40,
                     "note": "2026-10-20 溯源 A 级：%s" % answer["basis"],
                     "added_at": db.now_iso(),
                 }])
