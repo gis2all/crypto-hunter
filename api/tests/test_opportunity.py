@@ -258,7 +258,7 @@ def test_a_non_crypto_live_stream_is_refused():
         author="jerusalemprayer",
         created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(), known=KNOWN)
     assert out["excluded"] and not out["pass"]
-    assert out["hits"][0]["rule"] == "exclude-offtopic-event"
+    assert out["hits"][0]["rule"] == "exclude-noncrypto-context"
 
 
 def test_a_known_account_announcing_something_still_passes():
@@ -699,8 +699,9 @@ def own_settings(tmp_path, monkeypatch):
 def small_watchlist(isolated_db, monkeypatch):
     """One real watchlist row, X unthrottled, and no background worker.
 
-    Three things a test must not inherit from production: the seeded watchlist is 127 rows, the
-    module throttles X at 2.5s a call, and `job.start()` hands the scan to a worker thread. A
+    Three things a test must not inherit from production: the seeded watchlist has over a
+    hundred rows, the module throttles X at 5s a call, and `job.start()` hands the scan to a
+    worker thread. A
     test that kept any of the three would sleep for minutes, fetch live pages, and - worse - let
     a worker outlive the test's monkeypatches and write into whatever database the process is
     pointed at by then.
@@ -820,7 +821,7 @@ def test_the_models_own_chain_still_wins(isolated_db):
     from app.opportunity import extract
     from app.opportunity.schema import Entry
 
-    material = {"ref": "1", "text": "t", "source_kind": "post"}
+    material = {"ref": "1", "text": "Acme is a protocol on Base", "source_kind": "post"}
     counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0}
     extract._store(material, [Entry(title="Acme", kind="project", summary="s",
                                     ecosystem="solana")], [], counters)
@@ -980,13 +981,15 @@ def test_an_archived_card_is_frozen(isolated_db):
     material = {"ref": "1", "text": "t", "source_kind": "post"}
     counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
                 "frozen": 0}
-    extract._store(material, [Entry(title="Acme", kind="project", summary="s")], [], counters)
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s",
+                                    ecosystem="base")], [], counters)
     slug = db.opportunity_items()[0]["slug"]
     assert db.opportunity_user_state(slug, "archived")
 
     again = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
              "frozen": 0}
-    extract._store(material, [Entry(title="Acme", kind="project", summary="s2")], [], again)
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s2",
+                                    ecosystem="base")], [], again)
     row = db.opportunity_items()[0]
     assert row["summary"] == "s" and row["user_state"] == "archived"
     assert again["frozen"] == 1
@@ -1082,7 +1085,9 @@ def test_the_watchlist_reads_back_the_seeded_rows(client, isolated_db):
     finally:
         conn.close()
     rows = client.get("/api/v1/opportunity/sources").json()
-    assert len(rows) > 50
+    # 2026-10-27 起官方账号停读，只作为身份库；页面上的 watchlist = 扫描真的要读的查询行。
+    assert len(rows) >= 17
+    assert {row["kind"] for row in rows} == {"query"}
     assert {row["kind"] for row in rows} <= set(watchlist.SOURCE_KINDS)
 
 
@@ -1377,7 +1382,7 @@ def _classified_lead(tweet_id="t1", name="Spout Finance"):
 
 
 def test_the_trace_stage_records_a_lead_and_adds_an_a_account(isolated_db, monkeypatch):
-    """A 级：账号自动进 watchlist，读数落在帖子上。"""
+    """A 级：账号自动进 watchlist 的身份库，但不再被读时间线；读数落在帖子上。"""
     _query_source()
     _classified_lead()
     monkeypatch.setattr(trace, "trace_lead", lambda lead, **kw: {
@@ -1387,8 +1392,9 @@ def test_the_trace_stage_records_a_lead_and_adds_an_a_account(isolated_db, monke
 
     counters = trace.run()
     assert counters["traced"]["A"] == 1 and counters["added"] == ["spoutfi"]
+    assert "spoutfi" in {row["target"] for row in db.opportunity_sources()}
     active = {row["target"] for row in db.opportunity_sources_enabled()}
-    assert "spoutfi" in active
+    assert "spoutfi" not in active, "官方号只做身份，不再读时间线"
     assert db.opportunity_trace_queue()[0]["ref"] if db.opportunity_trace_queue() else True
     conn = db.connect()
     try:
@@ -1954,6 +1960,82 @@ def test_the_panel_only_offers_choices_that_exist():
     assert [group["key"] for group in groups] == ["status"], "只有一个生态时，生态那组不发"
 
 
+def test_known_chains_carry_a_type_and_are_public():
+    from app.opportunity import schema
+
+    for key, kind in schema.CHAIN_TYPES.items():
+        assert kind in {"l1", "l2", "appchain"}, key
+        assert schema.chain_is_public(key), key
+    assert schema.chain_type("txflow") == "l1"
+    assert schema.chain_type("sovren") == "l1"
+    assert schema.chain_type("not-a-chain") == "unknown"
+    assert not schema.chain_is_public("not-a-chain")
+
+
+def test_unverified_chains_stay_in_the_ecosystem_group():
+    from app.api.v1 import forms
+
+    items = [_panel_item(ecosystem="foochain"), _panel_item(slug="t", ecosystem="base"),
+             _panel_item(slug="u", ecosystem="solana")]
+    groups = {group["key"]: group for group in forms.opportunity_filters(
+        items, {"promoted:activity": 1})}
+
+    values = [option["value"] for option in groups["ecosystem"]["options"]]
+    assert values == ["", "base", "foochain", "solana"]
+    unverified = {option["value"]: option.get("type")
+                  for option in groups["ecosystem"]["options"]}
+    assert unverified["foochain"] == "unverified"
+    assert "unverified" not in groups
+
+
+def test_the_registry_overrides_the_static_chain_table(isolated_db):
+    from app.opportunity import chains, schema
+
+    db.chain_registry_put([{
+        "key": "asentum", "label": "Asentum", "type": "testnet", "is_public": True,
+        "source": "official_docs", "evidence_url": "https://asentum.com/docs",
+        "confidence": "high", "verified_at": db.now_iso(),
+    }])
+    chains.reset()
+
+    assert schema.chain_type("asentum") == "testnet"
+    assert schema.chain_is_public("asentum")
+    assert schema.ecosystem_label("asentum") == "Asentum"
+
+
+def test_the_registry_backfills_an_unknown_card(isolated_db):
+    from app.opportunity import chainverify, chains
+
+    db.chain_registry_put([{
+        "key": "interlink", "label": "Interlink", "type": "l1", "is_public": True,
+        "source": "official_docs", "evidence_url": "https://interlinklabs.ai",
+        "confidence": "high", "verified_at": db.now_iso(),
+    }])
+    chains.reset()
+    _an_entry("opp-interlink", title="InterLink 验证者节点委托",
+              ecosystem="未判定", ecosystem_checked_at=None)
+
+    counters = chainverify.backfill_cards()
+
+    assert counters["single"] == 1
+    assert db.opportunity_item("opp-interlink")["ecosystem"] == "interlink"
+
+
+def test_multi_is_kept_only_when_two_chains_are_named(isolated_db):
+    from app.opportunity import chainverify
+
+    _an_entry("opp-two", title="Aave on Ethereum and Base", ecosystem="多链")
+    _an_entry("opp-one", title="Aave on Base", ecosystem="多链")
+    _an_entry("opp-none", title="Aave 多链部署", ecosystem="多链")
+
+    counters = chainverify.reaudit_multi()
+
+    assert counters["kept"] == 1 and counters["single"] == 1 and counters["reset"] == 1
+    assert db.opportunity_item("opp-two")["ecosystem"] == "多链"
+    assert db.opportunity_item("opp-one")["ecosystem"] == "base"
+    assert db.opportunity_item("opp-none")["ecosystem"] == "未判定"
+
+
 def test_the_panel_is_three_groups_category_group_ecosystem_status():
     """面板三组：大类（第一）、生态、状态（2026-10-26, user）。"""
     from app.api.v1 import forms
@@ -2007,7 +2089,7 @@ def test_every_category_belongs_to_a_group():
     assert schema.category_group_for("治理") == "engage", "治理只有个位数，先并回参与型"
     assert schema.category_group_for("新协议", "project") == "protocol"
     assert schema.category_group_for("基础设施", "project") == "tooling"
-    assert schema.category_group_for("AMA") == "other"
+    assert "AMA" not in schema.ACTIVITY_CATEGORIES
     assert schema.category_group_for("其他", "activity") == "other"
     assert schema.category_group_for("其他", "project") == "other", \
         "项目其他也归其他（41 / 76 口径）"
@@ -2072,6 +2154,7 @@ def test_the_endpoint_sends_the_panel_and_the_new_fields(client):
     assert body["sorts"] and {row["value"] for row in body["sorts"]} == {"discovered", "deadline"}
     assert "ecosystem" in body["items"][0] if body["items"] else True
     assert "category_group" in body["items"][0] if body["items"] else True
+    assert "chain_type" in body["items"][0] if body["items"] else True
 
 
 def test_the_ecosystem_is_read_from_the_material_not_from_who_posted_it(isolated_db, monkeypatch):
@@ -2194,3 +2277,15 @@ def test_a_missing_ecosystem_is_unjudged_too():
         {"title": "新协议上线", "kind": "project", "summary": "s",
          "official_url": "https://x.io"}]})
     assert entries and entries[0].ecosystem == "未判定"
+
+
+def test_a_disabled_official_handle_is_still_known(isolated_db):
+    """停读时间线不等于删身份：闸仍要把已知官方号当已知，而不是陌生人。"""
+    db.opportunity_source_put([{
+        "target": "sleepy_project", "kind": "official", "ecosystem": "base",
+        "enabled": False, "added_at": db.now_iso(), "note": "",
+    }])
+
+    assert "sleepy_project" in scan.known_handles([])
+    assert "sleepy_project" not in {
+        row["target"] for row in db.opportunity_sources_enabled()}
