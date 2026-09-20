@@ -4,7 +4,7 @@
 
 这个模块只干一件事：**从外部世界发现两类东西，把它们变成带来源、可核实的条目。**
 
-- **可参与活动**：有人能做一件具体的事（打新 / 挖矿 / 做任务 / 空投 / 测试网 / Mint / 白名单 / AMA）。
+- **可参与活动**：有人能做一件具体的事（打新 / 挖矿 / 做任务 / 空投 / 测试网 / Mint / 白名单）。
 - **新项目 / 新协议 / 新实验**：出现了一个值得看的东西（协议、工具、标准、实验），**未必有可参与的动作**。
 
 它不读代币筛选流水线的任何产物（候选池、分数、快照），也不参与排名；一条条目是否存在，与「我们有没有筛到某个币」无关。
@@ -31,8 +31,8 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | | 可参与活动 | 新项目 / 新协议 / 新实验 |
 | --- | --- | --- |
 | 判据 | 有人能做一件具体的事，**有步骤** | 出现了一个东西，**说得清它是什么** |
-| 时间语义 | 窗口：开始 / 截止 / 进行中 | 首次出现 + 最新动态（官方号最后一帖） |
-| 类目 | 打新 / 挖矿 / 做任务 / 空投 / 测试网 / Mint / 白名单 / AMA / 其他 | 新协议 / 新实验 / 新工具 / 新标准 / 基础设施 / 其他 |
+| 时间语义 | 窗口：开始 / 截止 / 进行中 | 首次出现 + 最新材料（查询命中） |
+| 类目 | 打新 / 挖矿 / 做任务 / 空投 / 测试网 / Mint / 白名单 / 其他 | 新协议 / 新实验 / 新工具 / 新标准 / 基础设施 / 其他 |
 | 门槛 | 步骤 + 官方入口 | 官方入口 + 一句「是什么」 |
 | 门槛之外的字段 | `barrier`（八档）必填（抽不到＝未判定） | `maturity`（实验性 / 测试网 / 主网 / 未判定） |
 | 列表 | 同一个列表（按卡片内容渲染） | 同一个列表（按卡片内容渲染） |
@@ -58,7 +58,6 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | Mint | 免费 / 付费铸造 | 官方号、市场 | 需资金、需白名单、限量 | 有开铸时刻 |
 | 白名单 | 报名 / 抽签进名单 | 官方号、社区（TG / Discord）、任务平台 | 需社交任务、需邀请 | 有报名截止 |
 | 治理 | 投票 / 委托 / ve 锁仓 / gauge / 提案 | 官方治理论坛、官方号 | 需持仓、需质押 | 按提案周期 |
-| AMA / Spaces | 参加线上活动（常给 POAP / 白名单） | 官方号 | 无 | 有具体时刻 |
 | 其他 | 兜底 | 关键词扫描 | —— | —— |
 
 项目类目（`kind = project`）：`新协议` / `新实验` / `新工具` / `新标准`（资产标准一类，如铭文、Alkanes 那种） / `基础设施` / `其他`，外加 `maturity ∈ 实验性 / 测试网 / 主网 / 未判定`。
@@ -77,18 +76,73 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | 测试网 / 做任务 / 交互 / 治理（参与型）`engage` | 测试网、做任务、交互、治理 |
 | 新协议 / 新实验（观察型）`protocol` | 新协议、新实验 |
 | 新工具 / 基础设施 / 新标准（观察型）`tooling` | 新工具、基础设施、新标准 |
-| 其他 `other` | AMA、活动「其他」、项目「其他」、词表外的细类 |
+| 其他 `other` | 活动「其他」、项目「其他」、词表外的细类 |
 
 大类只影响筛选与计数，不改已有的 `category`、不迁移数据库。细类仍是卡片上的读数；
 `治理` 目前只有一张卡，先并进参与型；等它长到两位数再单独成行。
 
-细类本身由抽取写入（`prompts/extract.md` / `extract.md@3` 起有 `节点 / 交互 / 治理` 的判据）。
+### 链注册表（2026-10-27）
+
+`ecosystem` 的两层读数来自**自动核验**，不靠人工：
+
+- `chain_type`：`l1` / `l2` / `appchain`；
+- `chain_is_public`：是否已核验为公开网络。生态筛选列出全部链名（`多链` / `未判定` 仍保留）；
+  未核验或未上线的名字**仍在生态组**，用类型标注（未验证的为 `unverified`），不再另开一组。
+
+`chainverify.sync()` 拉三份公开注册表写入 `chain_registry`：
+
+| 源 | 用途 |
+| --- | --- |
+| Chainlist | EVM 链名、chainId、RPC/explorer，`parent` 判 L2 |
+| CoinGecko `asset_platforms` | 非 EVM 链、chain_identifier、原生币 |
+| DefiLlama `/chains` | 是否有真实 TVL / 已上线 |
+
+注册表不认识的名字走 `chainverify.verify_unknown()`：优先给模型项目自己的官网 / 文档 / 白名单页，
+搜索结果的标题 + 摘要只作补充线索（`x.com` 与来源帖不算证据）；输出 `type` + `is_public` +
+`evidence_url` + 原文 `quote`；
+没有证据就留 `unverified`，不猜。当前结果：
+
+| 名字 | 结果 | 证据 |
+| --- | --- | --- |
+| Asentum | l1，公开 | asentum.com/docs |
+| Elyon | l2，公开 | mainnet.elyon.network/docs |
+| Interlink | l1，公开 | interlinklabs.ai |
+| Kite | l1，公开 | docs.gokite.ai |
+| Sovren | l1，公开 | sovrentech.io/products/network |
+| Txflow | l1，公开 | docs.txflow.com |
+| Zig | l1，公开 | docs.zigchain.com |
+| Strium | l1，未上线（等待名单 / 测试网计划） | strium.org |
+
+证据 URL、来源、置信度、核验时间都写在 `chain_registry`；同一轮里失败的重试不会把已核验的
+链降级。`chainverify` 只由代码/CLI 运行，页面不在请求时联网。
+
+2026-10-27 的回填与复核（`chainverify.backfill_cards()` / `reaudit_multi()`）：
+
+- `未判定` 35 张重置后跑增强补链（5 条结果、两种 query）：补上 **22 张**，剩 17；
+- `多链` 41 张里，只在卡片或溯源页明确出现 ≥2 条链时保留：**18 张保留、6 张归一条、1 张回到未判定**；随后补链又补上 2 张多链；
+- 6 张旧的非加密 / CEX 卡已软删（信用卡开户、DuckDB ×2、Gate 马术、Binance Simple Earn、Block Dessa）；
+- 当前 active **261**、`多链` **20**、`未判定` **15**。
+
+`python -m app.opportunity.chainverify` 一次跑完 sync → 官方页核验 → 未判定回填 → 多链复核。
+
+顺手修掉 `x layer` / `xlayer` 两个键并存的问题：旧行已回填成 `xlayer`，筛选只剩一个 X Layer。
+
+细类本身由抽取写入（`prompts/extract.md` / `extract.md@5` 起有 `节点 / 交互 / 治理` 的判据）。
 已经落库的「其他」用一次性回填脚本重新读：`recategorize.run()`（`prompts/recategorize.md`），
 只改 `category`，说不清就留在「其他」。2026-10-26 回填 76 张，改掉 44 张。
 
 ## 发现（Discovery）
 
-**X 是单一来源**（2026-10-18 起）：`official` 账号的时间线，以及 `query` 分类查询。查询只产出候选帖子，不判定事实；免费闸与分组在扫描里完成。平台页、交易所公告、目录与 GitHub 读取器已移除，名单留在种子 `pending:` 段。
+**X 是单一来源**（2026-10-18 起）：`query` 分类查询；`official` 账号自 2026-10-27 起只作身份库，不再读时间线。查询只产出候选帖子，不判定事实；免费闸与分组在扫描里完成。平台页、交易所公告、目录与 GitHub 读取器已移除，名单留在种子 `pending:` 段。
+
+**2026-10-27 起：官方账号不再读时间线。** 168 个 official 行全部 `enabled = 0`，只作为
+**身份库**（`scan.known_handles`）参与免费闸与去重；扫描的 X 采集只剩 17 条查询。
+项目官网与文档的定期刷新是下一步，尚未接线。
+
+查询行统一带一组排除词：交易大赛、AMA、抽奖、博彩、体育、娱乐、游戏、开户、演唱会，以及
+giveaway / lottery / casino / betting / sports / entertainment / gaming / concert 等英文
+对应词。它们只用来少占每片 40 条的名额，免费闸仍是第二层。`-游戏 / -gaming` 可能误伤
+GameFi，先观察一轮再决定是否保留。
 
 ### 生态（面板的主轴）
 
@@ -148,15 +202,17 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 
 ## 数据模型
 
-五张表，全部进 `store/schema.sql`（数据模型的唯一出处），加列走 `db.init_db` 的 `_ADDED_COLUMNS`。
+六张表（五张机会表 ＋ 一张链注册表），全部进 `store/schema.sql`（数据模型的唯一出处），
+加列走 `db.init_db` 的 `_ADDED_COLUMNS`。
 
 | 表 | 主键 | 性质 | 存什么 |
 | --- | --- | --- | --- |
-| `opportunity_sources` | `id` | **可编辑**（操作者随时加账号 / 查询） | watchlist：`target` / `kind`（`official` / `query`）/ `ecosystem` / `cluster` / `enabled` / `window_hours` / `slice_hours` / `max_results` / `note` / `added_at` / `last_read_at` |
+| `opportunity_sources` | `id` | **可编辑**（操作者随时加账号 / 查询） | watchlist：`target` / `kind`（`official` / `query`）/ `family` / `ecosystem` / `cluster` / `enabled` / `window_hours` / `slice_hours` / `max_results` / `note` / `added_at` / `last_read_at` |
 | `opportunity_posts` | `tweet_id` | **只增不改**（原始事实） | 帖子原文与 `metrics_json`、`posted_at`、`url`、`source_target`、`score` / `rules_json`（免费闸的读数）、`project_name` / `project_handle` / `project_urls_json`、`trace_level` / `trace_json`、`classified`、`extracted_at` |
-| `opportunities` | `slug` | **可编辑**（重抽 / 人工修订） | `kind`（内部读数） / `category` / `title` / `organizer` / `official_url` / `summary` / `trust` / `trust_basis` / **`ecosystem`（材料读出来的链）** / `ecosystem_checked_at`（补链问过的时刻，NULL = 还欠一次） / `source_type`（我们怎么找到它的） / `risk` / `barrier` / `maturity` / `started_at` / `deadline` / `status` / `reason` / `heat` / `heat_basis` / `discovered_at` / `source_kind` / `source_ref` / `extract_version` |
+| `opportunities` | `slug` | **可编辑**（重抽 / 人工修订） | `kind`（内部读数） / `category` / `title` / `organizer` / `project_key` / `event_key` / `project_name` / `official_account` / `official_url` / `sources_json` / `summary` / `trust` / `trust_basis` / **`ecosystem`（材料读出来的链）** / `ecosystem_checked_at`（补链问过的时刻，NULL = 还欠一次） / `source_type`（我们怎么找到它的） / `risk` / `barrier` / `maturity` / `started_at` / `deadline` / `status` / `reason` / `heat` / `heat_basis` / `discovered_at` / `source_kind` / `source_ref` / `extract_version` / `novelty` / `user_state` |
 | `opportunity_steps` | `(slug, ordinal)` | 随条目一起重写 | 每一步：`title` / `body` / `source_url` / `source_at`（活动类才有行） |
 | `opportunity_scans` | `id` | 只增（回执，对标 `search_jobs`） | `status` / `stage` / `stages_json` / `counters_json` / `started_at` / `finished_at` / `error` |
+| `chain_registry` | `key` | `chainverify` 自动维护 | `label` / `type`（`l1` / `l2` / `appchain` / `unverified`） / `is_public` / `source` / `evidence_url` / `confidence` / `verified_at` |
 
 | 规则 | 说明 / 反例 |
 | --- | --- |
@@ -173,10 +229,9 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | --- | --- |
 | 独立 job，**不进 `pipeline/`、不写 `runs`**：模块自带单线程池 + `opportunity_scans` 行，对标 `lookup.py`。 | 塞进一轮的编排，就要么被 4 小时节奏绑住，要么给 `runs` 表加第二种行。 |
 | 节奏独立于链的排程：先手动触发，稳定后再谈定时。 | 一个还没跑通的流水线先挂上定时，只会每小时制造一批没人看的行。 |
-| **一次扫描读不满整份 watchlist**：按 `last_read_at` 最久没读过的先读，取前 `MAX_SOURCES`（40）个，剩下的记进 `counters.deferred`。 | 一份 127 行的 watchlist 全读一遍是五分钟的节流睡眠加一次限流；而"每次都从头读"会让尾巴永远读不到。上限必须写成轮转，且被推迟的数量要看得见 —— 否则"轮转"会被读成"覆盖"。 |
+| **一次扫描读不满整份 watchlist**：按 `last_read_at` 最久没读过的先读，取前 `MAX_SOURCES`（40）个，剩下的记进 `counters.deferred`。 | 一份 17 条查询的 watchlist 全读一遍是十几分钟的节流与调用；而"每次都从头读"会让尾巴永远读不到。上限必须写成轮转，且被推迟的数量要看得见 —— 否则"轮转"会被读成"覆盖"。 |
 | 每个源读过就读写 `last_read_at`，**失败的源同样算读过**。 | 失败的那个正是下一轮该再试的，把它留在队首就是再试。 |
 | **本模块自带 X 调用节流**（子进程级别的串行 / 间隔），不复用 `http.MIN_INTERVAL`。 | X 走 subprocess 不走 `http.get`，那张表对它是空的；而调研阶段是 15 并发、一个币最多两次查询，两边同时打同一个账号就是封号路径。间隔是实测定的：2.5 秒时第 13 个连续时间线开始 429，而 CLI 自己的退避（5.7s → 11.4s → 21.8s）把每个失败变成四十秒 —— **慢一点的间隔反而让整轮更快**，所以现在是 5 秒。 |
-| 平台与公告页抓取走 `http.get` 的既有节流与缓存（它们的 host 要进 `MIN_INTERVAL`）。 | 平台页是 HTML，抓取频率由节流表决定，不另立一套。 |
 | 扫描要留下"这一轮用的是哪一版 watchlist"。 | watchlist 是可编辑的表，不记版本，"为什么这条被判成官方"就少了一个可回放的锚点。 |
 
 ## 模块边界与依赖方向
@@ -223,14 +278,15 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
-| 免费闸 | `rules.py` + `seeds/rules.json` | 规则引擎：资格 / 加分 / 定档 / 硬排除，命中原因落在帖子上。**过闸靠资格规则，不靠总分**：只有具体动作短语（`run a node`、`deposit`、`complete quest`、`mint`）带 `qualify`；`validator`、`yield`、`lending` 这类名词只计 20 分，不能单独过闸。总分（`score >= 30`）只是下限与排序。硬排除覆盖 CEX、交易赛、CEX 活动号与理财、传统金融（信用卡 / 开户）、招聘、新闻观点、事故索赔、能力集成公告、非加密活动、订阅通知、互动抽奖、转发。发现机会要求官方来源 + 新东西描述 + 加密语境（链 / 代币 / 钱包 / 合约之一），否则 DuckDB 这类软件发布也会过闸。没过的记 `classified = 'skipped'`（不是 `other`），分数与命中规则一并留着。 |
-| 一次分组 + 一次抽取 | `group.py` + `prompts/group.md`、`prompts/extract.md`（`extract.md@3`） | 分组一次覆盖全部待分组帖，完整正文不截断；缺失/待定最多补两次，仍有剩余的归 `other`。抽取仍按主题、按每轮预算执行。两次都记账进 `llm_calls`（`purpose` = `opportunity_group` / `opportunity_extract`）；抽取的 `prompt_version` 落进条目的 `extract_version`。 |
+| 免费闸 | `rules.py` + `seeds/rules.json` | 规则引擎：资格 / 加分 / 定档 / 硬排除，命中原因落在帖子上。**过闸靠资格规则，不靠总分**：只有具体动作短语（`run a node`、`deposit`、`complete quest`、`mint`）带 `qualify`；`validator`、`yield`、`lending` 这类名词只计 20 分，不能单独过闸。总分（`score >= 30`）只是下限与排序。硬排除覆盖 CEX、交易赛、CEX 活动号与理财、传统金融（信用卡 / 开户）、招聘、新闻观点、事故索赔、能力集成公告、非加密活动、订阅通知、互动抽奖、转发。**2026-10-27 起先过一道加密锚点**（`exclude-noncrypto-context`）：链名、代币 / cashtag、EVM 地址、钱包、合约、NFT、DeFi、质押、gas、主网 / 测试网、crypto / web3、加密原生域名等，一个都没有就直接排除 —— 演出、书签 SaaS、健康硬件、订阅、招聘不会再靠 `public sale` / `early access` 过闸。发现机会同样要求官方来源 + 新东西描述 + 加密语境。没过的记 `classified = 'skipped'`（不是 `other`），分数与命中规则一并留着。 |
+| 一次分组 + 一次抽取 | `group.py` + `prompts/group.md`、`prompts/extract.md`（`extract.md@5`） | 分组一次覆盖全部待分组帖，完整正文不截断；缺失/待定最多补两次，仍有剩余的归 `other`。抽取仍按主题、按每轮预算执行；材料里没有任何加密锚点时直接返回空，不写卡。两次都记账进 `llm_calls`（`purpose` = `opportunity_group` / `opportunity_extract`）；抽取的 `prompt_version` 落进条目的 `extract_version`。 |
 | 类目回填 | `recategorize.py` + `prompts/recategorize.md` | 一次性把已落库的「其他」重新读进闭集（`category` 只写这一列，说不清就留着）。不属于扫描，不建卡、不改摘要。 |
-| 补链 | `chainsearch.py` + `probe.py` + `prompts/chain.md` | 抽取后统一处理仍是 `未判定` 的卡：卡片自己的字 → 溯源页 → Exa / Parallel 搜索 → 模型在给出的结果里选。链必须在引用的结果里出现；`not_onchain` 写 `retired` + `reason = offchain`。 |
+| 补链 | `chainsearch.py` + `probe.py` + `prompts/chain.md` | 抽取后统一处理仍是 `未判定` 的卡：卡片自己的字 → 溯源页 → Exa / Parallel 搜索（每个项目最多两种 query、5 条结果）→ 模型在给出的结果里选。链必须在引用的结果里出现；`not_onchain` 写 `retired` + `reason = offchain`。 |
+| 链核验 | `chainverify.py` + `prompts/chain_verify.md` | Chainlist / CoinGecko / DefiLlama 写入 `chain_registry`；注册表不认识的名字优先用官方页（搜索结果摘要作补充）做证据，由模型给出 `type` / `is_public` / `evidence_url` / `quote`；无证据留 `unverified`，不猜。 |
 | 一轮扫描要多久（实测 2026-10-18） | 42 次 X 调用 = **6.2 分钟**（每次约 9 秒：CLI 8–10 秒 ＋ 节流 5 秒，所以慢在**调用次数**上）；分组（离线 pilot，2026-10-21）390 条完整正文约 **15 秒**、93,455 prompt tokens；抽取按 **4 并发**跑，单个慢调用仍会拉长这一轮。 |
 | 一次扫描的花费（含溯源，实测 2026-10-19） | 8 条溯源 × 约 1 分钟（1 次二次搜索 + 最多 3 个资料页 + 最多 2 个官网页）≈ 8 分钟，加在原来的 8.5 分钟上。二次搜索走时间切片但只有一片（问的是"现在谁在说这个名字"），它的 X 调用计入扫描的调用预算。 |
 | 一次扫描的七个阶段 | `job.py` `STAGES` | 读 watchlist / 抓材料 / 分组 / 溯源 / 抽取与落库 / 补链 / 生命周期；阶段与计数写在扫描行上，页面轮询它。**可中止**：旗子在子进程循环里轮询，停在下一次 X 调用。 |
-| **溯源接线** | `trace.py` + `settings.traces_per_scan`（默认 200，并发 4） + `extract._trace_of` | 扫描时只对**查询来源**的线索溯源（官方号来源本来就权威）；按项目去重，读候选 X、官网和文档页；**A 级账号自动进 watchlist**；A/B 的 `trust` 由溯源决定（A 官方 / B 社区·未互证），**C 级进未晋升池并写「未找到官方来源」**。抽取只处理已解析的主题；官方页随材料进提示词，官方 X / 官网 / 文档 / 原帖随卡片落库。 |
+| **溯源接线** | `trace.py` + `settings.traces_per_scan`（默认 200，并发 4） + `extract._trace_of` | 扫描时只对**查询来源**的线索溯源；按项目去重，读候选 X、官网和文档页；**A 级账号自动进身份库（`official` 行，`enabled=0`）**；A/B 的 `trust` 由溯源决定（A 官方 / B 社区·未互证），**C 级进未晋升池并写「未找到官方来源」**。抽取只处理已解析的主题；官方页随材料进提示词，官方 X / 官网 / 文档 / 原帖随卡片落库。 |
 | X 读取器 | `xread.py` | 查询行的切片计划、一次请求一个子进程（带取消）、模块自己的节流（5 秒）。不复用 `XEngine.search` —— 那是按合约地址索引的筛币引擎，一条短语查询在它那里会**静默返回空**。 |
 | 端到端读取 | `GET /api/v1/opportunity` | 条目（含步骤）+ 计数 + 最近一次扫描 + **筛选面板与排序键**（`filters` / `sorts`，后端建）+ 页面文案，一次给全：页面只读，不拼装、不判定。 |
 | 阶段内的进度 | `job._tick` + `JobStageOut.done/total` | 一个六分钟的 collect 只写「running」两个字，页面看起来就是卡住了（user, 2026-10-18）—— 所以阶段行画 `6/40`、`33/60` 这样的读数。 |
@@ -239,7 +295,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 页面 | `web/src/features/opportunity/OpportunityView.tsx` | 一个列表 + 左侧筛选面板（`fav-side`，与 收藏 / 搜索 同一条轨道规则）+ 搜索框 + watchlist（只读）。卡片带步骤、门槛、热度徽章、来源与原文链接；不在列表上的条目在卡片底部写出原因。 |
 | **设定** | `settings.py` + `config/opportunity.example.yaml` | 九个旋钮（读源 / X 调用 / 分组帖子上限 / 抽取项目上限 / 溯源项目上限、X 间隔、窗口、片长、过闸下限分）。 `form()` 返回 `fields` + 分块 `blocks` + `dirty_hint`；页面按采集 / 分析 / 查询与闸三块渲染，长解释在「说明」浮层。默认值写在代码里，`config/opportunity.yaml` **只存被改过的键**（设定页保存时创建），删掉即回默认。模块在调用处读 `settings.value(key, 常量)` —— 常量是默认值，所以测试仍可 monkeypatch，而设定文件不存在时什么都不改。 |
 | **用户状态** | `opportunity_user_state` + `PATCH /opportunity/items/{slug}` | 归档 / 删除 / 恢复，与管线的 `status` **分两列**：一张卡可以同时是「未晋升」（管线说没找到官方来源）与「已归档」（读者说优先级不高）。删除是软删；**重抽永不撤销读者的决定**（upsert 不碰这两列）。归档或删除后这张卡**冻结**：抽取跳过、补链跳过、热度不重算、生命周期不改写；恢复后重新纳入。 |
-| **页面 tab** | 报告 / 设定；报告没有列表 tab | 默认就是全部（除已处理之外的一切，含已结束）。左侧「已处理」组放全部 / 归档 / 删除（带计数、只在非零或选中时出现，再点一次当前行回到列表），进入后卡片页脚是「恢复」。排队中由左侧「队列」组进入，＝未分组 / 未抽取 / 溯源失败；那一组只列非零项，点哪一类就只渲染那一段，三堆都完整列出（`limit=0`），并保留当前选中的轮次（`scan` 参数；全部轮次时是全局累计）。轮次由报告页 报告 / 设定 下面的日期 stepper 翻（复用雷达的 `.bhead`，左右箭头 + 出卡数 + 全部轮次 + 回到本轮；后两个是分段 tab，选中态蓝底，始终可见）；设定页没有轮次条。 |
+| **页面 tab** | 报告 / 设定；报告没有列表 tab | 默认就是全部（除已处理之外的一切，含已结束）。左侧「已处理」组放全部 / 归档 / 删除（带计数、只在非零或选中时出现，再点一次当前行回到列表），进入后卡片页脚是「恢复」。排队中由左侧「队列」组进入，＝未分组 / 未抽取 / 溯源失败；那一组只列非零项，点哪一类就只渲染那一段，三堆都完整列出（`limit=0`），并保留当前选中的轮次（`scan` 参数；全部轮次时是全局累计）。轮次由报告页运行面板下面的日期 stepper 翻（与 Arc 一轮同一条：顶栏 → 运行面板 → 轮次条；复用雷达的 `.bhead`，左右箭头 + 出卡数 + 全部轮次 + 回到本轮；后两个是分段 tab，选中态蓝底，始终可见）；设定页没有轮次条。 |
 | 筛选面板 | `api/v1/forms.py` 的 `opportunity_filters` / `opportunity_sorts` | **后端给三组：大类（第一）、生态、状态**（2026-10-26, user）。大类的行名直接列出包含的细类（`Mint / 挖矿 / 打新（投入型）` …），顺序由 `schema.CATEGORY_GROUPS` 固定；生态按显示名的 A 到 Z 排，`多链` 与 `未判定` 最后。其后是前端加的「已处理」「队列」入口与「排序」。类别 / 核实 / 细类 / 门槛 / 热度 / 来源都**不是筛选组** —— 它们是卡片上的读数。**只有真有两个取值的分组才出现**；面板印显示名，筛选发键。**三组都带计数**，作用域跟着轮次 / tab / 搜索走：大类与生态各自排除自己那一维，状态跟着这两组的选择走。排序：发现时间（默认）与截止时间，热度不在其中。 |
 | 热度 | `heat.py` | **热度＝来源帖自身的互动量**（浏览 ×1 / 赞 ×30 / 转 ×60 / 评 ×30），按 `log10` 折成 0-100，分档用参考产品那套词（极热 / 热 / 温 / 冷启动 / 静默）。刻度上限（`FULL_SCALE` 200 万）按实测最热的一条定（2026-10-18：Pumpfun 141 万浏览 → 98.4），超过即封顶 100。没有来源帖的材料是 `None`，页面写「未判定」；`0` 是一个读数（有人答了，答案是没人看）。刻度是派生的，所以**改刻度要重算**（`extract.refresh_heat`，在扫描的最后一个阶段跑）。 |
 | 生命周期 | `lifecycle.py` | `deadline` **只从原文抽**（`extract.md` 的铁律），这里只负责读它：ISO / `YYYY/MM/DD` / `YYYY.MM.DD`，**只有日期时读到当天 23:59:59 UTC**（读成当天 0 点会把还活着的活动提前十二小时退休）。到点即 `retired`，`reason = deadline_passed`。**没有截止时间的一律不判结束**。 |
@@ -284,7 +340,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 
 ```
 ② 溯源
-   a. 作者是我们已在盯的官方号（watchlist 的 official 行）  → 已经权威
+   a. 作者是身份库里的官方号（official 行）                → 已知身份，仍按 b–d 溯源
    b. 帖子里有链接（展开 t.co）                            → 候选官网 / 文档
    c. 帖子里有 @账号                                       → 候选官方号
    d. 都没有，但有项目名 → **二次 X 搜索**（"<项目名>" + 帖里的区分词）
@@ -298,7 +354,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 
 | 规则 | 说明 / 反例 |
 | --- | --- |
-| **A 级账号自动进 watchlist**（`official` 行），B 级不进。 | watchlist 的 `official` 行会让它**之后发的每一条帖子都自动变成官方**（`trust.py` 的规则），所以把一个可能是冒充的号加进去，等于把它以后所有内容都洗成官方。 |
+| **A 级账号自动进身份库**（`official` 行，`enabled=0`），B 级不进。 | 2026-10-27 起官方号不再读时间线；这行只让 handle 进入免费闸的 `known` 集合，把可能是冒充的号加进去仍会污染身份。 |
 | **默认每轮溯源上限 200 个项目**（按项目去重，4 个并发；可在设定页调整）。 | 一条线索走完解析、资料页、官网和文档约一分钟；不并发会把一轮拖成数小时。超上限的留在池子里，下一轮接着溯。 |
 | **溯源失败要记账**：进未晋升池，理由写「还没溯源」或「未找到官方来源」。 | 这正是"为什么它没上列表"的答案，也是以后回头看"当初太早"的凭据。 |
 | 读取器**复用 `search/`**（`identify.fetch_page` 含 Playwright 兜底、`base.links_in` / `host_of` / `handle_of`、`harvest.site_candidates`），不另写一份。 | 一个源一个适配器：读页面的那套已经写好了，第二份只会跟它漂移。 |
@@ -313,7 +369,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 汇总生成的**。
 
 ```
-① 收集：多条 X 帖（官方号时间线 + 查询清单命中）
+① 收集：多条 X 帖（查询清单命中；官方号只作身份库）
         ↓
 ② 归并成主题：按**项目**聚合（7 条 CONSO 帖 = 1 个主题）
         ↓
@@ -355,7 +411,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 参考产品的 `barrier` 是自由文本，没法筛选也没法比较 | 本文件 · 门槛枚举 |
 | 参考产品 126 条项目里 `deadline` 填充 0 条 | 本文件 · 数据模型（只抽不猜） |
 | 参考产品的热度来自 X 的逐小时计数接口（`posts_counts_recent`），本项目的 CLI 没有这个能力 | 本文件 · 落地形状（热度＝来源帖互动量，不借全站计数） |
-| 一份 127 行的 watchlist 一次全读 → 五分钟节流睡眠 + 限流风险；只读队首 → 尾巴永远读不到 | 本文件 · 运行方式（有界 + 轮转 + `deferred` 可见） |
+| 一份 17 条查询的 watchlist 一次全读 → 十几分钟节流 + 限流风险；只读队首 → 尾巴永远读不到 | 本文件 · 运行方式（有界 + 轮转 + `deferred` 可见） |
 | 文档或模型把同一项目拆成多组 → 同一项目多张卡 | 本文件 · 分组与抽取（handle 优先合并；一轮覆盖全部帖子） |
 | 没过免费闸的帖子直接丢掉 → "读过但没问"与"根本没看到"混为一谈 | 本文件 · 落地形状（`skipped` 是一个记录） |
 | 参考产品的热度是逐小时计数，本项目没有这个能力 → 直接借名会变成混口径 | 本文件 · 落地形状（热度＝来源帖互动量，且写明） |

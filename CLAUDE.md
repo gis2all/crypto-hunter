@@ -58,7 +58,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/sources/`：一个源一个适配器，跨链的放根目录，只服务一条链的放 `<chain>/`。见 `README.md` 与该链 `SOURCES.md`。
 - `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
 - `api/app/search/`：挖链（识别、发现、抓取、引擎）。见 `README.md`。
-- `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、晋升门槛、读者自己的归档与删除。与一轮的编排无关，不写 `runs`。见 `README.md`。
+- `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、链注册表自动核验（`chainverify` / `chain_registry`）、晋升门槛、读者自己的归档与删除。与一轮的编排无关，不写 `runs`。见 `README.md`。
 - `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
@@ -101,7 +101,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 | 新增或修改数据表 | `api/app/store/README.md` | `api/app/store/schema.sql` 与 `store/db.py` |
 | 修改收藏页 | `web/src/features/README.md` · 收藏页 | `api/app/api/v1/favorites.py`、`report/assemble.py` 与 `web/src/features/favorites/` |
 | 修改 CA 搜索 | `web/src/features/README.md` · CA 搜索 | `api/app/lookup.py`、`api/app/api/v1/lookup.py` 与 `web/src/features/lookup/` |
-| 修改新机会（watchlist、扫描、分组与抽取、溯源、主题、晋升门槛、用户状态、页面与设定） | `api/app/opportunity/README.md` | `api/app/opportunity/`、`api/app/api/v1/opportunity.py` 与 `web/src/features/opportunity/`；watchlist 种子在 `opportunity/seeds/watchlist.yaml`，旋钮在 `opportunity/settings.py` 的 `FIELDS` 与 `config/opportunity.example.yaml` |
+| 修改新机会（watchlist、扫描、分组与抽取、溯源、链核验、主题、晋升门槛、用户状态、页面与设定） | `api/app/opportunity/README.md` | `api/app/opportunity/`、`api/app/api/v1/opportunity.py` 与 `web/src/features/opportunity/`；watchlist 种子在 `opportunity/seeds/watchlist.yaml`，链注册表种子/同步在 `chainverify.py`，旋钮在 `opportunity/settings.py` 的 `FIELDS` 与 `config/opportunity.example.yaml` |
 | 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py` 与 `web/src/features/system/` |
 | 第 8 节（边界与待决）中的待决事项 | 先与用户确认 | 第 8 节 |
 
