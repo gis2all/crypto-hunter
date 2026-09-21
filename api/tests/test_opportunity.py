@@ -261,6 +261,24 @@ def test_a_non_crypto_live_stream_is_refused():
     assert out["hits"][0]["rule"] == "exclude-noncrypto-context"
 
 
+def test_a_launchpad_token_snapshot_is_refused():
+    out = rules.judge(
+        "NEW LAUNCH on Pons $ACCRU is live. MC $13.0K · Vol 24h $25.2K · Buyers 152 · "
+        "Holders 70 · Bonding curve 63% filled · Snipers 19% · Bundlers 13%. Trade now.",
+        author="ponsdotfamily", family="issuance")
+
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-launchpad-launch"
+
+
+def test_a_launchpad_quest_still_passes():
+    out = rules.judge(
+        "Pons 开启积分任务：完成任务领取空投，Mint 白名单开放。",
+        author="ponsdotfamily", family="issuance")
+
+    assert not out["excluded"] and out["pass"]
+
+
 def test_a_known_account_announcing_something_still_passes():
     out = _gate("主网上线，测试网已开放", author="Aptos", views=4062)
     assert out["pass"] and not any(hit["rule"] == "unknown-author" for hit in out["hits"])

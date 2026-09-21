@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "kind": "opportunity_rules",
   "meta": {
     "name": "新机会的免费闸",
@@ -63,6 +63,82 @@
             "futures",
             "perpetual",
             "leverage"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-launchpad-launch",
+      "name": "排除发射台新币快照",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "new launch",
+            "new token",
+            "just launched",
+            "now live",
+            "launching now",
+            "live now",
+            "新发射代币",
+            "新币上线",
+            "刚刚上线",
+            "现已上线"
+          ]
+        },
+        {
+          "type": "text_word_any",
+          "values": [
+            "bonding curve",
+            "market cap",
+            "mc $",
+            "vol 24h",
+            "24h volume",
+            "holders",
+            "buyers",
+            "snipers",
+            "bundlers",
+            "insiders"
+          ]
+        },
+        {
+          "type": "text_not_contains_any",
+          "values": [
+            "quest",
+            "points",
+            "airdrop",
+            "claim",
+            "whitelist",
+            "allowlist",
+            "mint",
+            "testnet",
+            "deposit",
+            "stake",
+            "task",
+            "tasks",
+            "join",
+            "complete",
+            "任务",
+            "积分",
+            "空投",
+            "领取",
+            "白名单",
+            "铸造",
+            "测试网",
+            "存入",
+            "质押",
+            "挖矿",
+            "节点",
+            "交互",
+            "治理",
+            "投票"
           ]
         }
       ],

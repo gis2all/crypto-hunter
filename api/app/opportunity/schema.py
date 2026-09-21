@@ -27,7 +27,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: The version each answer was written by. Stored on the entry, because a rule change is
 #: otherwise indistinguishable from a judgement the model made under the old rules.
 CLASSIFY_VERSION = "classify.md@3"
-EXTRACT_VERSION = "extract.md@5"
+EXTRACT_VERSION = "extract.md@6"
 
 #: What a material can be. The first two are the ones that become entries; the rest are
 #: recorded so a scan can say what it read and did not use, which is what makes the funnel
