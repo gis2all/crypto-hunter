@@ -883,6 +883,23 @@ div.pgroup>.pset{margin-top:auto}
 #view-favorites .fav-body,#view-lookup .look-body,#view-opportunity .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
 .fav-side{display:flex;flex-direction:column;width:320px}
 .fav-side .look-h{margin:10px 0 6px}
+/* 左侧筛选分组可以收起（2026-10-27, user）：生态有 49 条，铺开看完太费劲。
+   The head is one button instead of a caption, the count stays on it, and a shut group
+   carries the chosen item's name plus a dot - otherwise a filter is still in force while
+   the panel shows nothing that says so. */
+.fav-side .fold-h{margin:10px 0 0}
+.fold-btn{display:flex;align-items:center;gap:6px;width:100%;padding:0 8px 6px;
+  border:0;background:none;color:var(--muted);font:inherit;font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;text-align:left;cursor:pointer}
+.fold-btn:hover{color:var(--fg-2)}
+.fold-btn svg{flex:0 0 auto}
+.fold-name{flex:0 0 auto}
+.fold-pick{display:flex;align-items:center;gap:5px;min-width:0;font-size:10.5px;
+  letter-spacing:0;text-transform:none;color:var(--fg-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fold-pick::before{content:"";width:4px;height:4px;border-radius:50%;
+  background:currentColor;flex:0 0 auto}
+.fold-count{margin-left:auto;flex:0 0 auto;font-family:var(--mono);font-size:10.5px;letter-spacing:0}
 .fav-cards{grid-column:2/-1;min-width:0}
 .fav-cards .grid{padding:0}
 .fav-opts{display:flex;flex-direction:column;gap:2px}

@@ -526,6 +526,27 @@ function EntryCard({ item, trust, full, onState }: {
   );
 }
 
+/** 左侧面板的分组标题：整行可点，收起后仍报计数与当前选择，
+ *  否则筛选还在生效、面板上却看不出是哪一项。 */
+function FoldHead({ title, count, folded, pick, onToggle }: {
+  title: string;
+  count: number | null;
+  folded: boolean;
+  pick?: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="look-h fold-h">
+      <button type="button" className="fold-btn" aria-expanded={!folded} onClick={onToggle}>
+        <Icon as={folded ? ChevronRight : ChevronDown} size={12} />
+        <span className="fold-name">{title}</span>
+        {folded && pick ? <span className="fold-pick">{pick}</span> : null}
+        {count === null ? null : <span className="fold-count">{count}</span>}
+      </button>
+    </div>
+  );
+}
+
 export function OpportunityView() {
   const query = useOpportunity();
   const sources = useOpportunitySources();
@@ -560,6 +581,9 @@ export function OpportunityView() {
   const [sortKey, setSortKey] = useState("discovered");
   const [dir, setDir] = useState("desc");
   const [search, setSearch] = useState("");
+  /** 左侧分组收起的状态：只在本页会话里记，刷新回默认。生态最长（49 条），默认收起。 */
+  const [folded, setFolded] = useState<Record<string, boolean>>({ ecosystem: true });
+  const toggleFold = (key: string) => setFolded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const data = query.data;
   const form: OpportunityForm = data?.form ?? {};
@@ -903,9 +927,21 @@ export function OpportunityView() {
 
       <div className="grid fav-body">
         <aside className="fav-side">
-          {panelGroups.map((group) => (
+          {panelGroups.map((group) => {
+            const chosen = value(group.key);
+            const total = group.key === "status" ? statusScope.length
+              : group.key === "ecosystem" ? ecosystemItems.length
+                : group.key === "category_group" ? categoryGroupItems.length
+                  : group.options.find((option) => !option.value)?.count ?? null;
+            const shut = !!folded[group.key];
+            return (
             <Fragment key={group.key}>
-              <h4 className="look-h">{group.title}</h4>
+              <FoldHead title={group.title} count={total} folded={shut}
+                        pick={chosen
+                          ? group.options.find((option) => option.value === chosen)?.label
+                          : undefined}
+                        onToggle={() => toggleFold(group.key)} />
+              {shut ? null : (
               <div className="fav-opts">
                 {group.options.map((option) => {
                   // 状态是这一页自己的计数：选中某一轮后按那一轮重数，不能继续报全库的数。
@@ -950,11 +986,16 @@ export function OpportunityView() {
                   );
                 })}
               </div>
+              )}
             </Fragment>
-          ))}
+            );
+          })}
           {showProcessed ? (
             <>
-              <h4 className="look-h">已处理</h4>
+              <FoldHead title="已处理" count={processedTotal} folded={!!folded.processed}
+                        pick={tab === "archived" ? "归档" : tab === "deleted" ? "删除" : undefined}
+                        onToggle={() => toggleFold("processed")} />
+              {folded.processed ? null : (
               <div className="fav-opts">
                 {processedRows.map(([key, label, count]) => (
                   <div key={key}
@@ -965,11 +1006,17 @@ export function OpportunityView() {
                   </div>
                 ))}
               </div>
+              )}
             </>
           ) : null}
           {queueRows.length ? (
             <>
-              <h4 className="look-h">队列</h4>
+              <FoldHead title="队列" count={queueRows.reduce((sum, [, , n]) => sum + n, 0)}
+                        folded={!!folded.queues}
+                        pick={tab === "queues"
+                          ? queueRows.find(([key]) => key === queueFilter)?.[1] : undefined}
+                        onToggle={() => toggleFold("queues")} />
+              {folded.queues ? null : (
               <div className="fav-opts">
                 {queueRows.map(([key, label, count]) => (
                   <div key={key}
@@ -980,9 +1027,14 @@ export function OpportunityView() {
                   </div>
                 ))}
               </div>
+              )}
             </>
           ) : null}
-          <h4 className="look-h">排序</h4>
+          <FoldHead title="排序" count={null} folded={!!folded.sort}
+                    pick={sorts.find((option) => option.value === sortKey)?.label}
+                    onToggle={() => toggleFold("sort")} />
+          {folded.sort ? null : (
+          <>
           <div className="fav-opts">
             {sorts.map((option) => (
               <div
@@ -1011,6 +1063,8 @@ export function OpportunityView() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </aside>
 
         <section className="fav-cards">
