@@ -27,7 +27,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: The version each answer was written by. Stored on the entry, because a rule change is
 #: otherwise indistinguishable from a judgement the model made under the old rules.
 CLASSIFY_VERSION = "classify.md@3"
-EXTRACT_VERSION = "extract.md@6"
+EXTRACT_VERSION = "extract.md@7"
 
 #: What a material can be. The first two are the ones that become entries; the rest are
 #: recorded so a scan can say what it read and did not use, which is what makes the funnel
@@ -466,6 +466,11 @@ def read_entries(raw: dict) -> tuple[list[Entry], list[str]]:
             issues.append("%s: category %r is not one of %s" % (where, entry.category,
                                                                 ", ".join(allowed)))
             entry.category = "其他"
+        # `其他` stays a stored value for cards written before this rule, but it is not an
+        # answer: a card whose own material cannot name the action is not an opportunity.
+        if entry.category == "其他":
+            issues.append("%s: 其他 is not a category - name the action or return nothing" % where)
+            continue
         if entry.novelty and entry.novelty not in NOVELTIES:
             issues.append("%s: novelty %r is not one of %s" % (where, entry.novelty,
                                                             ", ".join(NOVELTIES)))
