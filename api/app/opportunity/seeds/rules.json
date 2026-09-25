@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "kind": "opportunity_rules",
   "meta": {
     "name": "新机会的免费闸",
@@ -106,6 +106,83 @@
             "snipers",
             "bundlers",
             "insiders"
+          ]
+        },
+        {
+          "type": "text_not_contains_any",
+          "values": [
+            "quest",
+            "points",
+            "airdrop",
+            "claim",
+            "whitelist",
+            "allowlist",
+            "mint",
+            "testnet",
+            "deposit",
+            "stake",
+            "task",
+            "tasks",
+            "join",
+            "complete",
+            "任务",
+            "积分",
+            "空投",
+            "领取",
+            "白名单",
+            "铸造",
+            "测试网",
+            "存入",
+            "质押",
+            "挖矿",
+            "节点",
+            "交互",
+            "治理",
+            "投票"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-notice-only",
+      "name": "排除事故、关停与资助通告",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "被入侵",
+            "遭到入侵",
+            "遭到攻击",
+            "遭受攻击",
+            "攻击事件",
+            "资金被抽走",
+            "私钥泄露",
+            "被黑",
+            "逐步关闭",
+            "停止运营",
+            "停止服务",
+            "关停",
+            "停止维护",
+            "敲钟",
+            "纳斯达克",
+            "生态基金",
+            "资助计划",
+            "创作者计划",
+            "奖励公布",
+            "黑客松",
+            "被收录",
+            "hackathon",
+            "bounty program",
+            "grant program",
+            "ecosystem fund",
+            "creator program"
           ]
         },
         {
