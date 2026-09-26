@@ -1,0 +1,169 @@
+# 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
+# Arc 的节奏与口径照抄 hermes 的 arc-200k 那套。
+# 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
+# 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
+
+chains:
+  - id: arc
+    label: Arc 雷达
+    enabled: true
+    explorer: https://explorer.arc.io
+    # The chain's own node: LP positions and dev balances are read here, not from an API.
+    rpc: https://rpc.arc-scan.org
+    sources: [geckoterminal, radardex, tolly, gmgn, goplus, sourcify]
+    schedule:
+      cron: "0 2,5,8,11,14,17,20,23 * * *"
+      interval_hours: 3
+      timezone: Asia/Shanghai
+      push_delay_minutes: 6
+    pipeline:
+      scan_limit: 5000
+      # blockscout 曾做全链底表（链自己的浏览器索引），按持有人数降序走到这个门槛为止。
+      # 它现在不在 scan_sources 里：它的列表接口只给持有人数，市值与流动性全空，
+      # 每一行都以「未知」通过上面所有 floor —— 实测把候选池从百余个灌成四千个。
+      # 门槛保留着，是为了将来它有市场数据可读时能直接加回来。
+      universe_holders_floor: 50
+      scan_sources: [gmgn, radardex, tolly, geckoterminal]
+      # 安全判定只判成交额最高的前 20 个候选（0 = 判完整个幸存者池）。per-token 的
+      # 读取按主机串行节流，判完 163 个要 20 分钟；20 个约 2-3 分钟。其余候选留在
+      # 「未判定」：不计通过也不计淘汰。这 20 个里达标的不足报告张数时，会自动往后补。
+      gate_limit: 20
+      prefilter:
+        # Arc 的真实分布没有中间段：活跃币要么二十万到两百万，要么停在 launchpad
+        # 发币时的 5000-9000 U 初始 FDV（85% 的币在此），中间几乎是空的。
+        # 口径按 Tolly 全量快照（4,268 个去重币）实测：市值 ≥1 万的有 132 个，
+        # 落在 1万-20万 的是 103 个；流动性 ≥1 万的全链只有 68 个，≥5 千的是 710 个。
+        # 下限压到 1 万、流动性压到 5 千，是为了不漏掉刚起步的那一批。
+        market_cap_min_usd: 10000
+        market_cap_max_usd: 200000
+        liquidity_min_usd: 5000
+        volume_24h_min_usd: 1000
+        holders_min: 100
+        # 持有人区间：下限以上、上限以下才算合规。上限留空 = 不设上限，缺这个键也等于
+        # 不设上限 —— 老快照里没有它，一次升级不该因此开始砍币。
+        holders_max: null
+
+        # 空壳淘汰: 市值与流动性同时缺失的行直接淘汰。未知不淘汰是用在「源没回答」
+        # 上的，而一个只有地址、没有任何市场数据的行不是没回答，是没有可答的东西。
+        # 这一条在代码里是默认开启的，写在这里只是让你在设定页看得见、关得掉：
+        # 曾经因为老版本的设置里没有这个键，一轮把四千个空壳行全判成「未知=通过」。
+        require_market_data: true
+        # 距高回撤：距「历史最高市值」和「主池近 10 日最高价」各回撤 70% 以上即淘汰，两边
+        # 都要成立才算。第一个口径读的是本项目每轮扫描记下的最高市值（免费、覆盖全池），
+        # 只有它先判深才会去问 GeckoTerminal 的日线高点（每个 token 三次限速请求），所以
+        # 平时不花时间。首见、没有历史的币不算「跌下来的币」，直接通过。
+        drawdown_max_pct: -70
+        top10_max_pct: 40
+        bundling_max_pct: 25
+        forbid_honeypot: true
+        # 零数据淘汰: how many of the five ranking factors must carry a number once every
+        # source has answered. 0 switches the rule off.
+        min_scored_fields: 1
+      safety:
+        require_verified_source: true
+        source_verification_mode: dual
+        lp_unjudged_passes: true
+        forbid_dangerous_perms: [mintable, blacklist, pausable, hidden_owner]
+        honeypot_max_pct: 45
+      # 词条档案的新鲜度。每个档案记着「建档时的市值 / 持有人」，入选时按这几条判断
+      # 要不要重写：过期、市值波动、持有人增加，任一命中就重写；都没命中且在跳过窗口
+      # 内才复用。刷新条件优先于跳过窗口：5 小时涨 40% 的币正是最该重读的时候。
+      # 跳过窗口只管「用本轮事实重写」这一条路；发布后的重档调研是另一条路，它读的是
+      # 官网／X／GitHub 这类外部证据，每次重写档案都会把 research_state 归零，
+      # 于是新的档案照样会被调研一次。
+      lexicon:
+        expire_days: 2          # 超过这个天数未重写 = 过期
+        mcap_move_pct: 40       # 市值较建档波动超过这个百分比 = 重写
+        holders_gain_pct: 40    # 持有人较建档增加超过这个百分比 = 重写
+        rewrite_skip_hours: 6   # 这个小时内刚重写过、且没触发上面任何一条 = 直接复用
+      scoring:
+        onchain_weight: 55
+        product_weight: 45
+        onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
+        onchain_factor_weights:
+          liquidity: 20
+          volume_24h: 20
+          holders: 20
+          top10_concentration: 20
+          bundling: 20
+        unlisted_policy: pending_review
+    report:
+      per_round: 5
+      research_enabled: true    # 发布后异步跑深度调研、回填词条档案
+      push_target: telegram
+      push_content: [cards, table]
+    alerts:
+      rename_count_min: 2
+      rename_count: true
+      creator_token_count: true
+      duplicate_symbol: true
+      missing_socials: false
+
+  - id: bsc
+    label: BSC 雷达
+    enabled: false
+    explorer: https://bscscan.com
+    rpc: https://bsc-dataseed.binance.org
+    sources: []
+    schedule:
+      cron: ""
+      interval_hours: 3
+      timezone: Asia/Shanghai
+      push_delay_minutes: 6
+    pipeline:
+      scan_limit: 0
+      scan_sources: []
+      gate_limit: 20
+      prefilter:
+        market_cap_min_usd: 0
+        market_cap_max_usd: 200000
+        liquidity_min_usd: 8000
+        volume_24h_min_usd: 1000
+        holders_min: 150
+        # 持有人上限，留空 = 不设上限。
+        holders_max: null
+        top10_max_pct: 40
+        bundling_max_pct: 25
+        forbid_honeypot: true
+        # 零数据淘汰: how many of the five ranking factors must carry a number once every
+        # source has answered. 0 switches the rule off.
+        min_scored_fields: 1
+      safety:
+        require_verified_source: true
+        source_verification_mode: dual
+        lp_unjudged_passes: true
+        forbid_dangerous_perms: [mintable, blacklist, pausable, hidden_owner]
+        honeypot_max_pct: 45
+      # 词条档案的新鲜度。每个档案记着「建档时的市值 / 持有人」，入选时按这几条判断
+      # 要不要重写：过期、市值波动、持有人增加，任一命中就重写；都没命中且在跳过窗口
+      # 内才复用。刷新条件优先于跳过窗口：5 小时涨 40% 的币正是最该重读的时候。
+      # 跳过窗口只管「用本轮事实重写」这一条路；发布后的重档调研是另一条路，它读的是
+      # 官网／X／GitHub 这类外部证据，每次重写档案都会把 research_state 归零，
+      # 于是新的档案照样会被调研一次。
+      lexicon:
+        expire_days: 2          # 超过这个天数未重写 = 过期
+        mcap_move_pct: 40       # 市值较建档波动超过这个百分比 = 重写
+        holders_gain_pct: 40    # 持有人较建档增加超过这个百分比 = 重写
+        rewrite_skip_hours: 6   # 这个小时内刚重写过、且没触发上面任何一条 = 直接复用
+      scoring:
+        onchain_weight: 55
+        product_weight: 45
+        onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
+        onchain_factor_weights:
+          liquidity: 20
+          volume_24h: 20
+          holders: 20
+          top10_concentration: 20
+          bundling: 20
+        unlisted_policy: pending_review
+    report:
+      per_round: 5
+      research_enabled: true    # 发布后异步跑深度调研、回填词条档案
+      push_target: telegram
+      push_content: [cards, table]
+    alerts:
+      rename_count_min: 2
+      rename_count: true
+      creator_token_count: true
+      duplicate_symbol: true
+      missing_socials: false
