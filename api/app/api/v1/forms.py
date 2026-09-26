@@ -724,12 +724,16 @@ def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
     not ship.
     """
     groups: list[dict] = []
+    # Retired rows keep their old `category` for the audit trail, but a label that only survives
+    # on rows the list no longer shows is a switch that can only empty the page - the exact thing
+    # this panel refuses to send. 其他 disappeared this way on 2026-10-27.
+    live = [item for item in items if item.get("user_state") != "deleted"]
 
     # 大类：category 的上一层读法。顺序固定在 schema.CATEGORY_GROUPS，只列真的出现过的那些。
     categories = _present(
         (item.get("category_group")
          or schema.category_group_for(item.get("category"), item.get("kind"))
-         for item in items), schema.CATEGORY_GROUPS)
+         for item in live), schema.CATEGORY_GROUPS)
     if len(categories) > 1:
         groups.append({"key": "category_group", "title": "大类", "options":
                        [{"value": "", "label": "全部"}] + [
@@ -738,7 +742,7 @@ def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
 
     # 已知链按 `CHAINS` 的顺序，枚举外的新链排在它们后面（按字母），多链与未判定永远最后。
     # 未验证 / 未上线的链也留在这里，用 type 标明状态，不再另开一组。
-    ecosystems = schema.order_ecosystems(item.get("ecosystem") for item in items)
+    ecosystems = schema.order_ecosystems(item.get("ecosystem") for item in live)
     if len(ecosystems) > 1:
         groups.append({"key": "ecosystem", "title": "生态", "options":
                        [{"value": "", "label": "全部"}] +
