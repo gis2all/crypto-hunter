@@ -1,0 +1,53 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+api/.venv/
+.uv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# node
+node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+
+# app data
+data/*.db
+data/*.db-*
+data/raw/
+data/probe/
+
+# backups (crypto-hunter.db.bak-20260925-lexicon and friends)
+*.bak
+*.bak-*
+
+# secrets
+.env
+config/*.env
+
+# logs and coverage
+*.log
+.coverage
+htmlcov/
+
+# kept local only (design notes, the old prototype, ad-hoc scripts)
+docs/
+prototype/
+scripts/
+# ...but the data-source probe is a real tool: it stays in the repo
+!api/scripts/
+
+# editors and os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# local scratch (probes, screenshots, server logs)
+ch_*
+tmp_probe.py
