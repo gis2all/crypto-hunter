@@ -1,0 +1,3110 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Crypto Hunter API",
+  "version": "0.1.0"
+ },
+ "paths": {
+  "/api/v1/health": {
+   "get": {
+    "tags": [
+     "health"
+    ],
+    "summary": "Health",
+    "operationId": "health_api_v1_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains": {
+   "get": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "List Chains",
+    "operationId": "list_chains_api_v1_chains_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ChainOut"
+         },
+         "type": "array",
+         "title": "Response List Chains Api V1 Chains Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}": {
+   "get": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "Get Chain",
+    "operationId": "get_chain_api_v1_chains__chain_id__get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChainOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/runs": {
+   "get": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "List Runs",
+    "operationId": "list_runs_api_v1_runs_get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 20,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/RunOut"
+         },
+         "title": "Response List Runs Api V1 Runs Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Create Run",
+    "operationId": "create_run_api_v1_runs_post",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RunCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{run_id}": {
+   "get": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Get Run",
+    "operationId": "get_run_api_v1_runs__run_id__get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{run_id}/batch": {
+   "get": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Get Batch",
+    "description": "Everything the report page draws: batch strip, funnel, changes, cards,落选表.",
+    "operationId": "get_batch_api_v1_runs__run_id__batch_get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "per_round",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 50,
+       "minimum": 1,
+       "default": 5,
+       "title": "Per Round"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BatchOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{run_id}/reports": {
+   "get": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Get Reports",
+    "operationId": "get_reports_api_v1_runs__run_id__reports_get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/CardOut"
+         },
+         "title": "Response Get Reports Api V1 Runs  Run Id  Reports Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/runs/{run_id}/stream": {
+   "get": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Stream Run",
+    "description": "SSE. Events: `status` on every transition, then `done`, `timeout` or `error`.",
+    "operationId": "stream_run_api_v1_runs__run_id__stream_get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "timeout_s",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 900,
+       "minimum": 5,
+       "default": 120,
+       "title": "Timeout S"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}/settings": {
+   "get": {
+    "tags": [
+     "settings"
+    ],
+    "summary": "Get Settings",
+    "operationId": "get_settings_api_v1_chains__chain_id__settings_get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "settings"
+    ],
+    "summary": "Put Settings",
+    "operationId": "put_settings_api_v1_chains__chain_id__settings_put",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}/settings/form": {
+   "get": {
+    "tags": [
+     "settings"
+    ],
+    "summary": "Get Form",
+    "operationId": "get_form_api_v1_chains__chain_id__settings_form_get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsFormOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}/settings/run": {
+   "post": {
+    "tags": [
+     "settings"
+    ],
+    "summary": "Run Now",
+    "description": "Run this round immediately with the settings in force.\n\nCreating the row is not starting it. The ticker looks at the clock, so it would never\npick a manual round up - the button has to hand the round to the worker itself, or the\nrow sits at `pending` looking like it is still waiting for a slot.",
+    "operationId": "run_now_api_v1_chains__chain_id__settings_run_post",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}/settings/recompute": {
+   "post": {
+    "tags": [
+     "settings"
+    ],
+    "summary": "Recompute",
+    "description": "Replay the latest snapshots against a candidate patch: who moves, and why.\n\nBlocked on purpose, but not on the口径: those are decided and implemented. A\nrecompute would have to re-apply a patched payload to the round's own universe, and\nthe universe is not stored - only the candidates are. Re-scoring the candidates alone\nwould produce a diff against a smaller pool than the round actually ran, which is a\nfabricated answer, and worse than no answer.",
+    "operationId": "recompute_api_v1_chains__chain_id__settings_recompute_post",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/lexicon": {
+   "get": {
+    "tags": [
+     "lexicon"
+    ],
+    "summary": "List Lexicon",
+    "operationId": "list_lexicon_api_v1_lexicon_get",
+    "parameters": [
+     {
+      "name": "review_state",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Review State"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 200,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/LexiconOut"
+         },
+         "title": "Response List Lexicon Api V1 Lexicon Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/lexicon/pending": {
+   "get": {
+    "tags": [
+     "lexicon"
+    ],
+    "summary": "Pending",
+    "operationId": "pending_api_v1_lexicon_pending_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LexiconOut"
+         },
+         "type": "array",
+         "title": "Response Pending Api V1 Lexicon Pending Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/lexicon/{ca}": {
+   "put": {
+    "tags": [
+     "lexicon"
+    ],
+    "summary": "Upsert",
+    "operationId": "upsert_api_v1_lexicon__ca__put",
+    "parameters": [
+     {
+      "name": "ca",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Ca"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LexiconIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LexiconOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "BatchOut": {
+    "properties": {
+     "run": {
+      "$ref": "#/components/schemas/RunOut"
+     },
+     "batch_label": {
+      "type": "string",
+      "title": "Batch Label"
+     },
+     "funnel": {
+      "$ref": "#/components/schemas/FunnelOut"
+     },
+     "dropped_hard": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dropped Hard"
+     },
+     "gate": {
+      "$ref": "#/components/schemas/GateOut"
+     },
+     "rule_counts": {
+      "items": {
+       "$ref": "#/components/schemas/RuleCountOut"
+      },
+      "type": "array",
+      "title": "Rule Counts"
+     },
+     "changes": {
+      "items": {
+       "$ref": "#/components/schemas/ChangeOut"
+      },
+      "type": "array",
+      "title": "Changes"
+     },
+     "caliber": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Caliber"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/SourceCountOut"
+      },
+      "type": "array",
+      "title": "Sources"
+     },
+     "push": {
+      "$ref": "#/components/schemas/PushOut"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     },
+     "phase_timings": {
+      "additionalProperties": {
+       "type": "number"
+      },
+      "type": "object",
+      "title": "Phase Timings"
+     },
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/CardOut"
+      },
+      "type": "array",
+      "title": "Cards"
+     },
+     "decline": {
+      "items": {
+       "$ref": "#/components/schemas/DeclineRowOut"
+      },
+      "type": "array",
+      "title": "Decline"
+     }
+    },
+    "type": "object",
+    "required": [
+     "run",
+     "batch_label",
+     "funnel",
+     "rule_counts",
+     "changes",
+     "caliber",
+     "sources",
+     "push",
+     "cards",
+     "decline"
+    ],
+    "title": "BatchOut"
+   },
+   "BlockOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "weight": {
+      "type": "string",
+      "title": "Weight",
+      "default": ""
+     },
+     "columns": {
+      "type": "integer",
+      "title": "Columns",
+      "default": 3
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/GroupOut"
+      },
+      "type": "array",
+      "title": "Groups"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "groups"
+    ],
+    "title": "BlockOut"
+   },
+   "CardOut": {
+    "properties": {
+     "rank": {
+      "type": "integer",
+      "title": "Rank"
+     },
+     "ca": {
+      "type": "string",
+      "title": "Ca"
+     },
+     "sym": {
+      "type": "string",
+      "title": "Sym"
+     },
+     "tag": {
+      "type": "string",
+      "title": "Tag",
+      "default": ""
+     },
+     "fit_label": {
+      "type": "string",
+      "title": "Fit Label",
+      "default": ""
+     },
+     "is_new": {
+      "type": "boolean",
+      "title": "Is New",
+      "default": false
+     },
+     "score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Score"
+     },
+     "onchain": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Onchain"
+     },
+     "product": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Product"
+     },
+     "onchain_weight": {
+      "type": "number",
+      "title": "Onchain Weight",
+      "default": 55
+     },
+     "product_weight": {
+      "type": "number",
+      "title": "Product Weight",
+      "default": 45
+     },
+     "ranks": {
+      "$ref": "#/components/schemas/RanksOut"
+     },
+     "spark": {
+      "$ref": "#/components/schemas/SparkOut"
+     },
+     "verdict": {
+      "items": {
+       "$ref": "#/components/schemas/SegmentOut"
+      },
+      "type": "array",
+      "title": "Verdict"
+     },
+     "entry_note": {
+      "type": "string",
+      "title": "Entry Note",
+      "default": ""
+     },
+     "metrics": {
+      "items": {
+       "$ref": "#/components/schemas/MetricOut"
+      },
+      "type": "array",
+      "title": "Metrics"
+     },
+     "deltas": {
+      "items": {
+       "$ref": "#/components/schemas/DeltaOut"
+      },
+      "type": "array",
+      "title": "Deltas"
+     },
+     "safety": {
+      "$ref": "#/components/schemas/SafetyOut"
+     },
+     "details": {
+      "items": {
+       "$ref": "#/components/schemas/DetailOut"
+      },
+      "type": "array",
+      "title": "Details"
+     },
+     "links": {
+      "items": {
+       "$ref": "#/components/schemas/LinkOut"
+      },
+      "type": "array",
+      "title": "Links"
+     }
+    },
+    "type": "object",
+    "required": [
+     "rank",
+     "ca",
+     "sym",
+     "ranks",
+     "spark",
+     "verdict",
+     "metrics",
+     "deltas",
+     "safety",
+     "details",
+     "links"
+    ],
+    "title": "CardOut"
+   },
+   "ChainOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "explorer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Explorer"
+     },
+     "sources": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Sources"
+     },
+     "schedule": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schedule"
+     },
+     "report": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Report"
+     },
+     "pipeline": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pipeline"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "label",
+     "enabled",
+     "sources"
+    ],
+    "title": "ChainOut"
+   },
+   "ChangeOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "direction": {
+      "type": "string",
+      "title": "Direction"
+     },
+     "sym": {
+      "type": "string",
+      "title": "Sym"
+     },
+     "detail": {
+      "type": "string",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "direction",
+     "sym",
+     "detail"
+    ],
+    "title": "ChangeOut"
+   },
+   "ChipOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "tone": {
+      "type": "string",
+      "title": "Tone"
+     }
+    },
+    "type": "object",
+    "required": [
+     "label",
+     "value",
+     "tone"
+    ],
+    "title": "ChipOut"
+   },
+   "DeclineRowOut": {
+    "properties": {
+     "ca": {
+      "type": "string",
+      "title": "Ca",
+      "default": ""
+     },
+     "sym": {
+      "type": "string",
+      "title": "Sym"
+     },
+     "market_cap": {
+      "type": "string",
+      "title": "Market Cap"
+     },
+     "liquidity": {
+      "type": "string",
+      "title": "Liquidity"
+     },
+     "holders": {
+      "type": "string",
+      "title": "Holders"
+     },
+     "entrapment": {
+      "type": "string",
+      "title": "Entrapment"
+     },
+     "score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Score"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason"
+     }
+    },
+    "type": "object",
+    "required": [
+     "sym",
+     "market_cap",
+     "liquidity",
+     "holders",
+     "entrapment",
+     "reason"
+    ],
+    "title": "DeclineRowOut"
+   },
+   "DeltaOut": {
+    "properties": {
+     "key": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Key"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "type": "object",
+    "title": "DeltaOut"
+   },
+   "DetailOut": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "variant": {
+      "type": "string",
+      "title": "Variant",
+      "default": "plain"
+     },
+     "body": {
+      "items": {
+       "$ref": "#/components/schemas/SegmentOut"
+      },
+      "type": "array",
+      "title": "Body"
+     }
+    },
+    "type": "object",
+    "required": [
+     "title",
+     "body"
+    ],
+    "title": "DetailOut"
+   },
+   "FieldOptionOut": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Count"
+     }
+    },
+    "type": "object",
+    "required": [
+     "value",
+     "label"
+    ],
+    "title": "FieldOptionOut"
+   },
+   "FieldOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "key2": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Key2"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "dim": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dim"
+     },
+     "dim_in": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dim In"
+     },
+     "widget": {
+      "type": "string",
+      "title": "Widget"
+     },
+     "op": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Op"
+     },
+     "unit": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "integer"
+       },
+       {
+        "type": "boolean"
+       },
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     },
+     "options": {
+      "items": {
+       "$ref": "#/components/schemas/FieldOptionOut"
+      },
+      "type": "array",
+      "title": "Options"
+     },
+     "checks": {
+      "items": {
+       "$ref": "#/components/schemas/FieldOptionOut"
+      },
+      "type": "array",
+      "title": "Checks"
+     },
+     "drop_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Drop Count"
+     },
+     "drop_x": {
+      "type": "string",
+      "title": "Drop X",
+      "default": ""
+     },
+     "drop_prefix": {
+      "type": "string",
+      "title": "Drop Prefix",
+      "default": "-"
+     },
+     "ro_row": {
+      "type": "boolean",
+      "title": "Ro Row",
+      "default": false
+     },
+     "ro_value": {
+      "type": "boolean",
+      "title": "Ro Value",
+      "default": false
+     },
+     "ro_button": {
+      "type": "string",
+      "title": "Ro Button",
+      "default": ""
+     },
+     "ro_button_note": {
+      "type": "string",
+      "title": "Ro Button Note",
+      "default": ""
+     },
+     "pending": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pending"
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "enabled_key": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled Key"
+     },
+     "check_label": {
+      "type": "string",
+      "title": "Check Label",
+      "default": ""
+     },
+     "warn": {
+      "type": "string",
+      "title": "Warn",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label",
+     "widget",
+     "options",
+     "checks"
+    ],
+    "title": "FieldOut"
+   },
+   "FormTotalsOut": {
+    "properties": {
+     "universe": {
+      "type": "integer",
+      "title": "Universe",
+      "default": 0
+     },
+     "candidates": {
+      "type": "integer",
+      "title": "Candidates",
+      "default": 0
+     },
+     "selected": {
+      "type": "integer",
+      "title": "Selected",
+      "default": 0
+     },
+     "onchain_avg": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Onchain Avg"
+     },
+     "product_avg": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Product Avg"
+     },
+     "total_avg": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Total Avg"
+     },
+     "lexicon_size": {
+      "type": "integer",
+      "title": "Lexicon Size",
+      "default": 0
+     },
+     "lexicon_hit": {
+      "type": "integer",
+      "title": "Lexicon Hit",
+      "default": 0
+     },
+     "lexicon_updated": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lexicon Updated"
+     },
+     "lexicon_stale": {
+      "type": "integer",
+      "title": "Lexicon Stale",
+      "default": 0
+     },
+     "lexicon_research": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lexicon Research"
+     },
+     "run_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run Seconds"
+     },
+     "last_batch": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Batch"
+     }
+    },
+    "type": "object",
+    "title": "FormTotalsOut"
+   },
+   "FunnelOut": {
+    "properties": {
+     "scanned": {
+      "type": "integer",
+      "title": "Scanned"
+     },
+     "dropped": {
+      "type": "integer",
+      "title": "Dropped"
+     },
+     "candidates": {
+      "type": "integer",
+      "title": "Candidates"
+     },
+     "selected": {
+      "type": "integer",
+      "title": "Selected"
+     }
+    },
+    "type": "object",
+    "required": [
+     "scanned",
+     "dropped",
+     "candidates",
+     "selected"
+    ],
+    "title": "FunnelOut"
+   },
+   "GateOut": {
+    "properties": {
+     "judged": {
+      "type": "integer",
+      "title": "Judged",
+      "default": 0
+     },
+     "unjudged": {
+      "type": "integer",
+      "title": "Unjudged",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "GateOut"
+   },
+   "GroupOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "hint": {
+      "type": "string",
+      "title": "Hint",
+      "default": ""
+     },
+     "fields": {
+      "items": {
+       "$ref": "#/components/schemas/FieldOut"
+      },
+      "type": "array",
+      "title": "Fields"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     },
+     "detail": {
+      "type": "string",
+      "title": "Detail",
+      "default": ""
+     },
+     "warn": {
+      "type": "string",
+      "title": "Warn",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "fields"
+    ],
+    "title": "GroupOut"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "HealthOut": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "time": {
+      "type": "string",
+      "title": "Time"
+     },
+     "db": {
+      "type": "boolean",
+      "title": "Db"
+     },
+     "db_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Db Error"
+     },
+     "db_path": {
+      "type": "string",
+      "title": "Db Path"
+     },
+     "web_dist": {
+      "type": "boolean",
+      "title": "Web Dist"
+     },
+     "llm": {
+      "type": "boolean",
+      "title": "Llm"
+     },
+     "llm_model": {
+      "type": "string",
+      "title": "Llm Model"
+     },
+     "chains": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Chains"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status",
+     "version",
+     "time",
+     "db",
+     "db_path",
+     "web_dist",
+     "llm",
+     "llm_model",
+     "chains"
+    ],
+    "title": "HealthOut"
+   },
+   "HolderOut": {
+    "properties": {
+     "rank": {
+      "type": "integer",
+      "title": "Rank"
+     },
+     "addr": {
+      "type": "string",
+      "title": "Addr",
+      "default": ""
+     },
+     "addr_full": {
+      "type": "string",
+      "title": "Addr Full",
+      "default": ""
+     },
+     "pct": {
+      "type": "string",
+      "title": "Pct",
+      "default": ""
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "rank"
+    ],
+    "title": "HolderOut"
+   },
+   "HoldersOut": {
+    "properties": {
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/HolderOut"
+      },
+      "type": "array",
+      "title": "Rows",
+      "default": []
+     },
+     "summary": {
+      "items": {
+       "$ref": "#/components/schemas/ChipOut"
+      },
+      "type": "array",
+      "title": "Summary",
+      "default": []
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "HoldersOut"
+   },
+   "LexiconIn": {
+    "properties": {
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Symbol"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     },
+     "narrative": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Narrative"
+     },
+     "product": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Product"
+     },
+     "social": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Social"
+     },
+     "concl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Concl"
+     },
+     "narr_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Narr Text"
+     },
+     "prod_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Prod Text"
+     },
+     "mech_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mech Text"
+     },
+     "pros": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pros"
+     },
+     "cons": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cons"
+     },
+     "watch": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Watch"
+     },
+     "scenario": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scenario"
+     },
+     "review_state": {
+      "type": "string",
+      "title": "Review State",
+      "default": "pending"
+     },
+     "evidence_json": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Evidence Json"
+     }
+    },
+    "type": "object",
+    "title": "LexiconIn"
+   },
+   "LexiconOut": {
+    "properties": {
+     "ca": {
+      "type": "string",
+      "title": "Ca"
+     },
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id",
+      "default": "arc"
+     },
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Symbol"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     },
+     "narrative": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Narrative"
+     },
+     "product": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Product"
+     },
+     "social": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Social"
+     },
+     "concl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Concl"
+     },
+     "narr_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Narr Text"
+     },
+     "prod_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Prod Text"
+     },
+     "mech_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mech Text"
+     },
+     "pros": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pros"
+     },
+     "cons": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cons"
+     },
+     "watch": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Watch"
+     },
+     "scenario": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scenario"
+     },
+     "review_state": {
+      "type": "string",
+      "title": "Review State"
+     },
+     "evidence_json": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Evidence Json"
+     },
+     "updated_at": {
+      "type": "string",
+      "title": "Updated At"
+     },
+     "refresh_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refresh Reason"
+     },
+     "baseline_mcap": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline Mcap"
+     },
+     "baseline_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline At"
+     },
+     "age_hours": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Age Hours"
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "default": false
+     },
+     "research_state": {
+      "type": "string",
+      "title": "Research State",
+      "default": "none"
+     },
+     "research_note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Research Note"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/LinkOut"
+      },
+      "type": "array",
+      "title": "Sources",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "ca",
+     "review_state",
+     "updated_at"
+    ],
+    "title": "LexiconOut"
+   },
+   "LexiconRowOut": {
+    "properties": {
+     "ca": {
+      "type": "string",
+      "title": "Ca"
+     },
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Symbol"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     },
+     "narrative": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Narrative"
+     },
+     "product": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Product"
+     },
+     "mcap": {
+      "type": "string",
+      "title": "Mcap",
+      "default": "—"
+     },
+     "social": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Social"
+     },
+     "concl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Concl"
+     },
+     "review_state": {
+      "type": "string",
+      "title": "Review State"
+     },
+     "updated_at": {
+      "type": "string",
+      "title": "Updated At"
+     },
+     "current": {
+      "type": "boolean",
+      "title": "Current"
+     },
+     "refresh_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refresh Reason"
+     },
+     "baseline_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseline At"
+     },
+     "age_hours": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Age Hours"
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "default": false
+     },
+     "research_state": {
+      "type": "string",
+      "title": "Research State",
+      "default": "none"
+     },
+     "research_note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Research Note"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/LinkOut"
+      },
+      "type": "array",
+      "title": "Sources",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "ca",
+     "review_state",
+     "updated_at",
+     "current"
+    ],
+    "title": "LexiconRowOut"
+   },
+   "LinkOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "label",
+     "url"
+    ],
+    "title": "LinkOut"
+   },
+   "MetricOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "na": {
+      "type": "boolean",
+      "title": "Na",
+      "default": false
+     },
+     "long": {
+      "type": "boolean",
+      "title": "Long",
+      "default": false
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "tone": {
+      "type": "string",
+      "title": "Tone",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "value"
+    ],
+    "title": "MetricOut"
+   },
+   "PillOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "tone": {
+      "type": "string",
+      "title": "Tone"
+     }
+    },
+    "type": "object",
+    "required": [
+     "label",
+     "tone"
+    ],
+    "title": "PillOut"
+   },
+   "PoolOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "liquidity": {
+      "type": "string",
+      "title": "Liquidity",
+      "default": ""
+     },
+     "pair": {
+      "type": "string",
+      "title": "Pair",
+      "default": ""
+     },
+     "pair_full": {
+      "type": "string",
+      "title": "Pair Full",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "PoolOut",
+    "description": "One pool the token trades in, as the chain feed lists it."
+   },
+   "PoolsOut": {
+    "properties": {
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/PoolOut"
+      },
+      "type": "array",
+      "title": "Rows",
+      "default": []
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "PoolsOut"
+   },
+   "PushOut": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "delay": {
+      "type": "string",
+      "title": "Delay",
+      "default": ""
+     },
+     "unavailable": {
+      "type": "string",
+      "title": "Unavailable",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "PushOut"
+   },
+   "RanksOut": {
+    "properties": {
+     "liquidity": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Liquidity"
+     },
+     "volume": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Volume"
+     },
+     "holders": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Holders"
+     }
+    },
+    "type": "object",
+    "title": "RanksOut"
+   },
+   "RuleCountOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Count"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label"
+    ],
+    "title": "RuleCountOut"
+   },
+   "RunCreate": {
+    "properties": {
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id"
+     },
+     "trigger": {
+      "type": "string",
+      "title": "Trigger",
+      "default": "manual"
+     }
+    },
+    "type": "object",
+    "required": [
+     "chain_id"
+    ],
+    "title": "RunCreate"
+   },
+   "RunOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "run_key": {
+      "type": "string",
+      "title": "Run Key"
+     },
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id"
+     },
+     "trigger": {
+      "type": "string",
+      "title": "Trigger"
+     },
+     "scheduled_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scheduled At"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "scanned": {
+      "type": "integer",
+      "title": "Scanned"
+     },
+     "dropped": {
+      "type": "integer",
+      "title": "Dropped"
+     },
+     "candidates": {
+      "type": "integer",
+      "title": "Candidates"
+     },
+     "selected": {
+      "type": "integer",
+      "title": "Selected"
+     },
+     "settings_version_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Settings Version Id"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "progress": {
+      "type": "integer",
+      "title": "Progress",
+      "default": 0
+     },
+     "progress_label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Progress Label"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "run_key",
+     "chain_id",
+     "trigger",
+     "status",
+     "scanned",
+     "dropped",
+     "candidates",
+     "selected"
+    ],
+    "title": "RunOut"
+   },
+   "SafetyOut": {
+    "properties": {
+     "perms": {
+      "items": {
+       "$ref": "#/components/schemas/PillOut"
+      },
+      "type": "array",
+      "title": "Perms"
+     },
+     "lp": {
+      "$ref": "#/components/schemas/PillOut"
+     },
+     "chips": {
+      "items": {
+       "$ref": "#/components/schemas/ChipOut"
+      },
+      "type": "array",
+      "title": "Chips"
+     },
+     "warnings": {
+      "items": {
+       "$ref": "#/components/schemas/PillOut"
+      },
+      "type": "array",
+      "title": "Warnings",
+      "default": []
+     },
+     "holdings": {
+      "items": {
+       "$ref": "#/components/schemas/ChipOut"
+      },
+      "type": "array",
+      "title": "Holdings",
+      "default": []
+     },
+     "pools": {
+      "$ref": "#/components/schemas/PoolsOut"
+     },
+     "holders": {
+      "$ref": "#/components/schemas/HoldersOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "perms",
+     "lp",
+     "chips"
+    ],
+    "title": "SafetyOut"
+   },
+   "SegmentOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "text"
+    ],
+    "title": "SegmentOut"
+   },
+   "SettingsFormOut": {
+    "properties": {
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version"
+     },
+     "note_bar": {
+      "items": {
+       "$ref": "#/components/schemas/SegmentOut"
+      },
+      "type": "array",
+      "title": "Note Bar"
+     },
+     "note_detail": {
+      "type": "string",
+      "title": "Note Detail",
+      "default": ""
+     },
+     "lexicon_note": {
+      "type": "string",
+      "title": "Lexicon Note",
+      "default": ""
+     },
+     "dirty_hint": {
+      "type": "string",
+      "title": "Dirty Hint"
+     },
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/BlockOut"
+      },
+      "type": "array",
+      "title": "Blocks"
+     },
+     "totals": {
+      "$ref": "#/components/schemas/FormTotalsOut"
+     },
+     "lexicon": {
+      "items": {
+       "$ref": "#/components/schemas/LexiconRowOut"
+      },
+      "type": "array",
+      "title": "Lexicon"
+     },
+     "blocked": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Blocked"
+     }
+    },
+    "type": "object",
+    "required": [
+     "chain_id",
+     "label",
+     "version",
+     "note_bar",
+     "dirty_hint",
+     "blocks",
+     "totals",
+     "lexicon",
+     "blocked"
+    ],
+    "title": "SettingsFormOut"
+   },
+   "SettingsIn": {
+    "properties": {
+     "patch": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Patch"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     }
+    },
+    "type": "object",
+    "title": "SettingsIn",
+    "description": "A partial patch of dotted-path leaves; empty means \"nothing changed\"."
+   },
+   "SettingsOut": {
+    "properties": {
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source"
+     },
+     "settings_version_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Settings Version Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Payload"
+     }
+    },
+    "type": "object",
+    "required": [
+     "chain_id",
+     "version",
+     "source"
+    ],
+    "title": "SettingsOut"
+   },
+   "SourceCountOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "SourceCountOut"
+   },
+   "SparkOut": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "trend": {
+      "type": "string",
+      "title": "Trend"
+     },
+     "delta": {
+      "type": "string",
+      "title": "Delta",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "path",
+     "trend"
+    ],
+    "title": "SparkOut"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}
