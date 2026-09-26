@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The tab icon is the rail's mark on the same 24-grid, drawn as a solid tile: the
+     mark is a 16px-thin line and a light browser tab strip swallowed it, so the tile
+     carries the contrast and the glyph rides on top. A tile on both variants is the
+     point - browser chrome follows the OS, not the app theme, so either variant can
+     land on either strip. The two colours are hard-coded because this is parsed
+     before any stylesheet or module exists, so it can read neither the .ico class nor
+     a token; they are the accent pair of each app theme (tile = --accent, mark =
+     --accent-on), with the frame inset to 6..18 in the 24-grid so the mark has air.
+     Both variants ride here as data attributes and the two places that set the theme
+     pick one: the inline script below for the first paint, and applyTheme in
+     src/theme.ts for every switch after it. -->
+<link id="ch-icon" rel="icon" data-dark="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 fill=%27%2360a5fa%27/%3E%3Cg fill=%27none%27 stroke=%27%2306101d%27 stroke-width=%273%27 stroke-linecap=%27square%27 stroke-linejoin=%27miter%27%3E%3Cpath d=%27M6 6h12v12H6z%27/%3E%3Cpath d=%27m12 12 4.5-4.5%27/%3E%3C/g%3E%3C/svg%3E" data-light="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 fill=%27%232563eb%27/%3E%3Cg fill=%27none%27 stroke=%27%23ffffff%27 stroke-width=%273%27 stroke-linecap=%27square%27 stroke-linejoin=%27miter%27%3E%3Cpath d=%27M6 6h12v12H6z%27/%3E%3Cpath d=%27m12 12 4.5-4.5%27/%3E%3C/g%3E%3C/svg%3E" />
+    <title>Crypto Hunter</title>
+    <script>
+      // Inline and dependency-free on purpose: this has to run before the stylesheet is
+      // applied, or a reader who picked light sees a dark frame on every reload. Dark is
+      // the default, so only the other value is written here. The tab icon is set in the
+      // same breath - it is a document of its own and cannot follow the attribute - and
+      // the storage read is guarded so a refused read still paints the default icon.
+      (function () {
+        var icon = document.getElementById("ch-icon");
+        var light = false;
+        try {
+          light = localStorage.getItem("ch.theme") === "light";
+        } catch (e) {}
+        if (light) {
+          document.documentElement.dataset.theme = "light";
+        }
+        if (icon) {
+          icon.href = light ? icon.dataset.light : icon.dataset.dark;
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
