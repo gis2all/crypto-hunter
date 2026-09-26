@@ -1,0 +1,81 @@
+/* Visual baseline, lifted from prototype/v1 (design system: mission-control).
+   prototype/v1 is a historical reference only - it is no longer kept in sync and no
+   longer constrains a change; edits belong here.
+
+   Typography rule (2026-09-26): one sans stack for the whole app. Digits line up
+   through font-variant-numeric:tabular-nums, never through a mono face - mono was
+   declared on 81 rules that mostly held Chinese, which fell back to Noto Sans SC and
+   rendered smaller and thinner than the digits beside it. `--mono` stays as a
+   forwarder to `--sans` so any such declaration is now a no-op; to give one element
+   real monospace again, change that single line. */
+
+:root{
+  --bg:#090b12;--surface:#121722;--surface-warm:#1b2233;
+  --fg:#f8fafc;--fg-2:#cbd5e1;--muted:#94a3b8;--muted-2:#808c9d;
+  --border:#2a3447;--hair:#1d2636;--row:#121722;--row-cur:#233652;
+  --accent:#60a5fa;--accent-on:#06101d;--accent-fg:#60a5fa;--accent-tint:#315078;
+  --accent-hover:#5898e6;--warn-hover:#fcd34d;--shadow:0 12px 28px rgba(0,0,0,.5);
+  --ok:#26de81;--ok-fg:#26de81;--ok-border:#195d43;--ok-bg:#15332f;
+  --warn:#fbbf24;--warn-fg:#fbbf24;--warn-border:#645223;--warn-bg:#332f22;
+  --danger:#ff4757;--danger-fg:#ff6b78;--danger-border:#652835;--danger-bg:#331e29;
+  --podium-1:#e8bf4a;--podium-1-bg:#2f2712;
+  --podium-2:#cbd5e1;--podium-2-bg:#242c38;
+  --podium-3:#c8825a;--podium-3-bg:#2b1d13;
+  --ctrl-h:26px;--ctrl-h-sm:20px;
+  color-scheme:dark;
+  --sans:Inter,'Inter var',system-ui,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif;
+  --serif:var(--sans);
+  --mono:var(--sans);  /* retired: see the header */
+}
+
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0!important}
+html,body{height:100%}
+body{font-family:var(--sans);font-size:12.5px;line-height:1.55;color:var(--fg);background:var(--bg);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,h5,h6,b,strong{font-weight:600}
+/* Form controls do not inherit the family: the UA sheet sets one on them, so a <button>
+   added without a family renders in the platform font while the label beside it does not.
+   Rules that want a specific family still win on specificity. */
+button,input,select,textarea{font-family:inherit}
+a{color:var(--accent-fg);text-decoration:none;border-bottom:1px solid var(--accent-tint)}
+code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* Light. Not an inversion: a new palette checked against WCAG AA (4.5:1 for text,
+   3:1 for the colour-coded state borders). The rules that force new values rather than
+   flipped ones:
+     - --muted-2 #808c9d passes on --surface (5.26:1); the old #64748b was 3.77:1.
+     - --accent splits into a fill (--accent / --accent-on) and link text (--accent-fg):
+       #60a5fa reads 2.6:1 on white as text, but is fine as a button fill.
+     - the ok/warn/danger text tones have to darken - #26de81 on white is 1.9:1.
+     - the state borders (貔貅 是/否/—, pills, chips) are the colour-coded state, so they
+       are held to 3:1 here: ok 3.43 / warn 3.61 / danger 3.26. Dark is left as it was
+       (2.29 / 2.37 / 1.63) - that palette was tuned by eye on a dark ground.
+     - the four --*-bg tints and the podium pair were picked against a dark ground too,
+       so they are re-derived rather than reused.
+     - --ok-fg #137336 and --warn-fg #8a5a06 are also held above 4.5:1 on the two light
+       tints they can land on (--surface-warm, --row-cur), which is why they sit darker
+       than the fill colours. #15803d was 4.31 on --surface-warm.
+     - --row-cur went #d9e6ff -> #eaf0fe: at the stronger blue, hovering the current row
+       pushed --ok-fg to 3.99 and --warn-fg to 3.98 for as long as the pointer rested
+       there. A hover tint is a hint, so it gives ground to the text rather than the
+       reverse.
+     - the page ground and the panel colour traded places (2026-09-26): --bg is now the
+       sheet, --surface is the tint. --bg only ever painted body / .topbar / .changebar;
+       --surface is the panel colour of 33 rules, and the report card reads it like every
+       other block - which is what the user asked for ("卡片背景也需要像其他块那样").
+       Paper is white, blocks are one shade of grey, in both pages. Dark is untouched:
+       only the two light lines below change. */
+[data-theme="light"]{
+  --bg:#ffffff;--surface:#f5f7fa;--surface-warm:#e9eef6;
+  --fg:#0d1526;--fg-2:#33415c;--muted:#5a6577;--muted-2:#647082;
+  --border:#d3dae5;--hair:#e6eaf1;--row:#f2f5f9;--row-cur:#eaf0fe;
+  --accent:#2563eb;--accent-on:#ffffff;--accent-fg:#1d4ed8;--accent-tint:#b9cdf7;
+  --accent-hover:#1d4ed8;--warn-hover:#854d0e;--shadow:0 12px 28px rgba(16,24,40,.16);
+  --ok:#15803d;--ok-fg:#137336;--ok-border:#3c9c61;--ok-bg:#e9f7ee;
+  --warn:#a16207;--warn-fg:#8a5a06;--warn-border:#ad7f16;--warn-bg:#fdf6e4;
+  --danger:#c81e1e;--danger-fg:#b91c1c;--danger-border:#d47272;--danger-bg:#fdecec;
+  --podium-1:#8a6100;--podium-1-bg:#fdf2d5;
+  --podium-2:#5f6b7c;--podium-2-bg:#eef1f5;
+  --podium-3:#9a5220;--podium-3-bg:#fbeee3;
+  color-scheme:light;
+}

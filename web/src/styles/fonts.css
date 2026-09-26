@@ -1,0 +1,7 @@
+/* Self-hosted, no external requests. Latin from Google Fonts (latin subtree),
+   CJK subset cut to the glyphs the UI actually renders. */
+
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
+  src:url('/fonts/inter.woff2') format('woff2')}
+@font-face{font-family:'Noto Sans SC';font-style:normal;font-weight:100 900;font-display:swap;
+  src:url('/fonts/noto-sans-sc.woff2') format('woff2')}
