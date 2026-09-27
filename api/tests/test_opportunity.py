@@ -58,18 +58,18 @@ def test_an_unknown_kind_is_not_read_at_all():
     assert verdict is None and issues
 
 
-def test_a_category_outside_the_list_is_an_issue_and_other_in_the_end():
+def test_a_category_outside_the_list_is_an_issue_and_the_entry_is_dropped():
     verdict, issues = schema.read_verdict({"kind": "activity", "category": "挖矿活动"})
     assert verdict is not None and issues, "类目不在表里要记下来，但不必因此丢掉整条判断"
     entries, entry_issues = schema.read_entries({
         "entries": [{"title": "某活动", "kind": "activity", "category": "挖矿活动",
                      "steps": [{"body": "做点什么"}]}]})
-    assert entries and entries[0].category == "其他" and entry_issues
+    assert not entries and entry_issues, "落不到类目的材料不建卡：`其他` 不是答案"
 
 
 def test_an_activity_without_a_step_is_not_an_activity():
     entries, issues = schema.read_entries({
-        "entries": [{"title": "某活动", "kind": "activity", "steps": []}]})
+        "entries": [{"title": "某活动", "kind": "activity", "category": "做任务", "steps": []}]})
     assert entries and any("without a single step" in issue for issue in issues)
     status, reason = promote.verdict(entries[0])
     assert status == "candidate" and reason == "no_steps"
@@ -77,7 +77,7 @@ def test_an_activity_without_a_step_is_not_an_activity():
 
 def test_a_project_needs_a_sentence_not_a_step():
     entries, issues = schema.read_entries({
-        "entries": [{"title": "某个新协议", "kind": "project", "summary": "",
+        "entries": [{"title": "某个新协议", "kind": "project", "category": "新协议", "summary": "",
                      "organizer": "someone"}]})
     assert entries and issues
     status, reason = promote.verdict(entries[0])
@@ -86,7 +86,8 @@ def test_a_project_needs_a_sentence_not_a_step():
 
 def test_a_project_with_a_sentence_and_a_way_in_is_promoted():
     entries, _ = schema.read_entries({
-        "entries": [{"title": "某个新协议", "kind": "project", "summary": "比特币上的 AMM",
+        "entries": [{"title": "某个新协议", "kind": "project", "category": "新协议",
+                     "summary": "比特币上的 AMM",
                      "official_url": "https://example.org"}]})
     status, reason = promote.verdict(entries[0])
     assert (status, reason) == ("promoted", None)
@@ -94,7 +95,8 @@ def test_a_project_with_a_sentence_and_a_way_in_is_promoted():
 
 def test_an_activity_needs_a_way_in_even_with_steps():
     entries, _ = schema.read_entries({
-        "entries": [{"title": "某活动", "kind": "activity", "steps": [{"body": "打开某处"}]}]})
+        "entries": [{"title": "某活动", "kind": "activity", "category": "做任务",
+                     "steps": [{"body": "打开某处"}]}]})
     status, reason = promote.verdict(entries[0])
     assert (status, reason) == ("candidate", "no_official_link")
     assert promote.reason_label(reason) == "没有官方入口（官网或官方账号）"
@@ -102,7 +104,7 @@ def test_an_activity_needs_a_way_in_even_with_steps():
 
 def test_a_barrier_the_build_does_not_have_is_dropped_and_recorded():
     entries, issues = schema.read_entries({
-        "entries": [{"title": "某活动", "kind": "activity", "organizer": "x",
+        "entries": [{"title": "某活动", "kind": "activity", "category": "做任务", "organizer": "x",
                      "steps": [{"body": "做点什么"}],
                      "barrier": ["需 gas", "需要一点运气"]}]})
     assert entries[0].barrier == ["需 gas"]
@@ -111,7 +113,8 @@ def test_a_barrier_the_build_does_not_have_is_dropped_and_recorded():
 
 def test_an_unknown_maturity_is_cleared_not_guessed():
     entries, issues = schema.read_entries({
-        "entries": [{"title": "某协议", "kind": "project", "summary": "s", "organizer": "x",
+        "entries": [{"title": "某协议", "kind": "project", "category": "新协议", "summary": "s",
+                     "organizer": "x",
                      "maturity": "beta"}]})
     assert entries[0].maturity == "" and issues
 
@@ -275,6 +278,23 @@ def test_a_launchpad_quest_still_passes():
     out = rules.judge(
         "Pons 开启积分任务：完成任务领取空投，Mint 白名单开放。",
         author="ponsdotfamily", family="issuance")
+
+    assert not out["excluded"] and out["pass"]
+
+
+def test_an_incident_or_shutdown_notice_is_refused():
+    out = rules.judge(
+        "Keystone 钱包官网遭入侵，私钥泄露，我们已停止服务并配合调查。",
+        author="KeystoneWallet", family="capital")
+
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-notice-only"
+
+
+def test_a_hackathon_with_a_real_task_still_passes():
+    out = rules.judge(
+        "黑客松开放报名：完成任务提交项目，积分前 50 领取空投白名单。",
+        author="somechain", family="issuance")
 
     assert not out["excluded"] and out["pass"]
 
@@ -2078,6 +2098,17 @@ def test_the_panel_is_three_groups_category_group_ecosystem_status():
     assert status == {"": None, "promoted": 1, "candidate": 0, "retired": 1}
 
 
+def test_a_label_only_deleted_rows_carry_is_not_offered():
+    """退休的卡保留旧类目，但面板不再为它长一行：那行只能把页面筛空（2026-10-27）。"""
+    from app.api.v1 import forms
+
+    items = [_panel_item(),
+             _panel_item(slug="gone", category="其他", ecosystem="bitcoin",
+                         user_state="deleted")]
+    groups = {group["key"]: group for group in forms.opportunity_filters(items, {})}
+    assert set(groups) == {"status"}, "只剩一个类目、一条链：两组都不发"
+
+
 def test_the_dropped_groups_are_gone_for_good():
     """类别 / 核实 / 类目 / 门槛 / 热度 / 来源 都不再是筛选组：它们是卡片上的读数。"""
     from app.api.v1 import forms
@@ -2143,18 +2174,19 @@ def test_the_other_backfill_only_writes_valid_categories(isolated_db, monkeypatc
         return {"items": [
             {"slug": "opp-node", "category": "节点"},
             {"slug": "opp-project", "category": "新协议"},
-            {"slug": "opp-keep", "category": "其他"},
+            {"slug": "opp-keep", "category": ""},
             {"slug": "not-in-this-batch", "category": "交互"},
         ]}
 
     monkeypatch.setattr(llm, "complete_json", fake)
     got = recategorize.run()
 
-    assert got == {"checked": 3, "updated": 2, "left": 1,
-                   "unknown": ["not-in-this-batch"]}
+    assert got == {"checked": 3, "updated": 2, "left": 0,
+                   "unknown": ["not-in-this-batch"],
+                   "not_opportunity": ["opp-keep"]}
     assert db.opportunity_item("opp-node")["category"] == "节点"
     assert db.opportunity_item("opp-project")["category"] == "新协议"
-    assert db.opportunity_item("opp-keep")["category"] == "其他", "说不清就留在其他"
+    assert db.opportunity_item("opp-keep")["category"] == "其他", "回填不删卡，留给调用方"
     assert db.opportunity_item("opp-done")["category"] == "空投", "非其他不参与回填"
 
 
@@ -2193,6 +2225,22 @@ def test_the_ecosystem_is_read_from_the_material_not_from_who_posted_it(isolated
     assert item["source_type"] == source["kind"], "来源类型仍是来源行的字段"
 
 
+def test_a_card_that_cannot_name_its_action_is_dropped():
+    """`其他` is not an answer (2026-10-27, user): a material that cannot name the action
+    is not an opportunity, so the entry is dropped instead of being carded as 其他."""
+    from app.opportunity.schema import read_entries
+
+    entries, issues = read_entries({"entries": [
+        {"title": "某项目介绍", "kind": "project", "category": "其他",
+         "summary": "一个新产品", "official_url": "https://x.io"},
+        {"title": "某链测试网开放", "kind": "activity", "category": "测试网",
+         "steps": [{"body": "去水龙头领测试币"}]},
+    ]})
+
+    assert [entry.category for entry in entries] == ["测试网"]
+    assert any("其他" in issue for issue in issues)
+
+
 def test_an_ecosystem_is_judged_not_restricted():
     """生态是**判断**出来的，不是从闭合枚举里挑的（2026-10-19, user：判断啊，基本上就是公链）。
 
@@ -2203,7 +2251,7 @@ def test_an_ecosystem_is_judged_not_restricted():
 
     def ecosystem_of(value):
         entries, _ = read_entries({"entries": [
-            {"title": "某协议上线", "kind": "project", "summary": "s",
+            {"title": "某协议上线", "kind": "project", "category": "新协议", "summary": "s",
              "official_url": "https://x.io", "ecosystem": value}]})
         assert entries, value
         return entries[0].ecosystem
@@ -2292,7 +2340,7 @@ def test_a_missing_ecosystem_is_unjudged_too():
     from app.opportunity.schema import read_entries
 
     entries, _ = read_entries({"entries": [
-        {"title": "新协议上线", "kind": "project", "summary": "s",
+        {"title": "新协议上线", "kind": "project", "category": "新协议", "summary": "s",
          "official_url": "https://x.io"}]})
     assert entries and entries[0].ecosystem == "未判定"
 
