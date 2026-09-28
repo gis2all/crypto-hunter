@@ -13,6 +13,7 @@ a number into a string by accident.
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime
 
@@ -333,7 +334,12 @@ def _run_status(run: dict | None, chain: dict) -> str:
 
 
 def _fmt(value: float | None) -> str:
-    return "—" if value is None else "%.1f" % value
+    """A measured average, as the settings page prints it: a whole number.
+
+    `totals` keeps the float - only the sentence rounds - and it rounds half up, the
+    rule the card scores follow, so a mean printed here and the same number printed on
+    a card can never disagree by a half."""
+    return "—" if value is None else "%d" % math.floor(value + 0.5)
 
 
 def _last_batch_text(batch: dict | None) -> str:
