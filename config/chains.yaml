@@ -81,6 +81,12 @@ chains:
           holders: 20
           top10_concentration: 20
           bundling: 20
+        offchain_factor_weights:
+          f_completeness: 20
+          f_substance: 20
+          f_team: 20
+          f_narrative: 20
+          f_community: 20
     report:
       per_round: 5
       push_target: telegram
@@ -137,6 +143,12 @@ chains:
           holders: 20
           top10_concentration: 20
           bundling: 20
+        offchain_factor_weights:
+          f_completeness: 20
+          f_substance: 20
+          f_team: 20
+          f_narrative: 20
+          f_community: 20
     report:
       per_round: 5
       push_target: telegram
