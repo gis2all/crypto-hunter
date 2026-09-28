@@ -28,4 +28,4 @@ def get_chain(chain_id: str) -> ChainOut:
     try:
         return _public(config.chain(chain_id))
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown chain: {chain_id}")
+        raise HTTPException(status_code=404, detail=f"没有这条链：{chain_id}")
