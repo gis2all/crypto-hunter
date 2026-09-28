@@ -21,6 +21,10 @@ data/*.db-*
 data/raw/
 data/probe/
 
+# stray db accidentally created outside data/ (e.g. running with cwd=api)
+api/*.db
+api/*.db-*
+
 # backups (crypto-hunter.db.bak-20260925-lexicon and friends)
 *.bak
 *.bak-*
