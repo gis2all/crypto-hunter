@@ -10,7 +10,7 @@ stack:
   icon: lucide-react，统一走 web/src/components/Icon.tsx
 run: uv run --project api python -m app
 build: cd web; npm run build
-verify: cd api; uv run python -m pytest -q      # 基线 479 绿
+verify: cd api; uv run python -m pytest -q      # 基线 485 绿
 verify_web: cd web; npm run build                # tsc -b 不过就是构建不过
 truth:                                           # 每个领域的唯一出处，本文件只写规矩，不抄内容
   - api/app/store/schema.sql      数据模型
@@ -67,7 +67,7 @@ cd web; npm install; npm run dev
 
 | 改了什么 | 跑什么 | 通过标准 |
 | --- | --- | --- |
-| `.py` | `cd api; uv run python -m pytest -q` | 基线 **479 绿**；然后**重启 API** |
+| `.py` | `cd api; uv run python -m pytest -q` | 基线 **485 绿**；然后**重启 API** |
 | 前端 | `cd web; npm run build` | exit 0（内含 `tsc -b`） |
 | `prompts/*.md` | `pytest tests/test_prompts.py` | prompt 里的 JSON 示例与 `NewTokenEntry` 一致 |
 | 视觉 | 1726 视口深 / 浅各截一遍 | 覆盖报告页（折叠 ＋ 全部展开）、设定页（含链下调研块）、本轮总览；坐标与计算值用 `getComputedStyle` 验，不靠肉眼 |
@@ -260,7 +260,7 @@ cd web; npm install; npm run dev
   - 位置：`api/app/core/scoring.py`。
   - 反例：把 Top10 / 捆绑当正向因子 → 筹码越集中分越高。
 - **R-027 综合分 = 链上质量 ＋ 链下调研**
-  - 规则：`onchain_weight` 默认 55%、`offchain_weight` 默认 45%（`config/chains.yaml`）；链下那半由五项 0–5 等权合成（R-088）。
+  - 规则：`onchain_weight` 默认 55%、`offchain_weight` 默认 45%（`config/chains.yaml`）；两块各自的五个因子带一套 `*_factor_weights`（出厂各 20%，见 R-090），合成时按权重归一，缺项读 0 不进分母。
   - 位置：`core/scoring.py` ＋ `config/chains.yaml`（以 `settings_versions` 表为准）。
   - 反例：把权重写死在代码里 → 设定页改了不生效（R-096）。
 - **R-028 链下调研没落地的标的 = `pending`（冷启动）**
@@ -554,7 +554,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 ## 6.2 设定页（R-084 – R-090）
 
 - **R-084 每条链一套设定**
-  - 规则：`/settings` 保存写进 `settings_versions`（不可变），之后以表为准；出厂默认在 `config/chains.yaml`。**链与链之间不共享设定**（后面接 BSC 等链时，过滤条件与阈值各写各的）。
+  - 规则：`/settings` 保存写进 `settings_versions`（不可变），之后以表为准；出厂默认在 `config/chains.yaml`。**链与链之间不共享设定**（后面接 BSC 等链时，过滤条件与阈值各写各的）。一次 PUT 是一张 dotted-path 的 patch，落到两层以上的组里要**深合并**（`settings._deep_merge`）：同一个组里改两个键，浅合并的 `{**a, **b}` 会把先改的那个整组覆盖掉。被拒的保存要写成操作者能照着做的一句话：中文、带上当前值、把 key 翻成页面上的行名（`forms.field_labels`，从页面自己的 `build` 派生；区间行读作 市值下限 / 市值上限），例如「链下调研五项权重合计要等于 100%，当前 110%（产品完成度 30% ｜ …）」「「流动性」不能留空：这个格子必须有个数」；前端不翻译，只把 `detail` 印出来（`client.ts` 的 `errorText`，只有 5xx 才补 HTTP 码）。
   - 位置：`api/app/api/v1/settings.py`、`api/app/api/v1/forms.py`、`web/src/features/settings/`。
   - 反例：做一份「全局设定」→ 一条链调松，另一条链跟着变。
 - **R-085 解释折进「说明」icon**
@@ -581,9 +581,9 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
   - 位置：`core/filters.py`、`api/app/config.py`、`forms.py`。
   - 反例：把上限写成 `0` → 变成「一个都不留」。
 - **R-090 链下调研块**
-  - 规则：五项指标（产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与官方关系 / 社区活跃度）各 0–5，等权合成 `offchain_weight`（默认 45%）。这五行是**只读**的 —— 它们是 `forms.py` 里 `OFFCHAIN_LABELS` 的口径说明，前端不认识任何一条文案。
-  - 位置：`api/app/api/v1/forms.py`、`core/scoring.py`。
-  - 反例：把五项也做成可输入权重 → 等于让「口径」变成「调参」（Q-008）。
+  - 规则：五项指标（产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与官方关系 / 社区活跃度）各 0–5，按 `scoring.offchain_factor_weights` 合成 `offchain_weight`（默认 45%）。这五行与链上那半边**同形**：都是百分比输入框，出厂各 20%（合 100），改一个就要把合计调回 100，否则 422 —— 校验与 `onchain_factor_weights` 对称。每项判 0–5 所依据的锚点、以及「数据来源：每轮全新调研」那句，读一次就够，全部折进 `评分口径` 的说明 icon（`GroupOut.detail`，锚点文案仍旧只写在 `forms.py` 的 `OFFCHAIN_LABELS` 里，前端不认识任何一条文案）。
+  - 位置：`api/app/api/v1/forms.py`、`api/app/api/v1/settings.py`、`core/scoring.py`、`config/chains.yaml`。
+  - 反例：① 把五项做成只读说明 → 权重这类口径只能靠改代码（Q-008）；② 缺键当 0 权重 → 没这个键的老快照要按等权合成（`scoring.offchain_weights`），不能把币全砍掉；③ 把锚点留在行上 → 六行灰字把这一栏撑高，而这五条读一次就够。
 
 ## 6.3 侧栏与顶栏（R-091 – R-096）
 
@@ -850,7 +850,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 - **Q-005 进程死在 `collected` / `scored` 中途时，那一轮和「正在跑」长得一样**：目前只恢复 `pending` 的轮。要修得给轮次加心跳时间戳。
 - **Q-006 深色主题的状态边框对比度不达标**（2.29 / 2.37 / 1.63:1，R-112）：要达标就把 `--ok-border` / `--warn-border` / `--danger-border` 各提一档，一行一个。
 - **Q-007 链上读路径要再压，只能减少「哪些读是必需的」**：30 次 / 轮里没有可去的重复调用（R-117）。
-- **Q-008 链下调研五项的边界**：等权还是加权、第 2 项（项目实质与亮点）与第 4 项（叙事与官方关系）的界线、粗筛条件、`per_round` 的取值、判定规则细则、链下调研块的其他参数（R-090）。
+- **Q-008 链下调研五项的边界**：第 2 项（项目实质与亮点）与第 4 项（叙事与官方关系）的界线、粗筛条件、`per_round` 的取值、判定规则细则、链下调研块的其他参数（R-090）。**权重已定**：五项各有百分比旋钮、出厂等权 20%，不再挂在待决里。
 
 # 附录 A：为什么这么定（P-###）
 
@@ -878,6 +878,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | P-018 | 推理模型的思考计入 `max_tokens`，额度给小了返回**空消息**（不是报错）→ 客户端把空消息当失败，静默降级成「没有文字」 | R-036 |
 | P-019 | `CH_LLM_TIMEOUT` 180s × `CH_LLM_TRIES` 2 → 一次死掉的调用独占 366s（那一轮 draft 421s） | R-036 |
 | P-020 | 第三方渲染 `r.jina.ai` 与 `networkidle` 等待策略都试过并放弃 | R-034 ｜ M-012 |
+| P-021 | 设定 patch 在两层嵌套组上做浅合并 → 同一次保存改两个权重只留下最后一个 | R-084 |
 
 # 附录 B：实测台账（M-###）
 
