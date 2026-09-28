@@ -87,48 +87,48 @@ CREATE TABLE IF NOT EXISTS run_summary (
   created_at   TEXT NOT NULL
 );
 
--- The lexicon: LLM drafts it, a human confirms it. This is the asset that compounds.
+-- The lexicon: this round's off-chain judgement and prose, for the ten tokens the
+-- round shortlisted. Nothing here outlives its round, on purpose - a row is written by
+-- this round's research pass against this round's facts, so there is no baseline to
+-- compare against, no expiry to check, and no text to reuse. `run_id` is what enforces
+-- that: last round's rows are deleted before this round's are written.
 CREATE TABLE IF NOT EXISTS lexicon (
   ca           TEXT PRIMARY KEY,
   chain_id     TEXT NOT NULL DEFAULT 'arc',
+  run_id       TEXT,                -- the round this entry belongs to, and only that one
   symbol       TEXT,
   tag          TEXT,
-  narrative    REAL,
-  product      REAL,
-  social       TEXT,
-  concl        TEXT,
-  narr_text    TEXT,
-  prod_text    TEXT,
-  mech_text    TEXT,
-  pros         TEXT,
-  cons         TEXT,
+  -- The five off-chain scores, each 0-5, keyed exactly as the prompt asks for them.
+  -- There is no "undetermined" here: 0 means the search came back empty, which is a
+  -- finding. Only an on-chain fact can be undetermined.
+  f_completeness REAL,   -- 产品完成度
+  f_substance    REAL,   -- 项目实质与亮点
+  f_team         REAL,   -- 团队与 dev 可信度
+  f_narrative    REAL,   -- 叙事与官方关系
+  f_community    REAL,   -- 社区活跃度
+  -- The card's prose, one field per judgement and named the way the card prints them:
+  -- concl is the verdict at the top, the five below it are the 链下调研 fold. A judgement
+  -- with no field here is a score nobody can read the reason for, and a field with no
+  -- judgement is prose outside the rubric - the two lists move together.
+  social         TEXT,   -- 社区活跃度
+  concl          TEXT,   -- 结论：定位 / 实质 / 亮点 / 风险
+  narr_text      TEXT,   -- 叙事与官方关系
+  prod_text      TEXT,   -- 产品完成度
+  substance_text TEXT,   -- 项目实质与亮点
+  team_text      TEXT,   -- 团队与 dev 可信度
   watch        TEXT,
   scenario     TEXT,
-  review_state TEXT NOT NULL DEFAULT 'pending',  -- pending | confirmed
   evidence_json TEXT,
-  updated_at   TEXT NOT NULL,
-  -- The refresh bookkeeping: what the entry was written against, and when it was
-  -- last rewritten. `baseline_*` is the measuring stick the refresh conditions use -
-  -- without it "市值波动 40%" has nothing to compare with.
-  baseline_mcap    REAL,
-  baseline_holders INTEGER,
-  baseline_at      TEXT,
-  -- The safety verdict the words were written against (源码/权限/LP, as words: it
-  -- lands in a reason column and a diff of it is the sentence the card shows).
-  -- A verdict that lands after the entry was written makes the entry stale.
-  baseline_safety  TEXT,
-  refresh_reason   TEXT,   -- why the last rewrite happened
-  research_state   TEXT NOT NULL DEFAULT 'none',  -- none | queued | running | done | failed
-  research_note    TEXT                           -- why a research pass failed or was cut short
+  updated_at   TEXT NOT NULL
 );
 
--- One report card per selected token per run. Immutable once sent.
+-- One report card per selected token per run. Immutable once written.
 CREATE TABLE IF NOT EXISTS reports (
   run_id       TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   ca           TEXT NOT NULL,
   rank         INTEGER NOT NULL,
   verdict      TEXT,
-  status       TEXT NOT NULL DEFAULT 'draft',    -- draft | written | sent
+  status       TEXT NOT NULL DEFAULT 'written',  -- written once the entry's prose is in
   payload_json TEXT NOT NULL,
   created_at   TEXT NOT NULL,
   PRIMARY KEY (run_id, ca)
@@ -164,5 +164,4 @@ CREATE TABLE IF NOT EXISTS lexicon_sources (
 
 CREATE INDEX IF NOT EXISTS idx_run_items_run ON run_items(run_id, decision);
 CREATE INDEX IF NOT EXISTS idx_runs_chain_time ON runs(chain_id, scheduled_at DESC);
-CREATE INDEX IF NOT EXISTS idx_lexicon_state ON lexicon(review_state);
 CREATE INDEX IF NOT EXISTS idx_lexicon_chain ON lexicon(chain_id, symbol);
