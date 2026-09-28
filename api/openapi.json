@@ -823,11 +823,6 @@
       "type": "string",
       "title": "Title"
      },
-     "weight": {
-      "type": "string",
-      "title": "Weight",
-      "default": ""
-     },
      "columns": {
       "type": "integer",
       "title": "Columns",
@@ -1383,16 +1378,6 @@
       "title": "Ro Value",
       "default": false
      },
-     "ro_button": {
-      "type": "string",
-      "title": "Ro Button",
-      "default": ""
-     },
-     "ro_button_note": {
-      "type": "string",
-      "title": "Ro Button Note",
-      "default": ""
-     },
      "pending": {
       "anyOf": [
        {
@@ -1597,11 +1582,6 @@
      "detail": {
       "type": "string",
       "title": "Detail",
-      "default": ""
-     },
-     "warn": {
-      "type": "string",
-      "title": "Warn",
       "default": ""
      }
     },

@@ -91,6 +91,39 @@ def _checks(values: list[str], labels: dict[str, str]) -> list[dict]:
     return [{"value": v, "label": labels.get(v, v)} for v in values]
 
 
+def _drop_reading(fields: list[dict]) -> str:
+    """This round's eliminations, per rule, on the group note.
+
+    The counts used to ride in a trailing column. A column of numbers reads as data
+    even when every row in it is a rule, so each count travels with the definition of
+    the rule that produced it instead of standing beside the knob.
+    """
+    parts = [
+        "%s -%s" % (field["label"], format(field["drop_count"], ","))
+        for field in fields
+        if field.get("drop_count")
+    ]
+    return "本轮淘汰：" + (" · ".join(parts) if parts else "无")
+
+def _scan_reading(checks: list[dict], universe: int) -> str:
+    """What each scanner contributed this round, for the group note.
+
+    The counts used to ride on the four checkboxes and one more beside the label. The row
+    is the switches now; the round's own numbers read in one place.
+    """
+    parts = [
+        "%s %s" % (check["label"], format(check["count"], ","))
+        for check in checks
+        if check.get("count")
+    ]
+    if not parts:
+        return ""
+    line = "本轮扫描源：" + " · ".join(parts)
+    if universe:
+        line += "；去重后进入漏斗 %s 个" % format(universe, ",")
+    return line + "。"
+
+
 def build(
     chain: dict,
     totals: dict,
@@ -192,7 +225,6 @@ def build(
                  "can_take_back_ownership": "可夺回所有权"},
             ),
             # 提示项照常读、卡片上照常显示，只是不淘汰 —— 门槛只留真能卷走资产的三条。
-            warn="提示不淘汰：mintable、blacklist、pausable、is_proxy",
             drop_count=drops("dangerous_perm"),
         ),
         _field(
@@ -202,9 +234,16 @@ def build(
         ),
     ]
 
+    # The two judgement groups read their eliminations from the group note now, so the
+    # counts leave the rows: a row keeps only the knob, the reading moves behind the icon.
+    hard_drops = _drop_reading(hard_fields)
+    safety_drops = _drop_reading(safety_fields)
+    for field in hard_fields + safety_fields:
+        field["drop_count"] = None
+
     quality_fields = [
         _field(
-            "pipeline.scoring.onchain_weight", "质量分权重", "num",
+            "pipeline.scoring.onchain_weight", "链上质量权重", "num",
             str(scoring.get("onchain_weight", 55)), unit="%", dim="占综合分", dim_in="label",
         )
     ]
@@ -217,7 +256,6 @@ def build(
                 str(factor_weights.get(factor, "")), unit="%", dim=how, dim_in="label",
             )
         )
-    quality_fields.append(_field("pipeline.scoring.factor_sum", "合计", "sum", "100", unit="%"))
 
     offchain_fields = [
         _field("pipeline.scoring.offchain_weight", "链下调研权重", "num",
@@ -231,25 +269,27 @@ def build(
 
     interval = int(schedule.get("interval_hours") or 3)
     slots = interval_slots(interval)
+    scan_checks = _source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or [])
+    scan_reading = _scan_reading(scan_checks, totals.get("universe") or 0)
+    for check in scan_checks:
+        check["count"] = None
     output_fields = [
         _field("report.per_round", "每轮报告数", "num", str(report.get("per_round", 5)), unit="份",
                drop_x="下轮生效"),
         _field("pipeline.gate_limit", "判定候选数", "num",
                str(pipeline.get("gate_limit", 20)), op="≤", unit="个",
-               dim="按流动性取前 N；0 = 判完整个幸存者池", dim_in="field",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
                options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
                drop_x="下轮生效"),
         _field("schedule.cron", "触发时刻", "derived", "/".join("%02d" % s for s in slots),
-               dim="由间隔生成", dim_in="field"),
+               ),
         _field("schedule.push_delay_minutes", "推送延迟", "num",
                str(schedule.get("push_delay_minutes", 6)), op="+", unit="分钟",
-               dim="发布后等待", dim_in="field", drop_x="下轮生效"),
+               drop_x="下轮生效"),
         _field("pipeline.scan_sources", "扫描源", "checks",
                list(pipeline.get("scan_sources") or []),
-               checks=_source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or []),
-               drop_count=totals.get("universe") or None, drop_prefix=""),
+               checks=scan_checks),
     ]
 
     alert_fields = []
@@ -290,62 +330,59 @@ def build(
                        if name in SOURCE_ORDER else len(SOURCE_ORDER),
                    )
                ) or "—",
-               ro_row=True, ro_value=True,
-               ro_button="重新授权",
-               ro_button_note="尚未接入：目前只能读凭据清单，授权流程还没做"),
-        _field("runtime.copy", "复制参数", "ro",
-               ("从「%s」复制" % totals.get("copy_from")) if totals.get("copy_from") else "没有其他链可复制",
-               ro_row=True, ro_value=True,
-               ro_button="复制",
-               ro_button_note="尚未接入：跨链复制参数还没做"),
+               ro_row=True, ro_value=True),
     ]
 
     blocks = [
         {
             "key": "onchain",
             "title": "链上质量",
-            "weight": "占 %s%%" % scoring.get("onchain_weight", 55),
             "columns": 3,
             "groups": [
                 {
+                    "key": "quality", "title": "评分口径", "hint": "",
+                    "fields": quality_fields,
+                    "note": "",
+                    "detail": (
+                        "链上质量占综合分 %s%%。\n" % scoring.get("onchain_weight", 55)
+                        + "5 项各自归一后加权求和 = 质量分，"
+                        "五项权重合计需等于 100%。\n"
+                        "链上质量权重与链下调研权重互补，"
+                        "合计 100%；改一边另一边跟着走。"
+                    ),
+                },
+                {
                     "key": "hard", "title": "硬过滤", "hint": "",
                     "fields": hard_fields,
-                    "note": (
+                    "note": "",
+                    "detail": (
                         "漏斗：扫描 {universe:,} → 淘汰 {dropped:,}"
-                        " → 候选 {candidates} → 入选 {selected}"
+                        " → 候选 {candidates} → 入选 {selected}。\n"
+                        "不满足直接淘汰，不进后面的评分。\n"
+                        + hard_drops + "。\n"
+                        "改动后旧计数作废，重跑本轮才作数。"
                     ).format(
                         universe=totals.get("universe", 0),
                         dropped=max(0, totals.get("universe", 0) - totals.get("candidates", 0)),
                         candidates=totals.get("candidates", 0),
                         selected=totals.get("selected", 0),
                     ),
-                    "detail": (
-                        "不满足直接淘汰，不进后面的评分。\n"
-                        "每条右侧是本轮被该条淘汰的数量；"
-                        "一旦改动，旧计数作废并标「待重算」。"
-                    ),
                 },
                 {
                     "key": "safety", "title": "安全门槛", "hint": "",
                     "fields": safety_fields,
                     "note": "",
-                    "detail": (
-                        "必判：没有「不判就放过」这一档，不合格同样淘汰。\n"
-                        "门槛只切换判定口径，不提供整条关闭"
-                        " —— 硬线变软线必须是显式动作，"
-                        "不能悄悄生效。"
-                    ),
-                    "warn": totals.get("safety_warn") or "",
-                },
-                {
-                    "key": "quality", "title": "质量分构成", "hint": "",
-                    "fields": quality_fields,
-                    "note": "",
-                    "detail": (
-                        "5 项各自归一后加权求和 = 质量分，"
-                        "权重合计必须等于 100%。\n"
-                        "质量分权重与链下调研权重互补，"
-                        "合计 100%；改一边另一边跟着走。"
+                    "detail": "\n".join(
+                        line
+                        for line in (
+                            "必判：没有「不判就放过」这一档，不合格同样淘汰。",
+                            "门槛只切换判定口径，不提供整条关闭"
+                            " —— 硬线变软线必须是显式动作，不能悄悄生效。",
+                            "提示不淘汰：mintable、blacklist、pausable、is_proxy。",
+                            safety_drops + "。",
+                            totals.get("safety_warn") or "",
+                        )
+                        if line
                     ),
                 },
             ],
@@ -353,32 +390,44 @@ def build(
         {
             "key": "offchain",
             "title": "链下调研",
-            "weight": "占 %s%%" % scoring.get("offchain_weight", 45),
             "columns": 2,
             "groups": [
                 {
                     "key": "scoring", "title": "评分口径", "hint": "",
                     "fields": offchain_fields,
                     "note": "",
+                    # The prepended share is formatted on its own: an outer %-format would
+                    # run over the "45%" it just produced and choke on the stray percent.
                     "detail": (
-                        "和链上那 %s%% 的根本区别：这一项"
-                        "抓不到，只能读官网／X／GitHub 之后下判断。 "
-                        "每轮都是一次全新的调研，不沿用上一轮的结论——"
-                        "判断和它依据的事实永远是同一份。"
-                    ) % scoring.get("onchain_weight", 55),
+                        "链下调研占综合分 %s%%。\n" % scoring.get("offchain_weight", 45)
+                        + (
+                            "和链上那 %s%% 的根本区别：这一项"
+                            "抓不到，只能读官网／X／GitHub 之后下判断。 "
+                            "每轮都是一次全新的调研，不沿用上一轮的结论——"
+                            "判断和它依据的事实永远是同一份。"
+                        )
+                        % scoring.get("onchain_weight", 55)
+                    ),
                 },
             ],
         },
         {
             "key": "run",
             "title": "运行",
-            "weight": "不进分",
-            "avg": totals.get("last_batch") or "",
             "columns": 3,
             "groups": [
                 {
                     "key": "output", "title": "产出与节奏", "hint": "",
                     "fields": output_fields, "note": "",
+                    "detail": "\n".join(
+                        line
+                        for line in (
+                            scan_reading,
+                            "判定候选数按流动性取前 N，0 = 判完整个幸存者池。",
+                            "触发时刻由间隔生成；推送延迟 = 报告发布后等待的分钟数。",
+                        )
+                        if line
+                    ),
                 },
                 {
                     "key": "alerts", "title": "提醒", "hint": "",

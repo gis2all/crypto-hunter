@@ -288,8 +288,6 @@ class FieldOut(BaseModel):
     drop_prefix: str = "-"  # counted rows read as eliminations unless told otherwise
     ro_row: bool = False    # a system-supplied row: sunken, its label muted
     ro_value: bool = False  # the value sits next to an action, so it clamps
-    ro_button: str = ""    # the inert action the prototype puts beside the value
-    ro_button_note: str = ""  # why that action is inert
     pending: str | None = None
     enabled: bool | None = None
     enabled_key: str | None = None
@@ -308,7 +306,6 @@ class GroupOut(BaseModel):
     #: The 口径 folded into an icon: rules, definitions, what a field does not do. Read
     #: once and then in the way, so it is opened on demand rather than printed every time.
     detail: str = ""
-    warn: str = ""
 
 
 class FormTotalsOut(BaseModel):
@@ -325,7 +322,6 @@ class FormTotalsOut(BaseModel):
 class BlockOut(BaseModel):
     key: str
     title: str
-    weight: str = ""
     columns: int = 3
     groups: list[GroupOut]
 

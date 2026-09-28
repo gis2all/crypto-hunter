@@ -264,7 +264,6 @@ def get_form(chain_id: str) -> dict:
         "last_batch": _last_batch_text(batch),
         "sources": (batch or {}).get("sources") or [],
         "run_status": _run_status(run, chain),
-        "copy_from": _copy_from(chain_id),
         "lp_unjudged_warn": ("入选未判定 %d" % len(lp_unknown)) if lp_unknown else "",
         "safety_warn": (
             "本轮违规：入选标的 LP 未判定 —— " + " · ".join(lp_unknown)
@@ -273,14 +272,15 @@ def get_form(chain_id: str) -> dict:
     }
 
     built = forms.build({**chain, **payload}, totals, rule_counts)
+    scoring = ((chain.get("pipeline") or {}).get("scoring") or {})
     # The note bar is the one settings sentence that carries emphasis in the frozen
     # prototype (both weights and the three measured averages are bold), so it ships as
     # runs instead of a flat string.
     note_bar = [
         {"kind": "text", "text": "综合分 = "},
-        {"kind": "bold", "text": f"链上质量 {_weight(built, 'onchain')}%"},
+        {"kind": "bold", "text": f"链上质量 {scoring.get('onchain_weight', 55)}%"},
         {"kind": "text", "text": " + "},
-        {"kind": "bold", "text": f"链下调研 {_weight(built, 'offchain')}%"},
+        {"kind": "bold", "text": f"链下调研 {scoring.get('offchain_weight', 45)}%"},
         {
             "kind": "text",
             "text": f"，下面按这两块分。 本轮入选 {totals['selected']} 个的实测：链上质量均值 ",
@@ -305,7 +305,7 @@ def get_form(chain_id: str) -> dict:
             "历史批次按当时口径归档、不追溯重算。"
         ),
         "dirty_hint": (
-            "各卡片的淘汰数已置灰、标「待重算」。点右上「立即运行」就用当前这套参数真跑一轮，"
+            "淘汰数要重跑这一轮才会刷新。点右上「立即运行」就用当前这套参数真跑一轮，"
             "跑完即视为保存生效；只想存参数、等下一个自动时刻，按「保存并生效」。"
         ),
         "blocks": built["blocks"],
@@ -330,21 +330,6 @@ def _run_status(run: dict | None, chain: dict) -> str:
     return "扫描器正常 · 下轮 %02d:00" % upcoming[0]
 
 
-def _copy_from(chain_id: str) -> str | None:
-    """The other radar this chain can copy its settings from.
-
-    A chain that is declared but not collecting yet still carries a full set of
-    defaults, so it is a usable copy source - only an undeclared chain is not.
-    """
-    others = [c["label"] for c in config.load_chains().values() if c["id"] != chain_id]
-    return others[0] if others else None
-
-
-def _weight(built: dict, key: str) -> str:
-    for block in built["blocks"]:
-        if block["key"] == key:
-            return block["weight"].replace("占 ", "").replace("%", "")
-    return ""
 
 
 def _fmt(value: float | None) -> str:
