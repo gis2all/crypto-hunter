@@ -17,7 +17,8 @@ import json
 
 from ..api.v1 import forms
 from .. import out
-from ..report import draft as report_draft
+from ..core import filters
+from ..report import lexicon
 from .decide import RoundResult
 
 #: The rules, in the order the settings page and the overview draw them. The order is the
@@ -39,11 +40,10 @@ RULE_ROWS: tuple[tuple[str, str], ...] = (
 )
 RULE_LABELS = dict(RULE_ROWS)
 
-#: A reported market cap above this multiple of the chain own ceiling is a parsing
-#: artefact rather than a token that ran. Tolly reports launchpad shells at 8.9e13 with
-#: liquidity set to the same number and a cent of volume; recorded as a high, every later
-#: round would read that token as down 100% and buy a pool read to confirm it.
-PEAK_SANITY_MULTIPLE = 50
+#: The same guard as the rule that reads the column: a high no band on this chain can
+#: explain is a parsing artefact, and recording one would make every later round read that
+#: token as down 100% (`core/filters.HIGH_SANITY_MULTIPLE`).
+PEAK_SANITY_MULTIPLE = filters.HIGH_SANITY_MULTIPLE
 
 
 #: Push is out of scope for now, and the round says so rather than claiming a delivery.
@@ -177,7 +177,7 @@ def store_round(conn, result: RoundResult) -> None:
         # "why is this one not here" is answerable, and the answer is worth having for the
         # 4000 tokens that never reached a card.
         #
-        # The breakdown goes in whole. The card draws 链上质量 / 赛道产品 / 总分 and the
+        # The breakdown goes in whole. The card draws 链上质量 / 链下调研 / 总分 and the
         # factor bars from this row, so leaving the numbers out here would blank them.
         payload = dict(item.breakdown.model_dump()) if item.breakdown else {}
         payload.update(
@@ -199,6 +199,14 @@ def store_round(conn, result: RoundResult) -> None:
         # is about happens to tokens that ran above this chain band and came back down - a
         # row written only for the candidates would cap the high at the band itself.
         peak = item.metrics.market_cap_usd
+        # The high a source measured is not a reading of today price: it is the number
+        # 距高回撤 compares against, and writing it back is what turns that rule free half
+        # into a real high instead of whatever our own rounds happened to sample. Once
+        # written it stays - the upsert below only ever raises this column - so one round
+        # that saw the high is enough for every round after it.
+        high = item.metrics.high_market_cap_usd
+        if high is not None and (peak is None or high > peak):
+            peak = high
         if peak is not None and ceiling and peak > ceiling * PEAK_SANITY_MULTIPLE:
             # Not this token high, and not this token: a number no band on this chain can
             # explain. Left unwritten rather than written low, so the row keeps the high
@@ -252,7 +260,7 @@ def store_round(conn, result: RoundResult) -> None:
         "push": {"status": PUSH_STATUS, "delay": "扫描 +%d 分钟" % push_delay},
         "scoring": {
             "onchain_weight": scoring.get("onchain_weight", 55),
-            "product_weight": scoring.get("product_weight", 45),
+            "offchain_weight": scoring.get("offchain_weight", 45),
         },
         "note": " ".join(result.notes),
         "source_reports": [report.model_dump() for report in result.reports],
@@ -263,17 +271,18 @@ def store_round(conn, result: RoundResult) -> None:
     _merge_summary(conn, result.run_id, summary)
 
 
-def store_reports(conn, result: RoundResult, notes_by_ca: dict[str, str] | None = None) -> None:
-    """One report row per pick: the round's facts, flagged `draft` until text lands."""
-    notes_by_ca = notes_by_ca or {}
+def store_reports(conn, result: RoundResult) -> None:
+    """One report row per pick: the numbers from the snapshot, the words from its entry.
+
+    The entry is already final when this runs - the reading pass wrote it before the score -
+    so there is no first version to flag and no second version to land.
+    """
     for item in result.picked:
-        payload = report_draft.report_payload(
-            item, item.entry, notes_by_ca.get(item.ca, ""), item.deltas
-        )
+        payload = lexicon.report_payload(item.entry, item.deltas)
         conn.execute(
             "INSERT OR REPLACE INTO reports (run_id, ca, rank, verdict, status, payload_json,"
             " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (result.run_id, item.ca, item.rank or 0, payload["verdict"], "written" if payload["note"] else "draft",
+            (result.run_id, item.ca, item.rank or 0, payload["verdict"], "written",
              json.dumps(payload, ensure_ascii=False), _now()),
         )
 
