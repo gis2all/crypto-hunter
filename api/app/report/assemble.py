@@ -13,7 +13,6 @@ from .. import config
 from ..api.v1 import forms
 from ..store import db
 from . import cards as card_builder
-from . import research
 
 SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts")
 
@@ -36,7 +35,7 @@ def _load(conn, run_id: str) -> dict:
     ).fetchone()
     snapshot = _rows(
         conn,
-        "SELECT ca, metrics_json, safety_json FROM snapshots WHERE run_id = ?",
+        "SELECT ca, metrics_json, safety_json, social_json FROM snapshots WHERE run_id = ?",
         (run_id,),
     )
     items = _rows(
@@ -53,7 +52,12 @@ def _load(conn, run_id: str) -> dict:
     return {
         "run": dict(run),
         "summary": json.loads(summary["payload_json"]) if summary else {},
-        "metrics": {r["ca"]: json.loads(r["metrics_json"]) for r in snapshot},
+        # The project's own pages live in their own column, and the card's footer is the one
+        # place that prints them. Merged here so the card and its links read one map instead of
+        # each deciding where to look for a URL.
+        "metrics": {r["ca"]: {**json.loads(r["metrics_json"]),
+                              **(json.loads(r["social_json"] or "{}"))}
+                    for r in snapshot},
         "safety": {r["ca"]: json.loads(r["safety_json"] or "{}") for r in snapshot},
         "items": {r["ca"]: r for r in items},
         "reports": reports,
@@ -91,10 +95,7 @@ def cards(run_id: str) -> list[dict]:
                 breakdown=breakdown,
                 is_new=metrics.get("symbol") in new_syms,
                 onchain_weight=weights[0],
-                product_weight=weights[1],
-                # Read live rather than frozen into the payload: research happens after the
-                # publish on purpose, so a card that carried only what the round knew would
-                # never be able to show the evidence that was gathered for it.
+                offchain_weight=weights[1],
             )
         )
     return out
@@ -255,5 +256,5 @@ def _decline_reasons(metrics: dict, safety: dict, floor: float | None) -> list[s
 def _weights(summary: dict) -> tuple[float, float]:
     scoring = summary.get("scoring") or {}
     onchain = float(scoring.get("onchain_weight", 55))
-    product = float(scoring.get("product_weight", 45))
+    product = float(scoring.get("offchain_weight", 45))
     return onchain, product
