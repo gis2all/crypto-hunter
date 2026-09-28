@@ -1,8 +1,10 @@
-"""DexScreener: the links, read one CA at a time.
+"""DexScreener: the links and the market numbers, read one CA at a time.
 
 It is the only host that answers with a social list and a website list already resolved to
-URLs. Its numbers are deliberately not read - see the module docstring - and what is
-asserted here is that the CA we asked about is the CA we get links for.
+URLs, and it is where 市值 / 流动性 / 24h 成交 come from - one caliber for the whole round,
+because the scanners disagree with each other by 5.5x on liquidity. What is asserted here is
+the CA we asked about is the CA we got an answer for, and that the numbers are summed over
+that CA’s pools on this chain only.
 """
 
 from app.sources import dexscreener
@@ -56,17 +58,24 @@ def test_one_chain_in_the_answer_is_unambiguous(monkeypatch):
     assert metrics.socials["twitter"] == "https://x.com/solon"
 
 
-def test_it_fills_links_and_nothing_else(monkeypatch):
-    """A fourth opinion on a number the score is built from is how a round’s numbers start
-    moving without anyone changing a rule."""
-    pair = _pair(CA, liq=999_999)
-    pair["priceUsd"] = "0.01"
-    pair["marketCap"] = 500_000
-    pair["volume"] = {"h24": 42_000}
-    _answers(monkeypatch, {"pairs": [pair]})
+def test_it_reports_the_numbers_in_the_round_caliber(monkeypatch):
+    """Liquidity and volume are the sum over this chain’s pools; cap and price are the
+    deepest pool’s. One caliber for the ranking key, decided here rather than by whichever
+    scanner happened to answer first."""
+    main = _pair(CA, liq=999_999)
+    main["priceUsd"] = "0.01"
+    main["marketCap"] = 500_000
+    main["volume"] = {"h24": 42_000}
+    side = _pair(CA, liq=1_000)
+    side["volume"] = {"h24": 8_000}
+    other = _pair(CA, chain="bsc", liq=5_000_000)
+    other["volume"] = {"h24": 900_000}
+    _answers(monkeypatch, {"pairs": [main, side, other]})
     metrics, _facts = dexscreener.DexScreener().fetch_token("arc", CA)
-    assert metrics.market_cap_usd is None and metrics.liquidity_usd is None
-    assert metrics.volume_24h_usd is None and metrics.price_usd is None
+    assert metrics.liquidity_usd == 1_000_999.0
+    assert metrics.volume_24h_usd == 50_000.0
+    assert metrics.market_cap_usd == 500_000.0 and metrics.price_usd == 0.01
+    assert metrics.provenance["liquidity_usd"] == "dexscreener"
 
 
 def test_a_host_that_is_down_says_nothing_rather_than_guessing(monkeypatch):

@@ -201,39 +201,13 @@ def test_team_holdings_are_printed_as_percentages():
         ("owner 持仓", "0.00%"), ("creator 持仓", "12.50%"),
     ]
 
-def test_the_card_carries_the_age_of_its_words_when_they_are_not_this_round():
-    """The payload decides. A round that reused an entry stores the badge with the words, so
-    the card cannot be assembled later without it."""
-    metrics = TokenMetrics(ca="0xaa", symbol="T").model_dump()
-    written = {"verdict": "结论", "sections": {}, "entry_note": "解读写于 3 小时前 · 本轮数据已更新"}
 
-    card = card_builder.card(rank=1, metrics=metrics, safety={}, written=written, breakdown={})
-
-    assert card["entry_note"] == "解读写于 3 小时前 · 本轮数据已更新"
-
-
-def test_a_card_written_this_round_has_no_age_badge():
+def test_a_card_carries_no_age_badge():
+    """Every round writes its own words, so there is no "older than the numbers" state."""
     metrics = TokenMetrics(ca="0xaa", symbol="T").model_dump()
 
     card = card_builder.card(rank=1, metrics=metrics, safety={}, written={"verdict": "结论"},
-                            breakdown={})
+                             breakdown={})
 
-    assert card["entry_note"] == ""
+    assert "entry_note" not in card
 
-def test_the_footer_is_the_trade_pages_and_nothing_else():
-    """The deep pass's evidence used to be appended here too, which printed 「官网 ｜ 官网 ｜ GitHub」
-    on every card as words a reader cannot click. Those links belong in the 社媒 block, where the
-    claim they support is written."""
-    metrics = {"ca": CA, "gmgn_url": "https://gmgn.ai/arc/token/" + CA,
-                "debot_url": "https://debot.ai/token/arc/" + CA,
-                "dexscreener_url": "https://dexscreener.com/arc/" + CA,
-                "socials": {"twitter": "https://x.com/t"}}
-
-    got = card_builder.links(metrics)
-
-    assert [link["label"] for link in got] == ["GMGN", "Debot", "DexScreener"]
-    assert got[2]["url"] == "https://dexscreener.com/arc/" + CA
-
-
-def test_a_token_with_no_tracker_has_an_empty_footer():
-    assert card_builder.links({"ca": CA}) == []

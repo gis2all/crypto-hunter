@@ -1,7 +1,7 @@
 """Filters: the three-state answer (pass / fail / unknown) is the whole point."""
 
 from app.core.filters import (check_all, check_drawdown, check_entrapment, check_prefilter,
-                              check_safety, drawdown_needs_pool)
+                              check_safety, drawdown_readings)
 from app.core.models import DropReason, SafetyFacts, TokenMetrics
 
 PRE = {"market_cap_max_usd": 200000, "liquidity_min_usd": 8000, "volume_24h_min_usd": 1000}
@@ -106,6 +106,19 @@ def test_dual_is_a_no_when_every_answer_was_no_record():
     verdict = check_safety(facts, {"require_verified_source": True, "source_verification_mode": "dual"})
     assert not verdict.passed
     assert DropReason.SOURCE_UNVERIFIED in verdict.failed
+
+
+def test_dual_is_unknown_when_the_other_verifier_never_answered():
+    """A verifier that did not answer has said nothing, not no.
+
+    GoPlus throttles, and a request that came back empty left `checked_by` holding
+    Sourcify alone - whose no-match then decided the round. That is how FOCI and
+    oBrain, both `is_open_source == 1` at GoPlus, were dropped as unverified.
+    """
+    facts = _votes([], ["Sourcify"])
+    verdict = check_safety(facts, {"require_verified_source": True})
+    assert verdict.passed and not verdict.failed
+    assert DropReason.SOURCE_UNVERIFIED in verdict.unknown
 
 
 def test_goplus_only_ignores_the_second_verifier():
@@ -251,31 +264,66 @@ def test_drawdown_rule_is_off_until_the_chain_asks_for_it():
     assert verdict.passed and not verdict.unknown and not verdict.failed
 
 
-def test_drawdown_drops_only_when_both_readings_agree():
-    """Ours says -80% off the high we have seen, the pool says -75% off its ten-day high."""
+def test_drawdown_drops_when_the_pool_high_says_it_fell():
+    """The pool reads its own whole daily history, so its high is the historical one."""
     verdict = check_drawdown(_metrics(market_cap_usd=20000, drawdown_pct=-75.0), DD, 100000)
     assert not verdict.passed
     assert verdict.failed == [DropReason.MARKET_CAP_DRAWDOWN]
 
 
-def test_drawdown_is_not_asked_of_the_pool_until_our_own_history_flags_it():
-    """The free reading decides whether the expensive one is worth three requests."""
-    deep = _metrics(market_cap_usd=20000, drawdown_pct=-95.0)
-    shallow = _metrics(market_cap_usd=50000, drawdown_pct=-95.0)
-    assert drawdown_needs_pool(deep, DD, 100000) is False  # the pool already answered
-    assert drawdown_needs_pool(_metrics(market_cap_usd=20000), DD, 100000) is True
-    assert drawdown_needs_pool(shallow, DD, 100000) is False
-    assert check_drawdown(shallow, DD, 100000).passed
+def test_drawdown_drops_on_the_pool_reading_even_when_our_own_history_is_shallow():
+    """ARCAT's shape. Our own high is a lower bound - $266K recorded against a $3.06M pool
+    high - so it reads -54% where the pool reads -80%. The old rule wanted both readings to
+    agree and kept the token; of two estimates of one high, the deeper is the better."""
+    verdict = check_drawdown(_metrics(market_cap_usd=200_000, drawdown_pct=-80.0), DD, 400_000)
+    assert -70 < (200_000 / 400_000 - 1) * 100  # our own side alone would have said 通过
+    assert not verdict.passed
+    assert verdict.failed == [DropReason.MARKET_CAP_DRAWDOWN]
 
 
-def test_drawdown_passes_when_the_pool_side_disagrees_with_our_history():
-    verdict = check_drawdown(_metrics(market_cap_usd=20000, drawdown_pct=-40.0), DD, 100000)
-    assert verdict.passed and not verdict.failed
+def test_drawdown_drops_on_the_high_the_source_measured():
+    """GMGN's own column, with no pool reading at all. It arrives free with the pull, and it
+    is the reading that catches ARCAT: $113.8K against the $5.05M the source recorded."""
+    verdict = check_drawdown(_metrics(market_cap_usd=113_802, high_market_cap_usd=5_048_753), DD)
+    assert not verdict.passed
+    assert verdict.failed == [DropReason.MARKET_CAP_DRAWDOWN]
 
 
-def test_drawdown_without_a_pool_reading_is_unknown_and_keeps_the_token():
-    """Half an answer does not drop anything, and it does not pass silently either."""
-    verdict = check_drawdown(_metrics(market_cap_usd=20000), DD, 100000)
+def test_drawdown_drops_on_the_high_our_own_rounds_recorded():
+    """The store column is a lower bound on the same high, and a token far enough below it has
+    fallen whatever the pools would say. It used to only flag: the pool read it waited on was
+    the one a throttle could turn into silence, and the token kept its card."""
+    verdict = check_drawdown(_metrics(market_cap_usd=20_000), DD, 100_000)
+    assert not verdict.passed
+    assert verdict.failed == [DropReason.MARKET_CAP_DRAWDOWN]
+
+
+def test_a_high_no_band_on_this_chain_can_explain_is_not_a_high():
+    """Tolly reports launchpad shells at 8.9e13 with a cent of volume. Read as a high that
+    number would drop the token in every round from now on, so anything above 50x the band
+    own ceiling is a parsing artefact - on the source column and the store column alike."""
+    assert check_drawdown(_metrics(market_cap_usd=100_000, high_market_cap_usd=8.9e13), DD).passed
+    assert check_drawdown(_metrics(market_cap_usd=100_000), DD, 8.9e13).passed
+
+
+def test_drawdown_passes_when_no_reading_is_at_the_ceiling():
+    """-40% on the pool beside a store high of -60% is a live token: nothing is at the ceiling,
+    so there is nothing to drop and nothing to confess."""
+    verdict = check_drawdown(_metrics(market_cap_usd=40_000, drawdown_pct=-40.0), DD, 100_000)
+    assert verdict.passed and not verdict.failed and not verdict.unknown
+
+
+def test_the_readings_are_every_estimate_of_the_same_fall():
+    """`drawdown_readings` is what the rule and the 退出 clause both read - the source column,
+    the store column and the pool history, each of them a percentage against today."""
+    metrics = _metrics(market_cap_usd=20_000, high_market_cap_usd=200_000, drawdown_pct=-80.0)
+    assert sorted(drawdown_readings(metrics, DD, 400_000)) == [-95.0, -90.0, -80.0]
+
+
+def test_a_pool_history_that_could_not_be_read_is_unknown_not_a_pass():
+    """Half an answer drops nothing, and it does not pass silently either: a throttled read is
+    a question this round did not get to ask."""
+    verdict = check_drawdown(_metrics(market_cap_usd=20_000, drawdown_unread=True), DD)
     assert verdict.passed
     assert verdict.unknown == [DropReason.MARKET_CAP_DRAWDOWN]
     assert verdict.failed == []
@@ -288,12 +336,20 @@ def test_a_token_we_have_never_seen_is_not_a_fallen_token():
     assert verdict.passed and not verdict.unknown
 
 
-def test_check_all_reads_the_peak_it_was_handed():
+def test_check_all_hands_the_peak_to_the_rule_that_reads_it():
     cfg = {"prefilter": DD, "safety": {}}
     facts = SafetyFacts()
-    dropped = check_all(_metrics(market_cap_usd=20000, drawdown_pct=-80.0), facts, cfg,
-                        peak_market_cap_usd=100000)
+    # The pool's own high decides, and it decides alone.
+    dropped = check_all(_metrics(market_cap_usd=20000, drawdown_pct=-80.0), facts, cfg)
     assert not dropped.passed
     assert DropReason.MARKET_CAP_DRAWDOWN in dropped.failed
-    # The same token without the history that makes it a fall passes every gate.
-    assert check_all(_metrics(market_cap_usd=20000, drawdown_pct=-80.0), facts, cfg).passed
+    # The same token with a store high handed in and no pool answer is dropped too: three
+    # readings of one high, and the deepest one decides.
+    fallen = check_all(_metrics(market_cap_usd=20000), facts, cfg, peak_market_cap_usd=100000)
+    assert not fallen.passed
+    assert DropReason.MARKET_CAP_DRAWDOWN in fallen.failed
+    # A token nothing has a high for is a first sighting rather than a fallen token, and it is
+    # not filed under 未判定 either.
+    unseen = check_all(_metrics(market_cap_usd=20000), facts, cfg)
+    assert unseen.passed
+    assert DropReason.MARKET_CAP_DRAWDOWN not in unseen.unknown

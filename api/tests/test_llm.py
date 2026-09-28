@@ -7,6 +7,7 @@ would be a test of somebody else uptime.
 
 from __future__ import annotations
 
+import gzip
 import json
 from types import SimpleNamespace
 
@@ -20,10 +21,13 @@ from app.store import db
 ENV_KEYS = (
     "CH_LLM_BASE_URL",
     "CH_LLM_API_KEY",
+    "CH_LLM_API_KEY_FALLBACK",
     "CH_LLM_MODEL",
     "CH_LLM_TIMEOUT",
     "CH_LLM_MAX_TOKENS",
+    "CH_LLM_REASONING",
     "CH_LLM_TRIES",
+    "CH_LLM_KEY_COOLDOWN",
     "CH_LLM_EXTRA_HEADERS",
 )
 
@@ -38,6 +42,9 @@ def env_file(tmp_path, monkeypatch):
     path = tmp_path / "llm.env"
     monkeypatch.setattr(config, "LLM_ENV_PATH", path)
     monkeypatch.setattr(config, "_FROM_FILE", {})
+    # The cooldown of a refused key is process-local state, so a test that left one behind
+    # would silently skip a key in the next test. A fresh map per test is the whole fix.
+    monkeypatch.setattr(llm_client, "_DOWN", {})
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     return path
@@ -68,8 +75,12 @@ class _Streamed:
 
     The client reads the body in chunks so a stop can abandon an answer that is still being
     written, and a synthetic `httpx.Response` refuses to be streamed at all (`iter_raw`
-    raises `StreamConsumed` on a response that was never sent). So the fake hands the same
-    body out in two chunks, and `on_chunk` is what a test hooks to act between them.
+    raises `StreamConsumed` on a response that was never sent). So the fake hands the body
+    out in two chunks, and `on_chunk` is what a test hooks to act between them.
+
+    The two chunk readers are deliberately different: `iter_raw` gzips, because the gateway
+    does, and `iter_bytes` decodes, because httpx does. A client that reads the socket bytes
+    and calls them JSON fails every test in this file instead of only in production.
     """
 
     def __init__(self, response, on_chunk=None):
@@ -98,6 +109,16 @@ class _Streamed:
         return self._response.read()
 
     def iter_raw(self):
+        """The socket's bytes: the gateway gzips every answer, so this is not JSON."""
+        body = gzip.compress(self._response.read())
+        half = max(1, len(body) // 2)
+        yield body[:half]
+        if self._on_chunk:
+            self._on_chunk()
+        yield body[half:]
+
+    def iter_bytes(self):
+        """The decoded bytes, which is what httpx undoes the content encoding into."""
         body = self._response.read()
         half = max(1, len(body) // 2)
         yield body[:half]
@@ -223,3 +244,122 @@ def test_the_request_carries_the_configured_ceiling_and_headers(env_file, calls,
     assert request["body"]["response_format"] == {"type": "json_object"}
     assert request["headers"]["Authorization"] == "Bearer k"
     assert request["headers"]["x-opencode-session"] == "s"
+
+
+def test_a_gzipped_answer_is_decoded_not_read_off_the_socket(env_file, calls, isolated_db):
+    """The gateway gzips every answer, so the socket's bytes are not JSON.
+
+    Reading the raw chunks cost a UnicodeDecodeError on every real call while the fakes -
+    which used to hand out the plain body - stayed green. The fake compresses now, and this
+    asserts on the text, so the two can only agree on the decoded path.
+    """
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m")
+    calls.replies.append(_ok("decoded on the way in"))
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == \
+        "decoded on the way in"
+
+
+def test_the_key_list_is_comma_separated_primary_first_and_deduplicated(env_file):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="  primary , standby ,primary", CH_LLM_API_KEY_FALLBACK="third, standby")
+    keys = llm.settings()["api_keys"]
+    assert keys == ["primary", "standby", "third"]
+    assert llm.settings()["api_key"] == "primary"
+
+
+@pytest.mark.parametrize("status", [401, 402, 403, 429])
+def test_a_key_error_hands_the_request_to_the_next_key(env_file, calls, isolated_db, status):
+    """A dead credential, an exhausted quota and an account out of funds are the failures a
+    standby key fixes, and they are the one failure this list exists for. 402 is here
+    because a drained account answers it and the balance is the key's, not the request's."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    calls.replies.extend([_error(status), _ok("from the standby")])
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == \
+        "from the standby"
+    assert [call["headers"]["Authorization"] for call in calls.sent] == \
+        ["Bearer primary", "Bearer standby"]
+
+
+@pytest.mark.parametrize("status", [400, 404, 422])
+def test_a_request_that_is_wrong_is_not_paid_for_on_another_key(env_file, calls, isolated_db,
+                                                                 status):
+    """An unknown model refuses every key the same way, so walking the list would only
+    spend the standbys too."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    calls.replies.extend([_error(status)] * 4)
+    with pytest.raises(llm.LLMUnavailable):
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert len(calls.sent) == 1
+    assert calls.sent[0]["headers"]["Authorization"] == "Bearer primary"
+
+
+def test_every_key_refusing_is_llmunavailable_not_a_partial_answer(env_file, calls, isolated_db):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby,third")
+    calls.replies.extend([_error(401), _error(429), _error(403)])
+    with pytest.raises(llm.LLMUnavailable):
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert len(calls.sent) == 3
+
+
+def test_a_refused_key_is_skipped_on_the_next_call(env_file, calls, isolated_db):
+    """Without the cooldown a dead primary costs one refused request at every step of a
+    round. With it, the refusal is paid once and the standby answers from then on."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    calls.replies.extend([_error(401), _ok("first")])
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "first"
+    calls.replies.append(_ok("second"))
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "second"
+    assert len(calls.sent) == 3
+    assert calls.sent[2]["headers"]["Authorization"] == "Bearer standby"
+
+
+def test_the_cooldown_can_be_turned_off(env_file, calls, isolated_db):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby", CH_LLM_KEY_COOLDOWN="0")
+    calls.replies.extend([_error(401), _ok("first")])
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    calls.replies.extend([_error(401), _ok("second")])
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert [call["headers"]["Authorization"] for call in calls.sent] == \
+        ["Bearer primary", "Bearer standby", "Bearer primary", "Bearer standby"]
+
+
+def test_a_stop_is_not_a_reason_to_try_the_next_key(env_file, calls, isolated_db):
+    """A stopped round must not look like a refused key, or the standby would write an
+    answer to a question the operator already abandoned."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    calls.replies.append(_ok("half a sentence"))
+    calls.on_chunk = lambda: cancel.request("run-keys")
+    try:
+        with pytest.raises(cancel.RoundCancelled):
+            llm.complete([{"role": "user", "content": "hi"}], purpose="probe",
+                         run_id="run-keys")
+    finally:
+        cancel.clear("run-keys")
+    assert len(calls.sent) == 1
+
+
+def test_the_thinking_budget_is_sent_only_when_the_operator_set_one(env_file, calls,
+                                                                 isolated_db):
+    """`CH_LLM_REASONING` is the A/B knob on this endpoint own thinking budget.
+
+    This gateway answers at a high effort by default and bills the thinking as output:
+    measured 2026-09-28, one research prompt spent 889 of its 1255 output tokens thinking.
+    An unset knob has to send nothing at all - the request every call made before the knob
+    existed - and a set one has to travel as `reasoning_effort`, which is the field the
+    gateway read (measured: `enable_thinking: false` also works, `reasoning_effort: "none"`
+    drops reasoning tokens to 0).
+    """
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert "reasoning_effort" not in calls.sent[0]["body"]
+
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m",
+           CH_LLM_REASONING="none")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert calls.sent[1]["body"]["reasoning_effort"] == "none"

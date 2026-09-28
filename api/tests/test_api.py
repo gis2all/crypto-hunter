@@ -71,7 +71,7 @@ def test_settings_default_to_yaml_then_version_up(client):
     assert default["version"] == 0 and default["source"] == "config/chains.yaml"
     assert default["payload"]["report"]["per_round"] == 5
 
-    payload = {"pipeline.scoring.onchain_weight": 55, "pipeline.scoring.product_weight": 45}
+    payload = {"pipeline.scoring.onchain_weight": 55, "pipeline.scoring.offchain_weight": 45}
     first = client.put(f"/api/v1/chains/{ARC}/settings", json={"patch": payload, "note": "tweak"}).json()
     assert first["version"] == 1 and first["source"] == "db"
 
@@ -90,7 +90,7 @@ def test_settings_reject_unknown_paths(client):
 def test_weight_sum_is_guarded_on_the_real_path(client):
     """The knobs the settings page edits live under pipeline.scoring, not at the top."""
     path = f"/api/v1/chains/{ARC}/settings"
-    both_weights = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.product_weight": 50}
+    both_weights = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.offchain_weight": 50}
     assert client.put(path, json={"patch": both_weights}).status_code == 422
 
     factor_weight = {"pipeline.scoring.onchain_factor_weights.liquidity": 30}
@@ -168,12 +168,13 @@ def test_a_ceiling_that_starts_blank_still_saves_as_a_number(client):
 def test_settings_form_is_data_not_markup(client):
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
     assert form["chain_id"] == ARC
-    assert [b["key"] for b in form["blocks"]] == ["onchain", "product", "run"]
+    assert [b["key"] for b in form["blocks"]] == ["onchain", "offchain", "run"]
     fields = [f for b in form["blocks"] for g in b["groups"] for f in g["fields"]]
     assert len({f["key"] for f in fields}) == len(fields)
     assert all("." in f["key"] for f in fields)
     assert {f["widget"] for f in fields} >= {"num", "range", "bool", "select", "checks", "ro", "sum"}
-    assert isinstance(form["totals"], dict) and isinstance(form["lexicon"], list)
+    assert isinstance(form["totals"], dict)
+    assert "lexicon" not in form, "the off-chain block is scored, not browsed"
     blob = json.dumps(form, ensure_ascii=False)  # every label is data, never markup
     assert not re.search(r"</?(b|code|br|a|span|div|i)\b", blob)
 
@@ -200,32 +201,29 @@ def test_scan_rows_list_scanners_only(client):
     ]
 
 
-def test_the_freshness_knobs_are_controls_and_not_decoration(client):
-    """Four knobs behind `core.lexicon.due`, plus the two read-only rows that say what they
-    are doing right now. A knob on screen with no rule behind it is worse than no knob."""
+def test_the_offchain_block_names_its_five_judgements(client):
+    """The off-chain block is five read-only 0-5 judgements plus the one knob that
+    folds them into the score. A row on screen with no rule behind it is worse than no
+    row, so every one of them is checked here."""
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
     fields = _fields(form)
-    for key in ("pipeline.lexicon.expire_days", "pipeline.lexicon.mcap_move_pct",
-                "pipeline.lexicon.holders_gain_pct", "pipeline.lexicon.rewrite_skip_hours"):
-        assert fields[key]["widget"] == "num", key
-        assert fields[key]["value"], key
-    assert fields["pipeline.scoring.lexicon_stale"]["widget"] == "ro"
-    assert fields["report.research_enabled"]["widget"] == "bool"
-    # The two read-only rows are fed by totals, so a totals field missing from the response
-    # model would drop them on the floor - which is exactly what happened once already.
-    assert form["totals"]["lexicon_stale"] == 0
-    assert form["totals"]["lexicon_research"].startswith("已重档")
+    assert fields["pipeline.scoring.offchain_weight"]["widget"] == "num"
+    for key in ("f_completeness", "f_substance", "f_team", "f_narrative", "f_community"):
+        row = fields["pipeline.scoring." + key]
+        assert row["widget"] == "ro", key
+        assert row["value"], key
+    # There is no research on/off switch any more: the reading pass is what writes the
+    # entry, and an entry is what the 45% block is scored from - it cannot be optional.
+    assert "report.research_enabled" not in fields
 
 
 def test_a_knob_that_is_a_setting_can_be_changed(client):
     path = f"/api/v1/chains/{ARC}/settings"
-    patched = client.put(
-        path, json={"patch": {"pipeline.lexicon.rewrite_skip_hours": 12}}
-    )
+    patched = client.put(path, json={"patch": {"report.per_round": 3}})
     assert patched.status_code == 200
 
     fields = _fields(client.get(f"{path}/form").json())
-    assert fields["pipeline.lexicon.rewrite_skip_hours"]["value"] == "12"
+    assert fields["report.per_round"]["value"] == "3"
 
 
 def test_run_rows_say_what_a_change_does_instead_of_counting(client):
@@ -243,7 +241,7 @@ def test_caliber_line_is_generated_from_the_settings(client):
     assert len(lines) == 3
     assert lines[0].startswith("硬过滤：市值 $10K – $200K ｜ 流动性 ≥ $5K")
     assert "陷阱占比 < 45%" in lines[1]
-    assert lines[2] == "评分 = 质量分 55%（流动性/成交/持有人/集中度/捆绑）+ 赛道产品分 45%（词条库）"
+    assert lines[2] == "评分 = 质量分 55%（流动性/成交/持有人/集中度/捆绑）+ 链下调研分 45%（每轮全新调研）"
 
 
 def test_caliber_line_follows_a_change(client):
@@ -260,19 +258,6 @@ def test_caliber_reads_the_holder_band_only_when_there_is_a_ceiling(client):
     chain = copy.deepcopy(config.chain(ARC))
     chain["pipeline"]["prefilter"]["holders_max"] = 2000
     assert "持有人 100 – 2000" in forms.caliber_text(chain)[0]
-
-def test_lexicon_rows_without_a_symbol_sort_last(client):
-    """A drafted file has no symbol yet; it belongs at the end of the table, not in
-    front of the named entries."""
-    for ca, sym in (("0xaaa", "Zeta"), ("0xbbb", None), ("0xccc", "Alpha")):
-        body = {"tag": "meme", "narrative": 3.0, "product": 3.0}
-        if sym:
-            body["symbol"] = sym
-        assert client.put(f"/api/v1/lexicon/{ca}", json=body).status_code == 200
-
-    rows = client.get(f"/api/v1/chains/{ARC}/settings/form").json()["lexicon"]
-    assert [r["ca"] for r in rows] == ["0xccc", "0xaaa", "0xbbb"]
-
 
 def test_push_group_carries_no_read_only_banner(client):
     """The banner was a `sub` row reading 只读状态（系统告诉你的，不是你配的）. Cut on
@@ -343,7 +328,7 @@ def test_measured_averages_come_from_the_scores_not_from_the_rounded_cards(clien
     try:
         conn.execute(
             "INSERT INTO runs (id, run_key, chain_id, trigger, status, selected)"
-            " VALUES ('r1', 'r1', ?, 'manual', 'sent', 5)",
+            " VALUES ('r1', 'r1', ?, 'manual', 'researched', 5)",
             (ARC,),
         )
         for index, total in enumerate([60.072, 56.5309, 54.9015, 53.9655, 53.269]):
@@ -402,21 +387,6 @@ def test_recompute_is_explicitly_blocked(client):
     resp = client.post(f"/api/v1/chains/{ARC}/settings/recompute", json={"patch": {}})
     assert resp.status_code == 501
     assert resp.json()["blocked_by"]
-
-
-def test_lexicon_pending_flow(client):
-    assert client.get("/api/v1/lexicon").json() == []
-    created = client.put(
-        "/api/v1/lexicon/0xABC",
-        json={"symbol": "BCAT", "tag": "meme", "narrative": 3.5, "product": 4.0},
-    )
-    assert created.status_code == 200
-    assert created.json()["review_state"] == "pending"
-    assert len(client.get("/api/v1/lexicon/pending").json()) == 1
-
-    confirmed = client.put("/api/v1/lexicon/0xABC", json={"symbol": "BCAT", "review_state": "confirmed"})
-    assert confirmed.json()["review_state"] == "confirmed"
-    assert client.get("/api/v1/lexicon/pending").json() == []
 
 
 def test_every_candidate_that_missed_the_cut_is_in_the_pool(isolated_db):
