@@ -24,10 +24,22 @@ PORT = int(os.environ.get("CH_PORT", "8787"))
 #: process, so a file plus a restart is the whole install step.
 LLM_ENV_PATH = Path(os.environ.get("CH_LLM_ENV", str(ROOT / "config" / "llm.env")))
 
-#: What the file put in the environment, and what it put there. A value that is still
-#: exactly this is still the file's to withdraw; anything else means somebody else owns
+#: The X search engine's session, in the same shape and for the same reason: which account
+#: answers a search is a deployment detail, and a file next to the chain config is the whole
+#: install step. Read once at import - a rotated cookie takes a restart, which is the price
+#: of not reading a credential file on every token of every round.
+SEARCH_ENV_PATH = Path(os.environ.get("CH_SEARCH_ENV", str(ROOT / "config" / "search.env")))
+
+#: What each file put in the environment, and what it put there. A value that is still
+#: exactly this is still that file's to withdraw; anything else means somebody else owns
 #: the variable now and the file must keep its hands off.
-_FROM_FILE: dict[str, str] = {}
+#:
+#: Keyed by path, because two files are read here and re-reading one must not withdraw what
+#: the other set. The LLM file is re-read on every model call, and while the record was one
+#: flat dict that reload deleted the search file's credentials on the first call of every
+#: process - every X search and every timeline after it failed "needs CH_X_AUTH_TOKEN", in a
+#: round that looked like it had simply found nothing.
+_FROM_FILE: dict[Path, dict[str, str]] = {}
 
 
 def load_env_file(path: Path | None = None) -> int:
@@ -41,13 +53,13 @@ def load_env_file(path: Path | None = None) -> int:
     that key is simply never touched again.
     """
     path = path or LLM_ENV_PATH
-    for key, value in list(_FROM_FILE.items()):
+    for key, value in list(_FROM_FILE.pop(path, {}).items()):
         if os.environ.get(key) == value:
             del os.environ[key]
-        _FROM_FILE.pop(key, None)
     if not path.is_file():
         return 0
     applied = 0
+    owned: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -57,12 +69,14 @@ def load_env_file(path: Path | None = None) -> int:
         if not key or key in os.environ:
             continue
         os.environ[key] = value
-        _FROM_FILE[key] = value
+        owned[key] = value
         applied += 1
+    _FROM_FILE[path] = owned
     return applied
 
 
 load_env_file()
+load_env_file(SEARCH_ENV_PATH)
 
 
 @functools.lru_cache(maxsize=1)

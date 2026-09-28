@@ -12,7 +12,9 @@ cost of a round is answerable after the fact.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import os
 import time
 from typing import Any
@@ -22,10 +24,29 @@ import httpx
 from .. import cancel, config
 from ..store import db
 
+log = logging.getLogger("crypto-hunter.llm")
+
 #: How many times one completion is attempted. Reasoning models sit behind gateways that
 #: answer 503 when no upstream worker is free, and a round that spent minutes collecting
 #: facts should not lose every written word to one unavailable minute.
 DEFAULT_TRIES = 2
+
+#: For how long a key that refused is skipped. The refusal to plan for is a dead or
+#: exhausted credential, and paying a rejected request at the head of every step of a
+#: round is how a key list turns a five minute round into a ten minute one.
+DEFAULT_KEY_COOLDOWN = 600.0
+
+#: The statuses that are about the key rather than about the request. A dead credential,
+#: an exhausted quota and an account that ran out of funds answer the same way however
+#: many times they are asked, and a standby key is the fix. A 401/403/429/402 is the
+#: account’s balance, not the request’s shape. Every other 4xx - an unknown model, a
+#: malformed body - fails the same way on every key, so walking the list would only spend
+#: the standbys too.
+KEY_STATUSES = frozenset({401, 402, 403, 429})
+
+#: Key fingerprint -> the monotonic time it may be used again. Process-local on purpose:
+#: a quota comes back, and a restart is the operator saying try the primary once more.
+_DOWN: dict[str, float] = {}
 
 
 def settings() -> dict:
@@ -45,19 +66,71 @@ def settings() -> dict:
             parsed = None
         if isinstance(parsed, dict):
             headers = {str(key): str(value) for key, value in parsed.items()}
+    keys = _api_keys()
     return {
         "base_url": os.environ.get("CH_LLM_BASE_URL", "").strip().rstrip("/"),
-        "api_key": os.environ.get("CH_LLM_API_KEY", "").strip(),
+        "api_key": keys[0] if keys else "",
+        "api_keys": keys,
         "model": os.environ.get("CH_LLM_MODEL", "").strip(),
         "timeout": float(os.environ.get("CH_LLM_TIMEOUT", "180")),
         "max_tokens": int(os.environ.get("CH_LLM_MAX_TOKENS", "0") or 0),
+        # How hard the model is allowed to think before it answers. Unset leaves the
+        # endpoint at its own default, which is what every call before this knob did.
+        "reasoning": os.environ.get("CH_LLM_REASONING", "").strip(),
         "tries": max(1, int(os.environ.get("CH_LLM_TRIES", str(DEFAULT_TRIES)) or DEFAULT_TRIES)),
+        "key_cooldown": float(
+            os.environ.get("CH_LLM_KEY_COOLDOWN", str(DEFAULT_KEY_COOLDOWN)) or 0
+        ),
         "headers": headers,
     }
 
 
+def _api_keys() -> list[str]:
+    """Every configured key, the primary first, in the order they should be tried.
+
+    Comma-separated on one line, because that is the shape an env file makes easy: a
+    standby appended to `CH_LLM_API_KEY` needs no second variable. `CH_LLM_API_KEY_FALLBACK`
+    is the same list, appended, for an operator who would rather not edit the primary line.
+    Duplicates are dropped - the same key twice is one key and one wasted refusal.
+    """
+    keys: list[str] = []
+    for name in ("CH_LLM_API_KEY", "CH_LLM_API_KEY_FALLBACK"):
+        for part in os.environ.get(name, "").split(","):
+            part = part.strip()
+            if part and part not in keys:
+                keys.append(part)
+    return keys
+
+
+def _fingerprint(api_key: str) -> str:
+    """A key's callsign for the log and the call record - never the key itself.
+
+    The log is the thing an operator pastes into a bug report, so it gets something that
+    identifies a key across two lines without being a credential.
+    """
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:8]
+
+
+def _mark_down(api_key: str, cooldown: float) -> None:
+    if cooldown > 0:
+        _DOWN[_fingerprint(api_key)] = time.monotonic() + cooldown
+
+
+def _usable(keys: list[str], cooldown: float) -> list[str]:
+    """The keys worth a request right now, in order.
+
+    If every key is cooling the cooldown is ignored: a round has to try something, and the
+    operator may have topped the quota up since the last refusal.
+    """
+    if cooldown <= 0:
+        return list(keys)
+    now = time.monotonic()
+    warm = [key for key in keys if _DOWN.get(_fingerprint(key), 0.0) <= now]
+    return warm or list(keys)
+
+
 def _configured(current: dict) -> bool:
-    return bool(current["base_url"] and current["api_key"] and current["model"])
+    return bool(current["base_url"] and current["api_keys"] and current["model"])
 
 
 class LLMUnavailable(RuntimeError):
@@ -70,19 +143,21 @@ def configured() -> bool:
 
 def _post(current: dict, headers: dict, body: dict, timeout: float | None,
           run_id: str | None = None) -> dict:
-    """One POST, retried only while the failure looks transient.
+    """One POST to the gateway, retried only while the failure looks transient.
 
     A 4xx is the request's own fault - a dead key, an unknown model - and retrying it just
     bills the operator twice. A 5xx or a transport error is the gateway's, and that is
     worth another attempt inside a round that is already minutes long.
 
-    The answer is read in chunks rather than in one call, and that is the only reason this
-    goes through `stream`: the longest thing in a round is one model answer, and a round the
-    operator has stopped must not sit waiting out an answer nobody will read. A stop check
-    per chunk turns the abandon into a closed connection, and `RoundCancelled` - not
-    `LLMUnavailable` - is what travels back up, so the writing stages can tell "stopped" from
-    "the endpoint refused". `stream` changes nothing about the request: the body is a plain
-    chat completion, the response is read as it arrives.
+    The answer is read in decoded chunks rather than in one call, and that is the only
+    reason this goes through `stream`: the longest thing in a round is one model answer,
+    and a round the operator has stopped must not sit waiting out an answer nobody will
+    read. The chunks are `iter_bytes`, not `iter_raw`: the gateway answers gzipped and a
+    raw chunk is not JSON. A stop check per chunk turns the abandon into a closed
+    connection, and `RoundCancelled` - not `LLMUnavailable` - is what travels back up, so
+    the writing stages can tell "stopped" from "the endpoint refused". `stream` changes
+    nothing about the request: the body is a plain chat completion, the response is read
+    as it arrives.
     """
     tries = current["tries"]
     last: Exception | None = None
@@ -102,7 +177,7 @@ def _post(current: dict, headers: dict, body: dict, timeout: float | None,
                             request=resp.request, response=resp,
                         )
                     chunks = bytearray()
-                    for chunk in resp.iter_raw():
+                    for chunk in resp.iter_bytes():
                         if cancel.requested(run_id):
                             raise cancel.RoundCancelled(
                                 "stopped while %s was answering" % run_id
@@ -120,6 +195,39 @@ def _post(current: dict, headers: dict, body: dict, timeout: float | None,
         if attempt + 1 < tries:
             time.sleep(1.5 * (attempt + 1))
     raise last if last is not None else RuntimeError("no attempt was made")
+
+
+def _call_payload(current: dict, body: dict, timeout: float | None,
+                  run_id: str | None) -> dict:
+    """One POST, walked across the key list until one answers.
+
+    The only failure a standby key fixes is a refusal that is about the key: a dead
+    credential or an exhausted quota (401/403/429). That key is put in cooldown and the
+    next one gets the same request. Everything else - a 5xx the gateway already had its
+    retries for, a transport error, a 4xx that is the request's own fault, a stop - is
+    raised as it is, because a different key would answer exactly the same way.
+    """
+    ordered = _usable(current["api_keys"], current["key_cooldown"])
+    for index, api_key in enumerate(ordered):
+        headers = dict(current["headers"])
+        headers["Authorization"] = "Bearer %s" % api_key
+        headers["Content-Type"] = "application/json"
+        try:
+            return _post(current, headers, body, timeout, run_id)
+        except cancel.RoundCancelled:
+            raise
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status not in KEY_STATUSES:
+                raise
+            _mark_down(api_key, current["key_cooldown"])
+            if index + 1 == len(ordered):
+                raise
+            log.warning(
+                "llm: key %s refused with %s (%d of %d), trying the next",
+                _fingerprint(api_key), status, index + 1, len(ordered),
+            )
+    raise RuntimeError("no key was tried")
 
 
 def _record(*, purpose: str, run_id: str | None, model: str, prompt_version: str | None,
@@ -151,24 +259,29 @@ def complete(
     """One completion, or `LLMUnavailable`. The caller decides what a missing text means."""
     current = settings()
     if not _configured(current):
-        raise LLMUnavailable("CH_LLM_BASE_URL / CH_LLM_API_KEY / CH_LLM_MODEL are not all set")
+        raise LLMUnavailable(
+            "CH_LLM_BASE_URL / CH_LLM_API_KEY / CH_LLM_MODEL are not all set"
+        )
     model = model or current["model"]
     body: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
     # Reasoning models bill their thinking against this ceiling, so a tight one returns an
     # empty message with `finish_reason = length` instead of an error.
     if current["max_tokens"]:
         body["max_tokens"] = current["max_tokens"]
+    # The thinking budget, when the operator set one. This endpoint answers at a high
+    # effort by default and bills the thinking as completion tokens: on the real
+    # research path, five tokens took 340.1s against 94.9s with `reasoning_effort:
+    # "none"`, and only the thinking-on arm lost a card. `minimal` and `low` are not
+    # switches - both still spent 680-899 thinking tokens where `none` spent 0.
+    # The field is the gateway own, and an unset `CH_LLM_REASONING` sends nothing.
+    if current["reasoning"]:
+        body["reasoning_effort"] = current["reasoning"]
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    headers = {
-        "Authorization": "Bearer %s" % current["api_key"],
-        "Content-Type": "application/json",
-    }
-    headers.update(current["headers"])
 
     started = time.time()
     try:
-        payload = _post(current, headers, body, timeout, run_id)
+        payload = _call_payload(current, body, timeout, run_id)
         text = payload["choices"][0]["message"].get("content")
         if not text or not str(text).strip():
             raise RuntimeError("the endpoint returned an empty message")
