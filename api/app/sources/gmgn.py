@@ -37,6 +37,25 @@ STAT_TTL = 900
 SECURITY_TTL = 21600
 
 
+def _bool(value: Any) -> bool | None:
+    """A feed's boolean, in whatever shape it arrived.
+
+    `lock_summary.is_locked` is a real JSON boolean, while the `0/1` fields next to it
+    arrive as strings - `_flag` in the GoPlus adapter reads only the string form, so it
+    would call every JSON `true` a false.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes"):
+        return True
+    if text in ("0", "false", "no"):
+        return False
+    return None
+
+
 def _num(value: Any) -> float | None:
     try:
         number = float(value)
@@ -141,6 +160,10 @@ class GmGn:
             ca=ca,
             symbol=_symbol(row.get("symbol")),
             market_cap_usd=_positive(row.get("market_cap")),
+            # The token own high, straight off the ranking row - the one reading of it no
+            # other source on this chain sells. 距高回撤 wants it first: it is what the
+            # source measured, not what one of our rounds happened to sample.
+            high_market_cap_usd=_positive(row.get("history_highest_market_cap")),
             liquidity_usd=_positive(row.get("liquidity")),
             volume_24h_usd=_positive(row.get("volume")),
             holders=int(row["holder_count"]) if _positive(row.get("holder_count")) else None,
@@ -165,6 +188,7 @@ class GmGn:
             websites=_websites(row),
             provenance={
                 "market_cap_usd": "gmgn", "liquidity_usd": "gmgn", "volume_24h_usd": "gmgn",
+                "high_market_cap_usd": "gmgn",
                 "top10_pct": "gmgn", "bundling_pct": "gmgn",
                 "bot_degen_pct": "gmgn", "total_supply": "gmgn", "open_at": "gmgn",
             },
@@ -233,19 +257,12 @@ class GmGn:
 
         return cached("gmgn:dev:%s" % ca, STAT_TTL, produce) or {}
 
-    def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
-        # The three per-token lookups go out together: asked in sequence they would add a
-        # third of the enrich phase's wall time for numbers the card shows side by side.
-        asked = (
-            lambda: self._stat(chain_id, ca),
-            lambda: self.dev_info(chain_id, ca),
-            lambda: self._info(chain_id, ca),
-            lambda: self._security(chain_id, ca),
-        )
-        stat, dev, info, security = [answer or {} for answer in pmap(lambda ask: ask(), asked, workers=len(asked))]
-        metrics = TokenMetrics(ca=ca)
-        facts = SafetyFacts()
+    def _stat_facts(self, ca: str, stat: dict, metrics: TokenMetrics, facts: SafetyFacts) -> None:
+        """`token_stat` onto the token's view: the chip numbers, and nothing else.
 
+        Shared by the full read (`fetch_token`) and the chip-only read (`fetch_chips`), so a
+        field and the key that feeds it cannot drift between the two.
+        """
         holders = _positive(stat.get("holder_count"))
         if holders:
             metrics.holders = int(holders)
@@ -266,7 +283,6 @@ class GmGn:
             _fraction_to_pct(stat.get("top_rat_trader_percentage")), metrics.insider_pct)
         if metrics.insider_pct is not None:
             facts.insider_pct = metrics.insider_pct
-
         metrics.bot_degen_pct = _first(
             _fraction_to_pct(stat.get("bot_degen_rate")), metrics.bot_degen_pct)
         metrics.fresh_wallet_pct = _fraction_to_pct(stat.get("fresh_wallet_rate"))
@@ -275,6 +291,44 @@ class GmGn:
             _fraction_to_pct(stat.get("bluechip_owner_percentage")), metrics.bluechip_holder_pct)
         metrics.degen_call_count = _count(stat.get("degen_call_count"))
         metrics.signal_count = _count(stat.get("signal_count"))
+        metrics.provenance.update({
+            "holders": "gmgn", "top10_pct": "gmgn", "bundling_pct": "gmgn",
+            "honeypot_pct": "gmgn", "bot_degen_pct": "gmgn",
+            "fresh_wallet_pct": "gmgn", "private_vault_pct": "gmgn",
+            "signal_count": "gmgn",
+        })
+
+    def fetch_chips(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
+        """One request: the chip picture the hard filter reads, and nothing else.
+
+        `fetch_token` asks four endpoints because a card wants the taxes, the LP sheet and
+        the deployer too; the chip half of the hard filter reads three numbers, and all
+        three live in `token_stat`. This host paces itself at 0.45s per request, so the
+        three endpoints this does not ask are three quarters of the pass's wall clock
+        (measured on 29 rows: 53.1s through `fetch_token`, 13.6s through this one).
+
+        The `facts` it returns are empty on purpose: this read did not ask the safety
+        questions, so a caller that keeps the answers has to ask `fetch_token`.
+        """
+        stat = self._stat(chain_id, ca) or {}
+        metrics = TokenMetrics(ca=ca)
+        facts = SafetyFacts()
+        self._stat_facts(ca, stat, metrics, facts)
+        return metrics, facts
+
+    def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
+        # The three per-token lookups go out together: asked in sequence they would add a
+        # third of the enrich phase's wall time for numbers the card shows side by side.
+        asked = (
+            lambda: self._stat(chain_id, ca),
+            lambda: self.dev_info(chain_id, ca),
+            lambda: self._info(chain_id, ca),
+            lambda: self._security(chain_id, ca),
+        )
+        stat, dev, info, security = [answer or {} for answer in pmap(lambda ask: ask(), asked, workers=len(asked))]
+        metrics = TokenMetrics(ca=ca)
+        facts = SafetyFacts()
+        self._stat_facts(ca, stat, metrics, facts)
         metrics.open_at = _first(
             _when(info.get("open_timestamp")), _when(info.get("creation_timestamp")),
             metrics.open_at)
@@ -286,6 +340,20 @@ class GmGn:
         # A second voice on the verdict, for the tokens GoPlus has no row for at all.
         if metrics.honeypot_detected is None:
             metrics.honeypot_detected = _honeypot(security.get("is_honeypot"))
+
+        # GMGN's own security sheet answers the LP question directly, and it is the
+        # answer of record: `lock_summary.is_locked` is what the page shows. It also
+        # covers the v4 shape, where there is no LP token for the chain read to look at.
+        lock = security.get("lock_summary") if isinstance(security, dict) else None
+        locked = _bool(lock.get("is_locked")) if isinstance(lock, dict) else None
+        if locked is not None:
+            facts.lp_locked = locked
+            facts.lp_source = "gmgn"
+            percent = _num(lock.get("lock_percent")) if isinstance(lock, dict) else None
+            facts.lp_note = "GMGN：LP %s" % (
+                ("已锁 %g%%" % (percent * 100)) if locked and percent
+                else ("已锁" if locked else "未锁"),
+            )
 
         dev_hold = stat.get("dev_team_hold_rate") if stat.get("dev_team_hold_rate") is not None else stat.get("creator_hold_rate")
         facts.dev_holding_pct = _fraction_to_pct(dev_hold)
@@ -303,11 +371,8 @@ class GmGn:
             renames = len(dev.get("twitter_name_change_history") or [])
         if _num(renames):
             metrics.renames = int(renames)
+        # The stat half already claimed its own fields, in `_stat_facts`.
         metrics.provenance.update({
-            "holders": "gmgn", "top10_pct": "gmgn", "bundling_pct": "gmgn",
-            "honeypot_pct": "gmgn",
-            "bot_degen_pct": "gmgn", "fresh_wallet_pct": "gmgn",
-            "private_vault_pct": "gmgn", "signal_count": "gmgn",
             "open_at": "gmgn", "total_supply": "gmgn",
             "buy_tax_pct": "gmgn", "sell_tax_pct": "gmgn",
             "honeypot_detected": "gmgn",
