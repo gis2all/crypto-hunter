@@ -96,7 +96,11 @@ export function TopBar({
               id="run-btn"
               disabled={settings.runNow.isPending || settings.save.isPending}
               onClick={() => {
-                void settings.commit().then(() => settings.runNow.mutate());
+                void settings.commit().then((saved) => {
+                  // The run only starts on settings that saved; a refused save is already
+                  // on screen above the form, and running under it would lie.
+                  if (saved) settings.runNow.mutate();
+                });
               }}
             >
               <Icon as={Play} size={14} />
