@@ -2,8 +2,8 @@
 
 The 55% on-chain block is five factor percentiles; the 45% off-chain block is this
 round's five 0-5 judgements about the project itself. Both weights, and the split
-between the five on-chain factors, are settings the operator can move - nothing here
-is a constant.
+inside each of the two blocks, are settings the operator can move - nothing here is a
+constant.
 
 待定口径 #1 is settled here, by the frozen settings page rather than by taste. Those rows
 are labelled 池深分位 / 成交额分位 / 地址数分位 / Top10 反向分位 / 捆绑率反向分位, so the
@@ -38,8 +38,9 @@ FACTOR_FIELDS: dict[str, str] = {
 
 #: The off-chain half: what the research pass judged about the project, each 0-5, keyed
 #: exactly as the prompt asks for them. 产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 /
-#: 叙事与官方关系 / 社区活跃度. Equal weight, and there is no "undetermined": 0 is the
-#: judgement that the search came back empty, which is itself a finding.
+#: 叙事与官方关系 / 社区活跃度. Weights ship even and live in
+#: `scoring.offchain_factor_weights`, and there is no "undetermined": 0 is the judgement
+#: that the search came back empty, which is itself a finding.
 OFFCHAIN_FIELDS: tuple[str, ...] = (
     "f_completeness",
     "f_substance",
@@ -52,7 +53,7 @@ OFFCHAIN_FIELDS: tuple[str, ...] = (
 #: reads the same way - one scale, higher is better - which is what makes them summable.
 REVERSE_FACTORS = frozenset({"top10_concentration", "bundling"})
 
-#: UI default: the 55% on-chain block is split evenly across its five factors.
+#: UI default: each block's five factors split evenly until the operator moves them.
 DEFAULT_FACTOR_WEIGHT = 20.0
 
 
@@ -125,6 +126,21 @@ def score_onchain(
     return sum(f.score for f in factors) / known * full, factors
 
 
+def offchain_weights(scoring: dict) -> dict[str, float]:
+    """The five off-chain weights, defaulting to the even split the block shipped with.
+
+    A snapshot saved before this knob existed carries no weights at all, and a saved
+    round could in principle hold five zeroes; both fall back to the even split, so a
+    missing knob can never turn the normaliser into a zero divisor.
+    """
+    weights = scoring.get("offchain_factor_weights") or {}
+    spread = {name: float(weights.get(name, DEFAULT_FACTOR_WEIGHT) or 0.0)
+              for name in OFFCHAIN_FIELDS}
+    if sum(spread.values()) <= 0:
+        return {name: DEFAULT_FACTOR_WEIGHT for name in OFFCHAIN_FIELDS}
+    return spread
+
+
 def score_token(
     metrics: TokenMetrics,
     facts: SafetyFacts,
@@ -134,8 +150,9 @@ def score_token(
 ) -> ScoreBreakdown:
     """Compose the on-chain block (55%) with the off-chain block (45%).
 
-    The off-chain block is five equally weighted 0-5 judgements this round made about the
-    token. A token with no entry was not judged at all and stays out of the ranking: a 0
+    The off-chain block is five 0-5 judgements this round made about the token, weighted
+    by `scoring.offchain_factor_weights` (an even split by default). A token with no entry
+    was not judged at all and stays out of the ranking: a 0
     would read as "judged and found worthless", which is a different claim from "not
     judged". Once an entry exists the prompt requires all five; one that arrives empty is
     read as 0 and noted, because the round does have a judgement to record.
@@ -156,8 +173,12 @@ def score_token(
         if missing:
             notes.append("off-chain judgement incomplete (%s), read as 0"
                          % ", ".join(missing))
-        values = [float(lexicon_entry.get(name) or 0.0) for name in OFFCHAIN_FIELDS]
-        offchain = sum(values) / (len(OFFCHAIN_FIELDS) * 5.0) * 100.0
+        spread = offchain_weights(scoring)
+        offchain = (
+            sum(spread[name] * float(lexicon_entry.get(name) or 0.0)
+                for name in OFFCHAIN_FIELDS)
+            / (sum(spread.values()) * 5.0) * 100.0
+        )
 
     total: float | None = None
     if not pending and onchain is not None and offchain is not None:
