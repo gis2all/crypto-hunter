@@ -58,8 +58,9 @@ PUSH_CONTENT = {
 }
 PUSH_TARGETS = {"telegram": "Telegram", "discord": "Discord", "none": "仅落库不推"}
 INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
-#: The five 0-5 judgements the off-chain block is computed from, with the anchor each
-#: one is scored against. Read-only rows: nothing here is a knob.
+#: The five 0-5 judgements the off-chain block is computed from, with the anchor each one
+#: is scored against. The anchors are 口径, not knobs: they ride in the group's 说明, and
+#: the weights that split the block live in `pipeline.scoring.offchain_factor_weights`.
 OFFCHAIN_LABELS = {
     "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
     "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
@@ -139,6 +140,7 @@ def build(
     report = chain.get("report") or {}
     alerts = chain.get("alerts") or {}
     factor_weights = scoring.get("onchain_factor_weights") or {}
+    offchain_weights = scoring.get("offchain_factor_weights") or {}
 
     def drops(*reasons: str) -> int | None:
         values = [rule_counts.get(r) for r in reasons if rule_counts.get(r) is not None]
@@ -257,14 +259,16 @@ def build(
             )
         )
 
+    # The five rows are weights, not readings, so they are drawn like the on-chain block's
+    # factors: a knob per judgement, the anchor it is scored against folded into the 说明.
     offchain_fields = [
         _field("pipeline.scoring.offchain_weight", "链下调研权重", "num",
                str(scoring.get("offchain_weight", 45)), unit="%", dim="占综合分",
                dim_in="label"),
-        _field("pipeline.scoring.source", "数据来源", "ro", "每轮全新调研"),
     ] + [
-        _field("pipeline.scoring.%s" % key, label, "ro", anchor)
-        for key, (label, anchor) in OFFCHAIN_LABELS.items()
+        _field("pipeline.scoring.offchain_factor_weights.%s" % key, label, "num",
+               str(offchain_weights.get(key, "")), unit="%")
+        for key, (label, _anchor) in OFFCHAIN_LABELS.items()
     ]
 
     interval = int(schedule.get("interval_hours") or 3)
@@ -398,15 +402,18 @@ def build(
                     "note": "",
                     # The prepended share is formatted on its own: an outer %-format would
                     # run over the "45%" it just produced and choke on the stray percent.
-                    "detail": (
-                        "链下调研占综合分 %s%%。\n" % scoring.get("offchain_weight", 45)
-                        + (
-                            "和链上那 %s%% 的根本区别：这一项"
-                            "抓不到，只能读官网／X／GitHub 之后下判断。 "
-                            "每轮都是一次全新的调研，不沿用上一轮的结论——"
-                            "判断和它依据的事实永远是同一份。"
-                        )
-                        % scoring.get("onchain_weight", 55)
+                    "detail": "\n".join(
+                        [
+                            "链下调研占综合分 %s%%。" % scoring.get("offchain_weight", 45),
+                            "数据来源：每轮全新调研 —— 判断和它依据的事实永远是同一份，"
+                            "不沿用上一轮的结论。",
+                            "和链上那 %s%% 的根本区别：这一项抓不到，"
+                            "只能读官网／X／GitHub 之后下判断。"
+                            % scoring.get("onchain_weight", 55),
+                            "五个 0–5 判断（权重默认各 20%）：",
+                        ]
+                        + ["%s %s" % (label, anchor)
+                           for label, anchor in OFFCHAIN_LABELS.values()]
                     ),
                 },
             ],
@@ -448,6 +455,26 @@ def build(
         },
     ]
     return {"blocks": blocks, "stages": run_stages or []}
+
+
+def field_labels(chain: dict) -> dict[str, str]:
+    """Every dotted key the settings page shows -> the words it prints for that box.
+
+    Read when the API refuses a save: a refusal has to name the box the operator can see,
+    never a dotted path. Composed from the same `build` the page renders, so the answer and
+    the row above it cannot drift apart (C-003). A range is one label over two boxes, so
+    its two ends are told apart as 下限 / 上限 - "「市值」不能留空" would not say which.
+    """
+    labels: dict[str, str] = {}
+    for block in build(chain, {}, {})["blocks"]:
+        for group in block["groups"]:
+            for field in group["fields"]:
+                if field.get("widget") == "range" and field.get("key2"):
+                    labels[field["key"]] = field["label"] + "下限"
+                    labels[field["key2"]] = field["label"] + "上限"
+                else:
+                    labels[field["key"]] = field["label"]
+    return labels
 
 
 def interval_slots(hours: int) -> list[int]:
