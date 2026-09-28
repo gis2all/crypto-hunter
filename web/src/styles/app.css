@@ -276,14 +276,13 @@ html{scrollbar-gutter:stable}
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all
    (`.pgroup:not(:has(.drop-n)):not(:has(.drop-x)) .prow .field`), so 硬过滤 / 安全门槛 /
-   质量分构成 / 评分口径 already read label-left, value-right - while 产出与节奏 / 提醒 /
+   两个评分口径 already read label-left, value-right - while 产出与节奏 / 提醒 /
    推送与依赖, three groups whose rows carry a drop hint (先发后研, 直接复用), left their
    readings against the label and the rest of the row empty. Measured at 1726: a reading at
    x=797 in a column running to 1129, 每轮报告数's at 449 in a row running to 869, 数据源凭据's
    at 1486 in a row running to 1682. The hint is a note about the value, not a second value,
-   so it did not earn the exception - which is the shape 硬过滤 already has when it carries
-   淘汰数 (value at the track's right edge, count after it).
-   after it).
+   so it did not earn the exception - and 硬过滤, which used to read this way only because a
+   淘汰数 cell took the last track, now has no trailing cell either.
 
    Written here rather than in proto.css because the guard is the prototype's rule and this
    is the deviation from it. The selector carries the same specificity as that rule (0,5,0)
@@ -296,7 +295,7 @@ html{scrollbar-gutter:stable}
 
 /* An empty drop cell gives its width back (2026-09-26).
 
-   `.prow .drop` reserves `min-width:54px` for the group's 淘汰数 column, and
+   `.prow .drop` reserves `min-width:54px` for a group's trailing cell, and
    `.drop:empty{display:none}` (proto.css) was written for the rows that have nothing to put
    in it - but that selector never matches the `<em class="drop">` cell those groups render: the
    cell has a child, and the child is `display:none` until the row is dirty. So every clean row
@@ -411,10 +410,10 @@ html{scrollbar-gutter:stable}
    numbers a reader came for were buried in text they had already read. A reading stays
    on the page; a rule ships as `detail` and opens from the icon in the group header.
 
-   Placement: the icon is the last thing in the header, right-aligned, and `order:1` keeps
-   it behind the `::after` label that proto.css hangs on the hard / safety headers. Those
-   two already carry `margin-left:auto`, so the icon gives its own up there - two auto
-   margins would split the free space and strand it in the middle of the header.
+   Placement: the icon is the last thing in the header and right-aligns itself with
+   `margin-left:auto`. It used to sit behind a `::after`「本轮淘汰」label on the hard /
+   safety headers, which carried that same auto margin - the label is gone now that the
+   counts ride in the note itself, so the icon is the header's only trailing element.
 
    In the note bar it floats rather than sits in the flow: the bar is a single wrapping
    sentence, and a float lets the text wrap under the icon instead of being pushed below
@@ -423,18 +422,17 @@ html{scrollbar-gutter:stable}
    proto.css is the frozen baseline, so none of this is written there. */
 
 .note-help{position:relative;display:inline-flex;align-items:center;font-family:var(--sans);letter-spacing:normal}
-.pgroup-h .note-help{order:1;margin-left:auto}
+.pgroup-h .note-help{margin-left:auto}
 /* The page header puts its icon near the left edge, so the popover opens rightwards:
    anchored right, a 440px panel starting at x=260 hangs 34px off the screen and eats its
    own first line. */
 .params-head .note-help .note-help-pop{left:0;right:auto}
-#card-hard .pgroup-h .note-help,#card-safety .pgroup-h .note-help{margin-left:0}
 
 /* The 说明 button is a 16px control sitting in a row that is aligned on the text baseline,
    and a 16px box has no baseline of its own: a flex container with `align-items:center`
    synthesizes one from its bottom edge. So the button's bottom edge rode on the title's
-   baseline and its label sat 2.7px above 「本轮淘汰」 beside it. `align-self:center` takes it
-   out of that alignment and centres it on the row - measured, 说明 vs 本轮淘汰: -2.7 -> +0.2px.
+   baseline and its label sat 2.7px above the header title beside it. `align-self:center`
+   takes it out of that alignment and centres it on the row.
 
    The group header comes down 2px with it (36.8 -> 34.8), because the control had been
    setting the height of a line it does not fill. */
@@ -450,6 +448,9 @@ html{scrollbar-gutter:stable}
   box-shadow:var(--shadow);font-family:var(--mono);font-size:10.5px;line-height:1.8;
   letter-spacing:normal;color:var(--fg);text-align:left;white-space:normal;overflow-wrap:anywhere}
 .note-help.open .note-help-pop{display:block}
+/* The pending-edit count opens the popover in the same ink the dirty bar uses, so the two
+   read as one signal. */
+.note-help .note-help-line.lead{color:var(--warn-fg)}
 .note-help .note-help-line+.note-help-line{margin-top:4px}
 
 /* Block heights, approved 2026-09-26.
@@ -461,7 +462,7 @@ html{scrollbar-gutter:stable}
 
    1. `align-items:stretch` spends the row height the grid had already computed, so every
       box in a row ends on the same line. The free space moves inside the short box, which
-      is why the trailing reading (`.pset` / `.note-inline`) is pushed to the box's foot:
+      is why the trailing reading (`.pset`) is pushed to the box's foot:
       the box ends with a line of text instead of a pool of nothing. It holds at every
       width; the widths and the splits below are what the 1668px gate turns off (1620 while the
    rail was 212px wide - see the note at the media query).
@@ -485,7 +486,7 @@ html{scrollbar-gutter:stable}
 
 .blk-cols{align-items:stretch}
 div.pgroup{display:flex;flex-direction:column}
-div.pgroup>.pset,div.pgroup>.note-inline{margin-top:auto}
+div.pgroup>.pset{margin-top:auto}
 .pcol{min-width:0}
 
 
@@ -511,22 +512,27 @@ div.pgroup>.pset,div.pgroup>.note-inline{margin-top:auto}
 @media (min-width:1668px){
   /* 硬过滤 is the one group whose rows cannot give any more ground, so its track gets a
      floor. Measured need per column: label 70 (Top10 集中度, the widest label) + gap 8 +
-     field 175 (市值's range is the widest field on the screen) + gap 8 + 淘汰数 40 + row
-     padding 24 = 325; two columns and the 24px gutter land on 674, so 680 leaves the shape
-     6px of air. Without it the label column folds back into its text and the range row runs
-     into its own 淘汰数.
+     field 175 (市值's range is the widest field on the screen) + row padding 24 = 277; two
+     columns and the 24px gutter land on 578. The floor stays at 680, the number it needed
+     when every row still carried a 40px 淘汰数 cell - the spare width only goes to the range,
+     which is the widest field on the screen. Without a floor the label column folds back
+     into its text.
 
-     The middle floor is 安全门槛's checkbox row: 无危险权限 plus its four boxes need 382 to
+     The last floor is 安全门槛's checkbox row: 无危险权限 plus its four boxes need 382 to
      sit on the title's line (2026-09-26), and on the frs alone the column came out 358.
-     416 gives that row 10px of air and still leaves 质量分构成 - whose widest row needs
-     238 - 309 at 1726 and 256 at the 1668 gate. */
-  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(680px,1.3fr) minmax(416px,1fr) minmax(0,1fr)}
+     416 gives that row 10px of air and still leaves 评分口径 - whose widest row needs
+     238 - 309 at 1726 and 256 at the 1668 gate.
+
+     The tracks follow the order the API hands the groups over (2026-09-28): 评分口径
+     moved to the left edge, so the floors travelled with the groups rather than the
+     positions - the first track is the panel that needs the least, and both floors stay
+     on the two groups that need them. */
+  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.3fr) minmax(416px,1fr)}
   .blk-cols[data-blk="product"]{grid-template-columns:minmax(0,1fr) minmax(0,2.36fr)}
   .blk-cols[data-blk="run"]{grid-template-columns:minmax(0,1.94fr) minmax(0,1fr) minmax(0,1.11fr)}
   .pgroup.split .prows{display:grid;grid-template-columns:1fr 1fr;column-gap:24px}
   .pgroup.split .prow>label{min-width:0}
   .pgroup.split .prow input.num{width:56px}
-  .pgroup.split .prow .drop{min-width:40px}
 
   /* The label is a column, not a prefix. `min-width:0` above let every label shrink to
      its own text, so no two rows started their value at the same x: 硬过滤's inputs sat at
@@ -534,29 +540,27 @@ div.pgroup>.pset,div.pgroup>.note-inline{margin-top:auto}
      row as wide as the label it happened to carry, which reads as a ragged list, not a
      table.
 
-     .pcol is a grid now and each row is a `subgrid` of it, so label / value / 淘汰数 are
-     three tracks shared by the whole column. The label track is `max-content` - the widest
-     label in that column - which is why no width is written down here; the value track is
-     where the reading starts, and it is the same x on every row. Measured spread 47 / 35 /
-     23 / 35 -> 0 at 1620, 1650, 1726, 1920 and 2071 (measured with a 212px rail; the gate has
-   moved to 1648 since, the widths in that list are unchanged), with no row overflowing.
+     .pcol is a grid now and each row is a `subgrid` of it, so label / value are two
+     tracks shared by the whole column. The label track is `max-content` - the widest label
+     in that column - which is why no width is written down here; the value track is where
+     the reading starts, and it is the same x on every row. Measured spread 47 / 35 / 23 /
+     35 -> 0 at 1620, 1650, 1726, 1920 and 2071 (measured with a 212px rail; the gate has
+    moved to 1648 since, the widths in that list are unchanged), with no row overflowing.
 
-     `grid-column` is explicit because a row with no 淘汰数 has no third child: auto
-     placement would pull its value into the drop's track, and `margin-left:auto` on .drop
-     no longer positions anything. Wide rows (.prow.wide) keep the frozen stacked treatment,
-     where the field takes the next line at the title's edge. */
-  .pgroup.split .pcol{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;
+     The split used to carry a third track for 淘汰数; the counts ride in the group note now,
+     so the value keeps the whole run to the right edge. Wide rows (.prow.wide) keep the
+     frozen stacked treatment, where the field takes the next line at the title's edge. */
+  .pgroup.split .pcol{display:grid;grid-template-columns:max-content minmax(0,1fr);
     align-content:start;column-gap:8px}
   .pgroup.split .pcol>.prow:not(.wide){grid-column:1/-1;display:grid;
     grid-template-columns:subgrid;align-items:center;column-gap:8px}
   .pgroup.split .pcol>.prow>.field{grid-column:2}
-  .pgroup.split .pcol>.prow>.drop{grid-column:3}
 
-  /* 推送与依赖 is the narrowest group and two of its readings are longer than the column:
-     `数据源凭据` lists six sources, `复制参数` names the chain it copies from. `.ro-v`
-     ellipsizes by design (a long value must never widen its track into a horizontal
-     scrollbar), but here the value is the whole answer - `GMGN · Rad…` is not a reading,
-     and 500px is still not enough to hold the six sources on one line. Let it wrap: the
-     row grows by a line and the group stays under the block's height. */
+  /* 推送与依赖 is the narrowest group and its longest reading overruns the column:
+     `数据源凭据` lists six sources. `.ro-v` ellipsizes by design (a long value must never
+     widen its track into a horizontal scrollbar), but here the value is the whole answer -
+     `GMGN · Rad…` is not a reading, and 500px is still not enough to hold the six sources
+     on one line. Let it wrap: the row grows by a line and the group stays under the
+     block's height. */
   #card-push .ro-v{white-space:normal}
 }

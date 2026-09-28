@@ -321,11 +321,6 @@ export interface components {
             /** Title */
             title: string;
             /**
-             * Weight
-             * @default
-             */
-            weight: string;
-            /**
              * Columns
              * @default 3
              */
@@ -522,16 +517,6 @@ export interface components {
              * @default false
              */
             ro_value: boolean;
-            /**
-             * Ro Button
-             * @default
-             */
-            ro_button: string;
-            /**
-             * Ro Button Note
-             * @default
-             */
-            ro_button_note: string;
             /** Pending */
             pending?: string | null;
             /** Enabled */
@@ -624,11 +609,6 @@ export interface components {
              * @default
              */
             detail: string;
-            /**
-             * Warn
-             * @default
-             */
-            warn: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

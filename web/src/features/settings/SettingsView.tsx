@@ -6,7 +6,7 @@ import type { SettingsBlock, SettingsField, SettingsForm } from "../../api/clien
 import { Icon } from "../../components/Icon";
 import { NoteHelp } from "./NoteHelp";
 import { type SettingsState } from "./useSettingsState";
-import { Widget, stringValue } from "./Widget";
+import { Widget } from "./Widget";
 
 /** Read-only rows print their value in the mono face: the frozen prototype marks every
  *  one of them `field mono`, whether the value comes from the config or from the run. */
@@ -58,15 +58,7 @@ export function SettingsView({ state }: { state: SettingsState }) {
   }
 
   const renderGroup = (group: SettingsForm["blocks"][number]["groups"][number]) => {
-    const factorKeys = group.fields
-      .filter((field) => field.widget === "num" && field.key.includes("onchain_factor_weights."))
-      .map((field) => field.key);
-    const factorSum = factorKeys.reduce((total, key) => {
-      const field = group.fields.find((f) => f.key === key);
-      return total + Number(stringValue(field ? valueOf(field) : "0") || 0);
-    }, 0);
-    const hasSum = group.fields.some((field) => field.widget === "sum");
-    const rows = group.fields.filter((field) => field.widget !== "sum");
+    const rows = group.fields;
     const wide = group.fields.some((field) => field.widget === "checks");
 
     const renderRow = (field: SettingsField, index: number) => {
@@ -130,10 +122,13 @@ export function SettingsView({ state }: { state: SettingsState }) {
         <div className="pgroup-h">
           <b>{group.title}</b>
           {group.hint ? <em>{group.hint}</em> : null}
-          <i className="dirty-n" hidden={groupDirty(group.fields) === 0}>
-            {`待改 ${groupDirty(group.fields)}`}
-          </i>
-          <NoteHelp text={group.detail} />
+          {/* The unsaved count used to sit in the header as a chip. It is the only line here
+              the backend cannot know (it describes the draft), so it travels as the popover's
+              first line instead - one 说明 control, one place to read. */}
+          <NoteHelp
+            text={group.detail}
+            lead={groupDirty(group.fields) === 0 ? "" : `待改 ${groupDirty(group.fields)} 项`}
+          />
         </div>
         <div className="prows">
           {cut ? (
@@ -145,17 +140,7 @@ export function SettingsView({ state }: { state: SettingsState }) {
             rows.map(renderRow)
           )}
         </div>
-        {hasSum ? (
-          <div className="prow sum">
-            <label>合计</label>
-            <em className="drop" />
-            <span className="field">
-              <em className={factorSum === 100 ? undefined : "bad"}>{factorSum}</em>
-              <span className="unit">%</span>
-              <span className="dim">需等于 100</span>
-            </span>
-          </div>
-        ) : null}
+
         {group.note ? (
           <div className="pset">
             {group.note.split("\n").map((line, index) => (
@@ -166,7 +151,6 @@ export function SettingsView({ state }: { state: SettingsState }) {
             ))}
           </div>
         ) : null}
-        {group.warn ? <div className="note-inline">{group.warn}</div> : null}
       </div>
     );
   };
@@ -176,7 +160,6 @@ export function SettingsView({ state }: { state: SettingsState }) {
       <div className="blk-t">
         <Icon as={BLOCK_ICON[block.key]} size={14} />
         <b>{block.title}</b>
-        <em className="w">{block.weight}</em>
       </div>
       <div className={`blk-cols cols${block.columns}`} data-blk={block.key}>
         {block.groups.map(renderGroup)}

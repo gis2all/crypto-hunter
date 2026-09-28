@@ -15,7 +15,16 @@ import { Icon } from "../../components/Icon";
  * break the API promises, and rendering it as a `<br />` inside an inline span is how the
  * note blocks used to do it - a block per line keeps the markup honest and lets the lines
  * space themselves. */
-export function NoteHelp({ text, label = "说明" }: { text: string; label?: string }) {
+export function NoteHelp({
+  text,
+  lead = "",
+  label = "说明",
+}: {
+  text: string;
+  /** Client state that belongs with the rules - the unsaved-edit count. It reads first. */
+  lead?: string;
+  label?: string;
+}) {
   const [hover, setHover] = useState(false);
   const [pinned, setPinned] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -37,7 +46,7 @@ export function NoteHelp({ text, label = "说明" }: { text: string; label?: str
     };
   }, [pinned]);
 
-  if (!text) return null;
+  if (!text && !lead) return null;
 
   return (
     <div
@@ -56,6 +65,7 @@ export function NoteHelp({ text, label = "说明" }: { text: string; label?: str
         {label}
       </button>
       <div className="note-help-pop" role="note">
+        {lead ? <div className="note-help-line lead">{lead}</div> : null}
         {text.split("\n").map((line, index) => (
           <div className="note-help-line" key={index}>
             {line}

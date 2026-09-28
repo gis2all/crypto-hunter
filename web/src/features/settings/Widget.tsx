@@ -130,16 +130,9 @@ export function Widget({
 
   if (field.ro_value) {
     return (
-      <>
-        <span className="ro-v" title={stringValue(value)}>
-          {stringValue(value)}
-        </span>
-        {field.ro_button ? (
-          <button className="ok-btn demo" aria-disabled="true" title={field.ro_button_note}>
-            {field.ro_button}
-          </button>
-        ) : null}
-      </>
+      <span className="ro-v" title={stringValue(value)}>
+        {stringValue(value)}
+      </span>
     );
   }
   return <>{stringValue(value)}</>;
