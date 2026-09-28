@@ -16,6 +16,7 @@ import json
 import math
 import re
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -45,7 +46,7 @@ def _chain_or_404(chain_id: str) -> dict:
     try:
         return config.chain(chain_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown chain: {chain_id}")
+        raise HTTPException(status_code=404, detail=f"没有这条链：{chain_id}")
 
 
 def _yaml_defaults(chain_id: str) -> dict:
@@ -69,19 +70,37 @@ def _reject_unknown_paths(current: dict, patch: dict, prefix: str = "") -> None:
         head, _, rest = str(key).partition(".")
         path = prefix + head
         if head not in current:
-            raise HTTPException(status_code=422, detail="unknown setting: %s" % path)
+            raise HTTPException(status_code=422, detail="设定里没有「%s」这一项" % path)
         child = current[head]
         if rest:
             if not isinstance(child, dict):
-                raise HTTPException(status_code=422, detail="%s is not a group" % path)
+                raise HTTPException(status_code=422, detail="「%s」不是一个分组" % path)
             _reject_unknown_paths(child, {rest: value})
         elif isinstance(child, dict) != isinstance(value, dict):
-            raise HTTPException(status_code=422, detail="%s is a group" % path)
+            raise HTTPException(status_code=422, detail="「%s」是个分组，不能整组换掉" % path)
         elif isinstance(value, dict):
             _reject_unknown_paths(child, value)
 
 
-def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
+def _deep_merge(base: dict, patch: dict) -> dict:
+    """Merge two already-resolved subtrees structurally, not by key.
+
+    `{**base, **patch}` replaces a whole group the moment the group's name repeats, so
+    patching `...factor_weights.liquidity` and `...factor_weights.bundling` in one request
+    used to keep only the last one. Deep merge is the only honest reading of two leaves
+    that land in the same group.
+    """
+    out = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _resolve_blanks(current: dict, patch: dict, prefix: str = "",
+                    labels: dict[str, str] | None = None) -> dict:
     """Read a blank box: no value where that is a legal answer, a refusal where it is not.
 
     holders_max ships blank because no ceiling is a real answer, and a band's upper box
@@ -90,6 +109,8 @@ def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
     used to surface as a 500 an hour later. So the YAML default decides - a numeric knob
     that ships with a number refuses a blank, and a knob that ships empty takes one. Text
     and list knobs are left alone: an empty credential is a legitimate thing to save.
+    `labels` is the page's own wording for each key (`forms.field_labels`), so the refusal
+    names the box ("流动性") instead of the path this function happens to walk.
     """
     out: dict = {}
     for key, value in (patch or {}).items():
@@ -98,35 +119,75 @@ def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
         here = current.get(head)
         if rest:
             child = _resolve_blanks(here if isinstance(here, dict) else {}, {rest: value},
-                                   path + ".")
+                                   path + ".", labels)
             merged = out.get(head)
-            out[head] = {**(merged if isinstance(merged, dict) else {}), **child}
+            out[head] = _deep_merge(merged if isinstance(merged, dict) else {}, child)
             continue
         numeric = isinstance(here, (int, float)) and not isinstance(here, bool)
         if value in (None, "") and numeric:
-            raise HTTPException(status_code=422, detail="%s 不能留空" % path)
+            raise HTTPException(status_code=422,
+                                detail="「%s」不能留空：这个格子必须有个数"
+                                       % (labels or {}).get(path, path))
         elif value in (None, "") and here is None:
             out[head] = None
         elif isinstance(value, dict) and isinstance(here, dict):
-            out[head] = _resolve_blanks(here, value, path + ".")
+            out[head] = _resolve_blanks(here, value, path + ".", labels)
         else:
             out[head] = value
     return out
 
 
-def _validate(payload: dict) -> dict:
+def _pct(value: Any) -> str:
+    """A weight the way the page prints it: 20, not 20.0."""
+    number = float(value)
+    return str(int(number)) if number == int(number) else "%.1f" % number
+
+
+def _boxes(weights: dict, path: str, labels: dict[str, str]) -> str:
+    """The five boxes as they stand, named the way the page names them.
+
+    A 422 that only says "must sum to 100" leaves the operator adding five numbers by
+    hand; naming the rows and printing each one turns it into "move this box". The labels
+    come from the page's own model (`forms.field_labels`), so the error and the row above it
+    cannot read differently (C-003).
+    """
+    return " ｜ ".join("%s %s%%" % (labels.get(path + key, key), _pct(value))
+                      for key, value in weights.items())
+
+
+def _validate(payload: dict, labels: dict[str, str]) -> dict:
     scoring = (payload.get("pipeline") or {}).get("scoring") or {}
     on_weight = scoring.get("onchain_weight")
     prod_weight = scoring.get("offchain_weight")
     if on_weight is not None and prod_weight is not None:
-        if float(on_weight) + float(prod_weight) != 100:
-            raise HTTPException(status_code=422, detail="onchain_weight + offchain_weight must equal 100")
+        total = float(on_weight) + float(prod_weight)
+        if total != 100:
+            raise HTTPException(
+                status_code=422,
+                detail="链上质量权重 ＋ 链下调研权重必须等于 100%%，当前 %s%%"
+                       "（链上质量 %s%% ＋ 链下调研 %s%%）"
+                       % (_pct(total), _pct(on_weight), _pct(prod_weight)),
+            )
     weights = scoring.get("onchain_factor_weights")
     factors = scoring.get("onchain_factors")
     if factors is not None and len(factors) != 5:
-        raise HTTPException(status_code=422, detail="onchain_factors must list exactly 5 factors")
+        raise HTTPException(status_code=422,
+                            detail="链上质量的因子要正好 5 个，当前 %d 个" % len(factors))
     if weights is not None and sum(float(v) for v in weights.values()) != 100:
-        raise HTTPException(status_code=422, detail="onchain factor weights must sum to 100")
+        raise HTTPException(
+            status_code=422,
+            detail="链上质量五项权重合计要等于 100%%，当前 %s%%（%s）"
+                   % (_pct(sum(float(v) for v in weights.values())),
+                      _boxes(weights, "pipeline.scoring.onchain_factor_weights.", labels)),
+        )
+    off_weights = scoring.get("offchain_factor_weights")
+    if off_weights is not None and sum(float(v) for v in off_weights.values()) != 100:
+        raise HTTPException(
+            status_code=422,
+            detail="链下调研五项权重合计要等于 100%%，当前 %s%%（%s）"
+                   % (_pct(sum(float(v) for v in off_weights.values())),
+                      _boxes(off_weights, "pipeline.scoring.offchain_factor_weights.", labels)),
+        )
     return payload
 
 
@@ -167,12 +228,13 @@ def get_settings(chain_id: str) -> dict:
 
 @router.put("", response_model=SettingsOut)
 def put_settings(chain_id: str, body: SettingsIn) -> dict:
-    _chain_or_404(chain_id)
+    chain = _chain_or_404(chain_id)
     current, _meta = effective_payload(chain_id)
     _reject_unknown_paths(current, body.patch)
-    patch = _resolve_blanks(_yaml_defaults(chain_id), body.patch)
+    labels = forms.field_labels(chain)
+    patch = _resolve_blanks(_yaml_defaults(chain_id), body.patch, labels=labels)
     merged = config.sync_schedule(config.merge_patch(current, patch))
-    _validate(merged)
+    _validate(merged, labels)
     conn = db.connect()
     try:
         latest = conn.execute(
@@ -376,11 +438,14 @@ def recompute(chain_id: str, body: SettingsIn) -> JSONResponse:
     would produce a diff against a smaller pool than the round actually ran, which is a
     fabricated answer, and worse than no answer.
     """
-    _chain_or_404(chain_id)
+    chain = _chain_or_404(chain_id)
     current, _meta = effective_payload(chain_id)
     _reject_unknown_paths(current, body.patch)
-    _validate(config.merge_patch(current, _resolve_blanks(_yaml_defaults(chain_id),
-                                                          body.patch)))
+    labels = forms.field_labels(chain)
+    _validate(config.merge_patch(current,
+                                 _resolve_blanks(_yaml_defaults(chain_id), body.patch,
+                                                 labels=labels)),
+              labels)
     return JSONResponse(
         status_code=501,
         content={
