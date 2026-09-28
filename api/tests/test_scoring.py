@@ -5,7 +5,9 @@ import pytest
 
 from app.core.models import SafetyFacts, TokenMetrics
 from app.core.scoring import (
+    OFFCHAIN_FIELDS,
     CandidateSetPercentile,
+    offchain_weights,
     score_onchain,
     score_token,
 )
@@ -160,3 +162,27 @@ def test_the_offchain_block_is_five_judgements_out_of_twenty_five():
     )
     assert breakdown.product == pytest.approx(50.0)
     assert breakdown.total == pytest.approx(0.55 * 100 + 0.45 * 50.0)
+
+
+def test_the_offchain_block_reads_its_weights():
+    """The split inside the 45% block is a setting, not a constant: 60% on one judgement
+    and 10 on the rest turns a single 5.0 into a 60, not a 20."""
+    settings = {"scoring": {"onchain_weight": 55, "offchain_weight": 45,
+                            "offchain_factor_weights": {"f_completeness": 60, "f_substance": 10,
+                                                        "f_team": 10, "f_narrative": 10,
+                                                        "f_community": 10}}}
+    entry = _offchain(f_completeness=5.0, f_substance=0.0, f_team=0.0, f_narrative=0.0,
+                      f_community=0.0)
+    breakdown = score_token(_full(), SafetyFacts(), settings, Fixed(1.0), entry)
+    assert breakdown.product == pytest.approx(60.0)
+    assert breakdown.total == pytest.approx(0.55 * 100 + 0.45 * 60.0)
+
+
+def test_a_round_without_offchain_weights_keeps_the_even_split():
+    """Snapshots saved before the knob existed carry no weights, and a saved round could
+    hold five zeroes; both read as the even split the block shipped with, never as a
+    division by zero."""
+    even = {name: 20.0 for name in OFFCHAIN_FIELDS}
+    assert offchain_weights({}) == even
+    assert offchain_weights({"offchain_factor_weights": {name: 0 for name in OFFCHAIN_FIELDS}}) == even
+

@@ -71,6 +71,14 @@ def test_the_holder_band_ships_with_an_open_ceiling():
 
 
 def test_scoring_weights_sum_to_100():
-    scoring = config.chain("arc")["pipeline"]["scoring"]
-    assert scoring["onchain_weight"] + scoring["offchain_weight"] == 100
-    assert len(scoring["onchain_factors"]) == 5
+    """Each block's five factors split a 100 that is theirs, not a share of the block
+    weight: the on-chain factors sum to 100 and so do the five off-chain judgements."""
+    for chain_id in ("arc", "bsc"):
+        scoring = config.chain(chain_id)["pipeline"]["scoring"]
+        assert scoring["onchain_weight"] + scoring["offchain_weight"] == 100
+        assert len(scoring["onchain_factors"]) == 5
+        assert sum(scoring["onchain_factor_weights"].values()) == 100
+        assert scoring["offchain_factor_weights"] == {
+            "f_completeness": 20, "f_substance": 20, "f_team": 20,
+            "f_narrative": 20, "f_community": 20,
+        }

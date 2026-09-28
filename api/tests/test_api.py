@@ -88,13 +88,36 @@ def test_settings_reject_unknown_paths(client):
 
 
 def test_weight_sum_is_guarded_on_the_real_path(client):
-    """The knobs the settings page edits live under pipeline.scoring, not at the top."""
+    """The knobs the settings page edits live under pipeline.scoring, not at the top, and
+    the refusal reads like the page does: it names the box and prints the current sum
+    instead of leaving the operator to add five numbers by hand."""
     path = f"/api/v1/chains/{ARC}/settings"
-    both_weights = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.offchain_weight": 50}
-    assert client.put(path, json={"patch": both_weights}).status_code == 422
 
-    factor_weight = {"pipeline.scoring.onchain_factor_weights.liquidity": 30}
-    assert client.put(path, json={"patch": factor_weight}).status_code == 422
+    both = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.offchain_weight": 50}
+    blocked = client.put(path, json={"patch": both})
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"] == (
+        "链上质量权重 ＋ 链下调研权重必须等于 100%，当前 110%（链上质量 60% ＋ 链下调研 50%）")
+
+    onchain = {"pipeline.scoring.onchain_factor_weights.liquidity": 30}
+    blocked = client.put(path, json={"patch": onchain})
+    assert blocked.status_code == 422
+    assert "链上质量五项权重合计要等于 100%，当前 110%" in blocked.json()["detail"]
+    assert "流动性 30%" in blocked.json()["detail"]
+
+    offchain = {"pipeline.scoring.offchain_factor_weights.f_team": 30}
+    blocked = client.put(path, json={"patch": offchain})
+    assert blocked.status_code == 422
+    assert "链下调研五项权重合计要等于 100%，当前 110%" in blocked.json()["detail"]
+    assert "团队与 dev 可信度 30%" in blocked.json()["detail"]
+
+    # Rebalanced, the same knob saves: the check is on the sum, not on any single row.
+    balanced = {"pipeline.scoring.offchain_factor_weights.f_team": 30,
+                "pipeline.scoring.offchain_factor_weights.f_substance": 10}
+    saved = client.put(path, json={"patch": balanced})
+    assert saved.status_code == 200
+    weights = saved.json()["payload"]["pipeline"]["scoring"]["offchain_factor_weights"]
+    assert weights["f_team"] == 30 and weights["f_substance"] == 10
 
 
 def test_settings_patch_takes_dotted_paths_and_coerces(client):
@@ -128,11 +151,23 @@ def test_settings_form_shows_the_saved_version_not_the_yaml(client):
 def test_a_blank_on_a_knob_that_has_a_number_is_refused_not_stored(client):
     """Only a knob that ships blank may be handed back blank. Clearing 流动性's floor
     would leave the round a rule it cannot compare at all, and that used to reach the
-    database and surface as a 500 on the next save - a 422 at the door says which box."""
+    database and surface as a 500 on the next save - a 422 at the door says which box,
+    in the words printed next to it and not in the path this layer happens to walk."""
     path = f"/api/v1/chains/{ARC}/settings"
     resp = client.put(path, json={"patch": {"pipeline.prefilter.liquidity_min_usd": ""}})
     assert resp.status_code == 422
-    assert "liquidity_min_usd" in resp.json()["detail"]
+    assert resp.json()["detail"] == "「流动性」不能留空：这个格子必须有个数"
+
+    # A range is one label over two boxes, so the refusal has to say which end went blank.
+    resp = client.put(path, json={"patch": {"pipeline.prefilter.market_cap_max_usd": ""}})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "「市值上限」不能留空：这个格子必须有个数"
+
+    # The page posts a nested group, not a dotted path (toPatch builds the tree), and the
+    # label map has to survive that shape as well - it is threaded through the whole walk.
+    resp = client.put(path, json={"patch": {"pipeline": {"prefilter": {"liquidity_min_usd": ""}}}})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "「流动性」不能留空：这个格子必须有个数"
 
 def test_a_text_knob_can_still_be_cleared(client):
     """The blank rule is about numbers only. Emptying a text knob is a legitimate
@@ -201,17 +236,24 @@ def test_scan_rows_list_scanners_only(client):
     ]
 
 
-def test_the_offchain_block_names_its_five_judgements(client):
-    """The off-chain block is five read-only 0-5 judgements plus the one knob that
-    folds them into the score. A row on screen with no rule behind it is worse than no
-    row, so every one of them is checked here."""
+def test_the_offchain_block_weights_its_five_judgements(client):
+    """The five judgements are weights now (2026-09-28), drawn like the on-chain block's
+    factors: a 20% knob each. The anchor a judgement is scored against and the 数据来源
+    line both read once, so they live in the group's 说明 instead of taking five rows."""
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
     fields = _fields(form)
     assert fields["pipeline.scoring.offchain_weight"]["widget"] == "num"
     for key in ("f_completeness", "f_substance", "f_team", "f_narrative", "f_community"):
-        row = fields["pipeline.scoring." + key]
-        assert row["widget"] == "ro", key
-        assert row["value"], key
+        row = fields["pipeline.scoring.offchain_factor_weights." + key]
+        assert row["widget"] == "num", key
+        assert row["value"] == "20", key
+        assert row["unit"] == "%", key
+    assert "pipeline.scoring.source" not in fields
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    detail = groups["scoring"]["detail"]
+    assert "数据来源：每轮全新调研" in detail
+    assert "0–5 · 有界面 / 能交互 / 收费并迭代" in detail
+    assert "0–5 · 互动率与持续性，粉丝数无效" in detail
     # There is no research on/off switch any more: the reading pass is what writes the
     # entry, and an entry is what the 45% block is scored from - it cannot be optional.
     assert "report.research_enabled" not in fields
