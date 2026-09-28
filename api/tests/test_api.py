@@ -172,7 +172,7 @@ def test_settings_form_is_data_not_markup(client):
     fields = [f for b in form["blocks"] for g in b["groups"] for f in g["fields"]]
     assert len({f["key"] for f in fields}) == len(fields)
     assert all("." in f["key"] for f in fields)
-    assert {f["widget"] for f in fields} >= {"num", "range", "bool", "select", "checks", "ro", "sum"}
+    assert {f["widget"] for f in fields} >= {"num", "range", "bool", "select", "checks", "ro"}
     assert isinstance(form["totals"], dict)
     assert "lexicon" not in form, "the off-chain block is scored, not browsed"
     blob = json.dumps(form, ensure_ascii=False)  # every label is data, never markup
@@ -279,15 +279,16 @@ def test_push_content_chip_carries_the_card_count(client):
     assert labels["table"] == "对比表"
 
 
-def test_read_only_rows_carry_the_prototype_action(client):
-    """The credentials and copy rows sit next to an action in the prototype. Ours is
-    inert, but it has to be there and say why, or the row reads differently."""
+def test_read_only_rows_carry_no_inert_action(client):
+    """数据源凭据 used to sit next to a dead 重新授权 button, and 复制参数 next to a dead
+    复制. Neither action exists, so the rows carry the reading alone."""
     fields = _fields(client.get(f"/api/v1/chains/{ARC}/settings/form").json())
     sources = fields["runtime.sources"]
     assert sources["ro_row"] is True and sources["ro_value"] is True
-    assert sources["ro_button"] == "重新授权" and sources["ro_button_note"]
-    copy_row = fields["runtime.copy"]
-    assert copy_row["ro_button"] == "复制" and copy_row["ro_button_note"]
+    assert "runtime.copy" not in fields
+    assert not any(
+        key in field for field in fields.values() for key in ("ro_button", "ro_button_note")
+    )
 
 
 def test_credentials_read_in_scan_order(client):
@@ -361,11 +362,70 @@ def test_the_market_cap_reason_follows_the_rounds_own_bound():
     assert assemble._decline_reasons(metrics, safety, 20000) == []
 
 
-def test_settings_can_be_copied_from_a_chain_that_is_not_collecting_yet(client):
-    """BSC is declared and carries defaults, so it is a real copy source - the rail
-    showing it as「待接」does not make the row meaningless."""
+def test_settings_carry_no_cross_chain_copy_row(client):
+    """复制参数 was never wired up, so the row is gone rather than left inert."""
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
-    assert _fields(form)["runtime.copy"]["value"] == "从「BSC 雷达」复制"
+    assert "runtime.copy" not in _fields(form)
+
+
+def test_eliminations_travel_in_the_group_note(client):
+    """本轮淘汰 left the rows: the counts are a reading of the group, not a second value
+    beside every knob, so they print inside the header note."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    for key in ("hard", "safety"):
+        group = groups[key]
+        assert group["detail"].count("本轮淘汰：") == 1
+        assert all(f["drop_count"] is None for f in group["fields"])
+
+
+def test_the_scan_reading_names_each_scanner_and_keeps_it_off_the_row():
+    """The four switches carry no numbers any more: what each scanner fed the round is a
+    reading, and it reads in the group note."""
+    from app.api.v1 import forms
+    from app.api.v1.schemas import FieldOut
+
+    chain = config.chain(ARC)
+    built = forms.build(
+        chain,
+        {
+            "sources": [{"name": "gmgn", "count": 119}, {"name": "radardex", "count": 3025}],
+            "universe": 3630,
+        },
+        {},
+    )
+    groups = {g["key"]: g for b in built["blocks"] for g in b["groups"]}
+    raw = next(f for f in groups["output"]["fields"] if f["key"] == "pipeline.scan_sources")
+    field = FieldOut.model_validate(raw)
+    assert field.drop_count is None
+    assert all(c.count is None for c in field.checks)
+    assert groups["output"]["detail"].splitlines()[0] == (
+        "本轮扫描源：GMGN 活跃榜 119 · RadarDEX 发射台 3,025；去重后进入漏斗 3,630 个。"
+    )
+
+
+def test_the_block_weights_live_in_the_notes_not_beside_the_titles(client):
+    """占 55% / 占 45% are gone from the block headers. Each weight is stated in the note of
+    the group that owns its knob, and the page header still spells the split out; 运行 never
+    scored, so it says nothing at all."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    assert not any("weight" in block for block in form["blocks"])
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    assert groups["quality"]["detail"].startswith("链上质量占综合分 55%。")
+    assert groups["scoring"]["detail"].startswith("链下调研占综合分 45%。")
+    bar = "".join(run["text"] for run in form["note_bar"])
+    assert "链上质量 55%" in bar and "链下调研 45%" in bar
+
+def test_the_group_readings_left_the_page_for_the_note(client):
+    """漏斗, 提示不淘汰 and 本轮违规 are one-click readings now: the group draws no
+    trailing line, and every one of them is in the header's 说明."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    hard, safety = groups["hard"], groups["safety"]
+    assert hard["note"] == "" and "漏斗：扫描" in hard["detail"]
+    assert safety["note"] == ""
+    assert "提示不淘汰：mintable、blacklist、pausable、is_proxy" in safety["detail"]
+    assert "本轮违规：" in safety["detail"]
 
 
 def test_lexicon_updated_date_comes_from_the_registry_file(tmp_path):
