@@ -38,9 +38,6 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .theme-sw button.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
 .st{margin-top:8px;font-family:var(--mono);font-size:10.5px;color:var(--muted);line-height:1.7}
 .st b{color:var(--ok-fg);font-weight:600}
-.ghost{display:block;width:100%;padding:7px 10px;background:var(--surface);border:1px solid var(--border);
-  font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--fg);cursor:pointer;text-align:left}
-.ghost:hover{background:var(--surface-warm);border-color:var(--muted-2)}
 
 /* ---------- topbar ---------- */
 .main{flex:1;min-width:0}
@@ -48,30 +45,31 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
 .topbar h1,.params-head h2{font-size:15px;font-weight:600;letter-spacing:-.01em}
 .bhead{display:flex;align-items:center;border-bottom:1px solid var(--hair);background:var(--surface)}
-.batch{display:flex;align-items:center;gap:6px;padding:7px 14px;border-right:1px solid var(--hair);font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-.batch b{color:var(--fg);font-weight:600}
+.batch{display:flex;align-items:center;gap:6px;padding:7px 14px;border-right:1px solid var(--hair);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.batch b{color:var(--muted);font-weight:400}
 .step{display:inline-flex;align-items:center;justify-content:center;width:var(--ctrl-h);height:var(--ctrl-h);
   border:1px solid var(--border);background:var(--surface);cursor:pointer;
   font-family:var(--mono);font-size:11.5px;line-height:1;color:var(--muted)}
 .step:hover{border-color:var(--accent);color:var(--accent-fg)}
 .acts{display:flex;gap:8px;margin-left:auto}
 .funnel{display:flex;align-items:center;gap:7px;padding:7px 16px}
-.funnel span{font-size:10.5px;color:var(--muted)}
-.funnel b{font-family:var(--mono);font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}
-.funnel i{font-style:normal;font-size:10.5px;color:var(--muted-2)}
-.funnel .fnote{font-style:normal;margin-left:9px;font-size:10.5px;color:var(--muted)}
+/* One register for the whole strip (2026-09-28, user). The funnel used to shout its four
+   numbers - 11.5px/600 in --fg, a step louder than the labels around them - while
+   已判定 / 未判定 right beside it stayed a flat 10.5px --muted reading. The strip is one
+   sentence about one round, so labels, numbers, arrows and the note all read alike.
+   The round label joined last (2026-09-28, user): it was the one entry left at 11.5px/600
+   in --fg, which made the date the loudest thing in a strip whose point is the funnel. */
+.funnel span,.funnel b,.funnel i,.funnel .fnote{font-size:10.5px;font-weight:400;
+  font-style:normal;color:var(--muted)}
+.funnel b{font-variant-numeric:tabular-nums}
+.funnel .fnote{margin-left:9px}
 .btn{display:inline-flex;align-items:center;justify-content:center;height:var(--ctrl-h);padding:0 12px;
   border:1px solid var(--accent);background:var(--accent);color:var(--accent-on);font-family:var(--mono);font-size:11.5px;
   line-height:1;letter-spacing:.04em;cursor:pointer;flex:0 0 auto;white-space:nowrap}
 .btn:hover{background:var(--accent-hover)}
 .btn.sec{background:var(--surface);color:var(--fg);border-color:var(--border)}
 .btn.sec:hover{border-color:var(--fg)}
-.btn.hot{background:var(--warn);border-color:var(--warn);color:var(--accent-on)}
-.btn.hot:hover{background:var(--warn-hover)}
 
-.changebar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--hair);
-  background:var(--bg);font-family:var(--mono);font-size:11.5px;overflow:hidden}
-.changebar .lbl{font-size:10.5px;letter-spacing:.12em;color:var(--muted)}
 .chg{border:1px solid var(--border);padding:2px 7px;white-space:nowrap}
 .chg.in{border-color:var(--ok-border);color:var(--ok-fg)}
 .chg.out{border-color:var(--danger-border);color:var(--danger-fg)}
@@ -89,10 +87,6 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .head-r{margin-left:auto;flex:0 0 auto;text-align:right;display:flex;align-items:baseline;gap:5px}
 .score{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.02em}
 .score-label{font-size:10.5px;color:var(--muted);white-space:nowrap}
-.card-sub{padding:0 12px 8px;font-size:11.5px;color:var(--muted);height:34px;overflow:hidden;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.card-sub b{color:var(--fg)}
-.card-sub .sep{margin:0 5px;color:var(--muted-2)}
 .card-id{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-family:var(--mono);font-size:10.5px;
   color:var(--muted);min-width:0}
 .ca{border:1px solid var(--hair);padding:2px 6px;color:var(--fg)}
@@ -122,15 +116,6 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .sb-lab b{font-weight:600;color:var(--fg)}
 .sb-lab i{font-family:var(--mono);font-style:normal;font-size:11.5px;font-variant-numeric:tabular-nums;
   color:var(--fg)}
-.sb-lab em{font-style:normal;font-family:var(--mono);font-size:9.5px}
-.blk-h{display:flex;align-items:baseline;gap:6px;font-size:10.5px;font-weight:600;letter-spacing:.02em;
-  margin:0 0 7px;padding-bottom:5px;border-bottom:1px solid var(--border)}
-.blk-h .w{font-family:var(--mono);font-size:9.5px;font-weight:400;letter-spacing:.06em;color:var(--muted)}
-.blk-h .v{margin-left:auto;font-family:var(--mono);font-size:12.5px;font-weight:600;
-  font-variant-numeric:tabular-nums}
-.sub-h{font-size:9.5px;color:var(--muted);letter-spacing:.02em;margin:8px 0 3px}
-.sub-h:first-of-type{margin-top:0}
-.sub-en{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--muted);margin-left:5px}
 /* The chain-data block folds away. The card leads with the verdict and the scorebar; the
    quality table, the safety rows, the pool list and the holder table are one click behind
    it, which is what keeps five cards readable side by side. */
@@ -140,30 +125,15 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 details[open] .sec-sum:before{content:'-'}
 .sec-sum .sec-h{margin-bottom:0}
 .sec-sum:hover .sec-h{color:var(--accent-fg)}
-.sec-hint{font-family:var(--mono);font-size:9.5px;font-weight:400;letter-spacing:.14em;color:var(--muted)}
 .sec-body{margin-top:7px}
 .sec-quality .kv-grid{min-height:106px}
-.sec-quality .deltas{min-height:22px}
 .sec-quality .safety{min-height:126px;margin-top:5px}
-.sec-product{min-height:190px}
-.pmeta{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
-.ptag{flex:1;font-size:11.5px;line-height:1.5}
 .ppair{display:flex;align-items:baseline;gap:16px;padding:5px 0;
   border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
 .pp{display:flex;align-items:baseline;gap:3px;font-size:10.5px;color:var(--muted)}
 .pp i{font-family:var(--mono);font-style:normal;font-size:12.5px;font-weight:600;color:var(--fg);
   font-variant-numeric:tabular-nums}
 .pp em{font-style:normal;font-family:var(--mono);font-size:9.5px}
-.pp-src{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--muted)}
-.pconcl{font-family:var(--serif);font-size:12.5px;line-height:1.7;margin:7px 0 0;color:var(--fg-2)}
-.pempty{font-size:11.5px;color:var(--muted);line-height:1.7}
-.plex{margin-top:8px;border-top:1px solid var(--hair)}
-.plex summary{cursor:pointer;list-style:none;padding:6px 0 0;font-size:10.5px;color:var(--accent-fg)}
-.plex summary::-webkit-details-marker{display:none}
-.plex summary:before{content:'+ ';font-family:var(--mono)}
-details.plex[open] summary:before{content:'- '}
-.plex summary span{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--muted);margin-left:6px}
-.plex .efield{margin-top:5px}
 .verdict{font-family:var(--serif);font-size:12.5px;line-height:1.72;min-height:108px}
 .kv-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}
 .kv{display:flex;align-items:baseline;gap:6px;padding:5px 0}
@@ -185,7 +155,7 @@ details.plex[open] summary:before{content:'- '}
 /* The box already says "no answer"; the dotted missing-value underline would sit
    inside it and read as a second, contradictory mark. */
 .kv.na .kv-v.hb{border-bottom-style:solid}
-.deltas{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px;min-height:22px}
+.deltas{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
 .delta{font-family:var(--mono);font-size:10.5px;border:1px solid var(--hair);padding:1px 5px;color:var(--muted)}
 .delta i{font-style:normal;margin-right:3px;color:var(--muted)}
 .delta.neg{color:var(--danger-fg);border-color:var(--danger-border)}
@@ -214,12 +184,12 @@ details.plex[open] summary:before{content:'- '}
 .det-sum::-webkit-details-marker{display:none}
 .det-sum:before{content:'+';font-family:var(--mono);color:var(--accent-fg)}
 details[open] .det-sum:before{content:'-'}
-.det-sum span{font-family:var(--mono);font-size:9.5px;font-weight:400;letter-spacing:.1em;color:var(--muted)}
-.det-sum:hover{background:var(--surface)}
+.det-sum:hover{background:var(--surface);color:var(--accent-fg)}
 .dsec{padding:8px 12px;border-top:1px solid var(--hair)}
-.dsec-h{font-size:10.5px;margin-bottom:4px;color:var(--fg)}
+.dsec-h{display:flex;align-items:baseline;gap:6px;font-size:10.5px;margin-bottom:4px;color:var(--fg)}
 .dsec-b{font-size:11.5px;color:var(--fg-2);line-height:1.7;white-space:pre-line}
-.dsec-b .note{font-family:var(--serif);font-size:12.5px;line-height:1.75}
+.dsec-badge{font-family:var(--mono);font-size:9px;font-weight:400;letter-spacing:.06em;padding:1px 5px;
+  border:1px solid var(--accent-tint);color:var(--accent-fg)}
 .card-foot{margin-top:auto;padding:9px 12px;border-top:1px solid var(--border);font-family:var(--mono);
   font-size:10.5px;color:var(--muted)}
 
@@ -245,7 +215,6 @@ details[open] .det-sum:before{content:'-'}
 .frow .hint{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:right}
 .frow .val{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--fg)}
 .frow .drop{font-style:normal;margin-left:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-.frow .val.muted{color:var(--muted)}
 .pend,.viol{font-family:var(--mono);font-size:9.5px;padding:0 4px;margin-left:10px;white-space:nowrap}
 .pend{border:1px solid var(--warn-border);color:var(--warn-fg)}
 .viol{border:1px solid var(--danger-border);color:var(--danger-fg)}
@@ -263,9 +232,6 @@ details[open] .det-sum:before{content:'-'}
 .tbl td{padding:4.5px 6px;text-align:right;white-space:nowrap}
 .tbl tr:last-child td{border-bottom:0}
 .tbl tr:nth-child(odd) td{background:var(--surface)}
-.tbl tr.cur td{background:var(--surface-warm)}
-.tbl tr.cur td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
-.cur-mark{font-family:var(--mono);font-size:9.5px;font-weight:600;color:var(--accent-fg)}
 .note-bar{padding:8px 10px;border:1px solid var(--border);background:var(--surface-warm);
   font-size:11.5px;color:var(--fg-2);margin-bottom:12px}
 /* One bar, two jobs: "读取中…" is a note, "保存失败" is not. The failure keeps a colour of
@@ -274,8 +240,7 @@ details[open] .det-sum:before{content:'-'}
 .dirtybar{margin:-4px 0 12px;padding:8px 10px;border:1px solid var(--border);
   background:var(--surface-warm);font-size:11.5px;color:var(--fg-2);line-height:1.65}
 .dirtybar b{color:var(--warn-fg)}
-.dirty-n{font-style:normal;font-family:var(--mono);font-size:9.5px;border:1px solid var(--border);
-  color:var(--fg-2);padding:0 5px;margin-left:8px}
+
 .prow input.num{width:80px;height:var(--ctrl-h);padding:0 6px}
 .prow .unit{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .prow .op{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
@@ -284,6 +249,7 @@ details[open] .det-sum:before{content:'-'}
 .prow .chk input{width:auto;margin:0}
 .prow.wide{flex-wrap:wrap;row-gap:7px}
 .prow.wide .field{flex:1 1 100%;margin-left:128px;flex-wrap:wrap;justify-content:flex-start;gap:14px;row-gap:7px}
+
 /* rows with no trailing column: the value itself is the last column -> hug the right edge */
 .pgroup:not(:has(.drop-n)):not(:has(.drop-x)) .prow .field{padding-left:0;justify-content:flex-end}
 .prow:nth-child(odd){background:var(--surface)}
@@ -301,10 +267,7 @@ details[open] .det-sum:before{content:'-'}
 .prow.dirty .drop-n{display:none}
 .prow.dirty .drop-x{display:inline}
 .drop-n.pending{color:var(--muted);font-size:9.5px}
-.prow.sum{background:var(--surface)}
-.prow.sum>label{font-weight:600}
-.prow.sum .field em{font-style:normal;font-family:var(--mono);font-size:11.5px;font-weight:600}
-.prow.sum .field em.bad{color:var(--danger-fg)}
+
 .runpanel{margin:12px 16px 0;border:1px solid var(--fg);background:var(--surface)}
 .runpanel[hidden]{display:none}
 .runpanel .rp-h{display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--hair);background:var(--surface)}
@@ -315,18 +278,14 @@ details[open] .det-sum:before{content:'-'}
 .runpanel .rp-bar i{display:block;height:100%;background:var(--accent);transform:scaleX(0);transform-origin:left}
 .rp-steps{list-style:none;margin:0;padding:8px 12px 9px}
 .rst{display:flex;align-items:baseline;gap:8px;padding:2.5px 0;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-.rst .rmk{width:7px;height:7px;border:1px solid var(--border);background:var(--surface);align-self:center;flex:0 0 auto}
 .rst b{font-weight:500;color:var(--fg);min-width:104px}
 .rst .rst-r{color:var(--muted);min-width:340px}
 .rst .rst-t{font-style:normal;font-variant-numeric:tabular-nums;margin-left:auto;min-width:52px;text-align:right}
-.rst.run .rmk{background:var(--accent);border-color:var(--accent)}
 .rst.run b{font-weight:600;color:var(--accent-fg)}
 .rst.run .rst-r{color:var(--accent-fg)}
-.rst.done .rmk{background:var(--ok);border-color:var(--ok)}
 .rst.done .rst-r{color:var(--ok-fg)}
 .rst.pending{opacity:.4}
 .runpanel .rp-foot{padding:7px 12px;border-top:1px solid var(--hair);font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--surface)}
-.runpanel.done .rp-steps,.runpanel.done .rp-bar{display:none}
 /* ---------- chain page tabs + params page ---------- */
 .tabs{display:flex;border:1px solid var(--border)}
 .tab{display:flex;align-items:center;height:24px;padding:0 12px;font-family:var(--mono);font-size:11.5px;
@@ -343,10 +302,7 @@ details[open] .det-sum:before{content:'-'}
   border-bottom:1px solid var(--fg)}
 .blk-t b{font-size:12.5px;letter-spacing:-.01em}
 .blk-t>span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--muted)}
-.blk-t em{margin-left:auto}
-.blk-t .w{font-family:var(--mono);font-size:10.5px;border:1px solid var(--border);padding:1px 6px;
-  font-style:normal;color:var(--fg)}
-.blk-t .blk-avg{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+
 .blk-cols{display:grid;gap:12px;align-items:start}
 .blk-col{display:grid;gap:12px;align-items:start;min-width:0}
 .blk-cols.cols3{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
@@ -360,12 +316,6 @@ details[open] .det-sum:before{content:'-'}
 .pgroup-h b{font-size:11.5px}
 .pgroup-h span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--muted)}
 .pgroup-h em{margin-left:0;font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-/* The lexicon only ever grows, so it folds: the header stays as the count line. */
-.lex-group>summary{list-style:none;cursor:pointer}
-.lex-group>summary::-webkit-details-marker{display:none}
-.lex-group>summary::before{content:'+';font-family:var(--mono);font-size:10.5px;color:var(--accent-fg)}
-.lex-group[open]>summary::before{content:'-'}
-.lex-group>summary:hover{background:var(--surface-warm)}
 .prow{display:flex;align-items:center;gap:8px;padding:8px 12px}
 .prow:hover{background:var(--surface)}
 .prow>label{font-size:11.5px;white-space:nowrap;min-width:120px}
@@ -380,11 +330,7 @@ details[open] .det-sum:before{content:'-'}
 .prow .field>.op:first-child+span.unit{margin-left:calc(-6px - 1ch)}
 .prow:not(.wide) .field{order:1}
 .prow:not(.wide) .drop{order:2}
-#card-hard .pgroup-h::after,#card-safety .pgroup-h::after{content:"本轮淘汰";margin-left:auto;font-family:var(--mono);font-size:9.5px;font-style:normal;font-weight:400;color:var(--muted)}
 .diff{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px}
-.diff .cur{color:var(--muted);text-decoration:line-through}
-.diff .arrow{color:var(--muted)}
-.diff .tgt{color:var(--warn-fg)}
 .ok-btn{display:inline-flex;align-items:center;justify-content:center;height:var(--ctrl-h-sm);padding:0 7px;
   border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:var(--mono);
   font-size:11.5px;line-height:1;cursor:pointer;flex:0 0 auto;white-space:nowrap}
@@ -396,44 +342,7 @@ details[open] .det-sum:before{content:'-'}
 .step.demo:hover{color:var(--muted)}
 .pset{padding:8px 12px;border-top:1px solid var(--hair);font-family:var(--mono);font-size:10.5px;
   color:var(--muted);line-height:1.7}
-.note-inline{margin:6px 12px 10px;padding:7px 10px;border:1px solid var(--border);
-  background:var(--surface-warm);font-size:11.5px;color:var(--fg-2)}
+
 .switch{display:inline-flex;align-items:center;height:var(--ctrl-h-sm);padding:0 6px;
   font-family:var(--mono);font-size:10.5px;border:1px solid var(--ok-border);color:var(--ok-fg)}
-.lex-tbl{table-layout:fixed}
-.lex-tbl th:nth-child(1),.lex-tbl td:nth-child(1){width:280px}
-.lex-tbl th:nth-child(2),.lex-tbl td:nth-child(2){width:100px}
-.lex-tbl th:nth-child(3),.lex-tbl td:nth-child(3){width:320px;overflow:hidden;text-overflow:ellipsis}
-.lex-tbl th:nth-child(4),.lex-tbl td:nth-child(4){width:186px}
-.lex-tbl th:nth-child(5),.lex-tbl td:nth-child(5){width:186px}
-.lex-tbl th:nth-child(6),.lex-tbl td:nth-child(6){width:64px}
-.lex-tbl .qmeter{display:flex;align-items:center;gap:7px}
-.meter{display:block;width:96px;height:7px;border:1px solid var(--border);background:var(--surface);flex:0 0 auto}
-.meter i{display:block;height:100%;background:var(--accent)}
-.na-v{color:var(--muted)}
-.lex-tbl th:nth-child(4),.lex-tbl td:nth-child(4),.lex-tbl th:nth-child(5),.lex-tbl td:nth-child(5){text-align:left}
-.lex-tbl th:nth-child(6),.lex-tbl td:nth-child(6){text-align:right}
-.lex-tbl td.ca-cell{color:var(--muted)}
-.lex-tbl tr:hover td{background:var(--surface)}
-.lex-tbl tr.cur:hover td{background:var(--row-cur)}
-.efield{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--hair)}
-.efield:last-child{border-bottom:0}
-.efield label{flex:0 0 58px;font-size:10.5px;color:var(--muted)}
-.efield .ev{flex:1;font-size:11.5px;line-height:1.7;color:var(--fg-2)}
-.efield .ev.mono{font-family:var(--mono);font-size:11.5px}
-.efield .ev.clip{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
-/* Chain detail tables: the pool list and the holder table the chain feed answers with.
-   No rules between rows - the card is already ruled - and every number tabular, so the
-   columns line up without a border doing the work. */
-.srow-v.hblock{display:block;flex:1 1 auto;min-width:0}
-.hsum{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;margin-bottom:3px}
-.hnote{color:var(--muted);font-size:9.5px}
-.htab,.ptab{width:100%;border-collapse:collapse;table-layout:fixed}
-.htab td,.ptab td{padding:1.5px 0;vertical-align:baseline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.htab .hrank{width:18px;color:var(--muted)}
-.htab .haddr{font-variant-numeric:tabular-nums}
-.htab .htags{width:76px;padding-left:6px;color:var(--muted)}
-.htab .hpct{width:56px;padding-left:6px;text-align:right;font-variant-numeric:tabular-nums}
-.ptab .ppair{width:88px;padding-left:6px;color:var(--muted)}
-.ptab .pliq{width:54px;padding-left:6px;text-align:right;font-variant-numeric:tabular-nums}

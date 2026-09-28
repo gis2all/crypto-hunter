@@ -13,23 +13,22 @@ a number into a string by accident.
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ... import config
-from ...core import lexicon as lexicon_rules
 from ...pipeline import run as pipeline_run
 from ...pipeline import schedule
 from ...report import assemble as report_assemble
-from ...report import research
-from ...report.facts import money
 from ...store import db
 from . import forms
-from .schemas import LexiconRowOut, SettingsFormOut, SettingsOut
+from .schemas import SettingsFormOut, SettingsOut
 
 router = APIRouter(prefix="/chains/{chain_id}/settings", tags=["settings"])
 
@@ -47,7 +46,7 @@ def _chain_or_404(chain_id: str) -> dict:
     try:
         return config.chain(chain_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown chain: {chain_id}")
+        raise HTTPException(status_code=404, detail=f"没有这条链：{chain_id}")
 
 
 def _yaml_defaults(chain_id: str) -> dict:
@@ -71,19 +70,37 @@ def _reject_unknown_paths(current: dict, patch: dict, prefix: str = "") -> None:
         head, _, rest = str(key).partition(".")
         path = prefix + head
         if head not in current:
-            raise HTTPException(status_code=422, detail="unknown setting: %s" % path)
+            raise HTTPException(status_code=422, detail="设定里没有「%s」这一项" % path)
         child = current[head]
         if rest:
             if not isinstance(child, dict):
-                raise HTTPException(status_code=422, detail="%s is not a group" % path)
+                raise HTTPException(status_code=422, detail="「%s」不是一个分组" % path)
             _reject_unknown_paths(child, {rest: value})
         elif isinstance(child, dict) != isinstance(value, dict):
-            raise HTTPException(status_code=422, detail="%s is a group" % path)
+            raise HTTPException(status_code=422, detail="「%s」是个分组，不能整组换掉" % path)
         elif isinstance(value, dict):
             _reject_unknown_paths(child, value)
 
 
-def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
+def _deep_merge(base: dict, patch: dict) -> dict:
+    """Merge two already-resolved subtrees structurally, not by key.
+
+    `{**base, **patch}` replaces a whole group the moment the group's name repeats, so
+    patching `...factor_weights.liquidity` and `...factor_weights.bundling` in one request
+    used to keep only the last one. Deep merge is the only honest reading of two leaves
+    that land in the same group.
+    """
+    out = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _resolve_blanks(current: dict, patch: dict, prefix: str = "",
+                    labels: dict[str, str] | None = None) -> dict:
     """Read a blank box: no value where that is a legal answer, a refusal where it is not.
 
     holders_max ships blank because no ceiling is a real answer, and a band's upper box
@@ -92,6 +109,8 @@ def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
     used to surface as a 500 an hour later. So the YAML default decides - a numeric knob
     that ships with a number refuses a blank, and a knob that ships empty takes one. Text
     and list knobs are left alone: an empty credential is a legitimate thing to save.
+    `labels` is the page's own wording for each key (`forms.field_labels`), so the refusal
+    names the box ("流动性") instead of the path this function happens to walk.
     """
     out: dict = {}
     for key, value in (patch or {}).items():
@@ -100,35 +119,75 @@ def _resolve_blanks(current: dict, patch: dict, prefix: str = "") -> dict:
         here = current.get(head)
         if rest:
             child = _resolve_blanks(here if isinstance(here, dict) else {}, {rest: value},
-                                   path + ".")
+                                   path + ".", labels)
             merged = out.get(head)
-            out[head] = {**(merged if isinstance(merged, dict) else {}), **child}
+            out[head] = _deep_merge(merged if isinstance(merged, dict) else {}, child)
             continue
         numeric = isinstance(here, (int, float)) and not isinstance(here, bool)
         if value in (None, "") and numeric:
-            raise HTTPException(status_code=422, detail="%s 不能留空" % path)
+            raise HTTPException(status_code=422,
+                                detail="「%s」不能留空：这个格子必须有个数"
+                                       % (labels or {}).get(path, path))
         elif value in (None, "") and here is None:
             out[head] = None
         elif isinstance(value, dict) and isinstance(here, dict):
-            out[head] = _resolve_blanks(here, value, path + ".")
+            out[head] = _resolve_blanks(here, value, path + ".", labels)
         else:
             out[head] = value
     return out
 
 
-def _validate(payload: dict) -> dict:
+def _pct(value: Any) -> str:
+    """A weight the way the page prints it: 20, not 20.0."""
+    number = float(value)
+    return str(int(number)) if number == int(number) else "%.1f" % number
+
+
+def _boxes(weights: dict, path: str, labels: dict[str, str]) -> str:
+    """The five boxes as they stand, named the way the page names them.
+
+    A 422 that only says "must sum to 100" leaves the operator adding five numbers by
+    hand; naming the rows and printing each one turns it into "move this box". The labels
+    come from the page's own model (`forms.field_labels`), so the error and the row above it
+    cannot read differently (C-003).
+    """
+    return " ｜ ".join("%s %s%%" % (labels.get(path + key, key), _pct(value))
+                      for key, value in weights.items())
+
+
+def _validate(payload: dict, labels: dict[str, str]) -> dict:
     scoring = (payload.get("pipeline") or {}).get("scoring") or {}
     on_weight = scoring.get("onchain_weight")
-    prod_weight = scoring.get("product_weight")
+    prod_weight = scoring.get("offchain_weight")
     if on_weight is not None and prod_weight is not None:
-        if float(on_weight) + float(prod_weight) != 100:
-            raise HTTPException(status_code=422, detail="onchain_weight + product_weight must equal 100")
+        total = float(on_weight) + float(prod_weight)
+        if total != 100:
+            raise HTTPException(
+                status_code=422,
+                detail="链上质量权重 ＋ 链下调研权重必须等于 100%%，当前 %s%%"
+                       "（链上质量 %s%% ＋ 链下调研 %s%%）"
+                       % (_pct(total), _pct(on_weight), _pct(prod_weight)),
+            )
     weights = scoring.get("onchain_factor_weights")
     factors = scoring.get("onchain_factors")
     if factors is not None and len(factors) != 5:
-        raise HTTPException(status_code=422, detail="onchain_factors must list exactly 5 factors")
+        raise HTTPException(status_code=422,
+                            detail="链上质量的因子要正好 5 个，当前 %d 个" % len(factors))
     if weights is not None and sum(float(v) for v in weights.values()) != 100:
-        raise HTTPException(status_code=422, detail="onchain factor weights must sum to 100")
+        raise HTTPException(
+            status_code=422,
+            detail="链上质量五项权重合计要等于 100%%，当前 %s%%（%s）"
+                   % (_pct(sum(float(v) for v in weights.values())),
+                      _boxes(weights, "pipeline.scoring.onchain_factor_weights.", labels)),
+        )
+    off_weights = scoring.get("offchain_factor_weights")
+    if off_weights is not None and sum(float(v) for v in off_weights.values()) != 100:
+        raise HTTPException(
+            status_code=422,
+            detail="链下调研五项权重合计要等于 100%%，当前 %s%%（%s）"
+                   % (_pct(sum(float(v) for v in off_weights.values())),
+                      _boxes(off_weights, "pipeline.scoring.offchain_factor_weights.", labels)),
+        )
     return payload
 
 
@@ -169,12 +228,13 @@ def get_settings(chain_id: str) -> dict:
 
 @router.put("", response_model=SettingsOut)
 def put_settings(chain_id: str, body: SettingsIn) -> dict:
-    _chain_or_404(chain_id)
+    chain = _chain_or_404(chain_id)
     current, _meta = effective_payload(chain_id)
     _reject_unknown_paths(current, body.patch)
-    patch = _resolve_blanks(_yaml_defaults(chain_id), body.patch)
+    labels = forms.field_labels(chain)
+    patch = _resolve_blanks(_yaml_defaults(chain_id), body.patch, labels=labels)
     merged = config.sync_schedule(config.merge_patch(current, patch))
-    _validate(merged)
+    _validate(merged, labels)
     conn = db.connect()
     try:
         latest = conn.execute(
@@ -249,52 +309,10 @@ def get_form(chain_id: str) -> dict:
                 {"onchain": c.get("onchain"), "product": c.get("product"), "total": c.get("score")}
                 for c in scores
             ]
-        lexicon_size = conn.execute(
-            "SELECT COUNT(*) AS n FROM lexicon WHERE chain_id = ?", (chain_id,)
-        ).fetchone()["n"]
-        lexicon_updated = conn.execute(
-            "SELECT MAX(updated_at) AS t FROM lexicon WHERE chain_id = ?", (chain_id,)
-        ).fetchone()["t"]
-        # Every entry, so the page can say how many are past their refresh rules today. Read
-        # against the settings this chain is about to run with, not against the ones it ran
-        # with last: the question the row answers is "what would this round rewrite".
-        lexicon_rows = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT ca, updated_at, baseline_mcap, baseline_holders FROM lexicon"
-                " WHERE chain_id = ?", (chain_id,)
-            ).fetchall()
-        ]
-        lexicon_research = {
-            str(r["research_state"]): int(r["n"] or 0)
-            for r in conn.execute(
-                "SELECT COALESCE(research_state, 'none') AS research_state, COUNT(*) AS n"
-                " FROM lexicon WHERE chain_id = ? GROUP BY research_state", (chain_id,)
-            ).fetchall()
-        }
-        if batch:
-            selected = [c["ca"] for c in scores]
-            placeholders = ",".join("?" for _ in selected) or "''"
-            lexicon_hit = (
-                conn.execute(
-                    "SELECT COUNT(*) AS n FROM lexicon WHERE ca IN (%s)" % placeholders
-                    , tuple(selected)
-                ).fetchone()["n"]
-                if selected
-                else 0
-            )
-        else:
-            lexicon_hit = 0
     finally:
         conn.close()
 
     lp_unknown = [c["sym"] for c in scores if "未判定" in (c["safety"]["lp"]["label"])]
-    lex_cfg = (payload.get("pipeline") or {}).get("lexicon") or {}
-    now = datetime.now().astimezone()
-    stale = sum(
-        1 for row in lexicon_rows
-        if lexicon_rules.due(row, {}, lex_cfg, now).action == "rewrite"
-    )
     totals = {
         "universe": (run or {}).get("scanned") or 0,
         "candidates": (run or {}).get("candidates") or 0,
@@ -306,19 +324,9 @@ def get_form(chain_id: str) -> dict:
             [m["product"] for m in measured if m.get("product") is not None]
         ),
         "total_avg": mean([m["total"] for m in measured if m.get("total") is not None]),
-        "lexicon_size": lexicon_size,
-        "lexicon_hit": lexicon_hit,
-        "lexicon_updated": lexicon_updated,
-        "lexicon_stale": stale,
-        "lexicon_research": "已重档 %d ／ 待跑 %d ／ 失败 %d" % (
-            lexicon_research.get("done", 0),
-            lexicon_research.get("queued", 0) + lexicon_research.get("running", 0),
-            lexicon_research.get("failed", 0),
-        ),
         "last_batch": _last_batch_text(batch),
         "sources": (batch or {}).get("sources") or [],
         "run_status": _run_status(run, chain),
-        "copy_from": _copy_from(chain_id),
         "lp_unjudged_warn": ("入选未判定 %d" % len(lp_unknown)) if lp_unknown else "",
         "safety_warn": (
             "本轮违规：入选标的 LP 未判定 —— " + " · ".join(lp_unknown)
@@ -327,20 +335,21 @@ def get_form(chain_id: str) -> dict:
     }
 
     built = forms.build({**chain, **payload}, totals, rule_counts)
+    scoring = ((chain.get("pipeline") or {}).get("scoring") or {})
     # The note bar is the one settings sentence that carries emphasis in the frozen
     # prototype (both weights and the three measured averages are bold), so it ships as
     # runs instead of a flat string.
     note_bar = [
         {"kind": "text", "text": "综合分 = "},
-        {"kind": "bold", "text": f"链上质量 {_weight(built, 'onchain')}%"},
+        {"kind": "bold", "text": f"链上质量 {scoring.get('onchain_weight', 55)}%"},
         {"kind": "text", "text": " + "},
-        {"kind": "bold", "text": f"赛道产品 {_weight(built, 'product')}%"},
+        {"kind": "bold", "text": f"链下调研 {scoring.get('offchain_weight', 45)}%"},
         {
             "kind": "text",
             "text": f"，下面按这两块分。 本轮入选 {totals['selected']} 个的实测：链上质量均值 ",
         },
         {"kind": "bold", "text": _fmt(totals["onchain_avg"])},
-        {"kind": "text", "text": " · 赛道产品均值 "},
+        {"kind": "text", "text": " · 链下调研均值 "},
         {"kind": "bold", "text": _fmt(totals["product_avg"])},
         {"kind": "text", "text": " → 综合分均值 "},
         {"kind": "bold", "text": _fmt(totals["total_avg"])},
@@ -359,24 +368,11 @@ def get_form(chain_id: str) -> dict:
             "历史批次按当时口径归档、不追溯重算。"
         ),
         "dirty_hint": (
-            "各卡片的淘汰数已置灰、标「待重算」。点右上「立即运行」就用当前这套参数真跑一轮，"
+            "淘汰数要重跑这一轮才会刷新。点右上「立即运行」就用当前这套参数真跑一轮，"
             "跑完即视为保存生效；只想存参数、等下一个自动时刻，按「保存并生效」。"
         ),
         "blocks": built["blocks"],
         "totals": totals,
-        "lexicon": _lexicon_rows(chain_id, [c["ca"] for c in scores]),
-        # The reading rules that used to sit under the lexicon table. They name the two
-        # score columns, the conversion and the badge, so the weight comes from the same
-        # place the block header reads it - one number on the page, one place to change it.
-        "lexicon_note": (
-            "「本轮」是这次入选里命中它的那几个。两列都是 0–5 的原始判断分；"
-            "综合分里 %s%% 的赛道产品分按（叙事贴合 + 产品完整度）÷ 10 × 100 折算，"
-            "改了下一轮就按新分算。\n"
-            "每行的灰字是档案的新鲜度：写于多久前、按「词条库状态」里的刷新条件今天"
-            "该不该重写、以及发布后的重档调研跑到哪一步。标的下的链接是重档时实际"
-            "读过的页面。\n"
-            "不在库里的新标先是「待入库」，LLM 补写完整后才入库并参与打分。"
-        ) % _weight(built, "product"),
         # The two口径 this list used to carry are decided and implemented - the percentile
         # denominator in core/scoring.py (the round's hard survivors) and the elimination
         # counts in core/funnel.py (cumulative, in the settings page's own order). What is
@@ -397,25 +393,15 @@ def _run_status(run: dict | None, chain: dict) -> str:
     return "扫描器正常 · 下轮 %02d:00" % upcoming[0]
 
 
-def _copy_from(chain_id: str) -> str | None:
-    """The other radar this chain can copy its settings from.
-
-    A chain that is declared but not collecting yet still carries a full set of
-    defaults, so it is a usable copy source - only an undeclared chain is not.
-    """
-    others = [c["label"] for c in config.load_chains().values() if c["id"] != chain_id]
-    return others[0] if others else None
-
-
-def _weight(built: dict, key: str) -> str:
-    for block in built["blocks"]:
-        if block["key"] == key:
-            return block["weight"].replace("占 ", "").replace("%", "")
-    return ""
 
 
 def _fmt(value: float | None) -> str:
-    return "—" if value is None else "%.1f" % value
+    """A measured average, as the settings page prints it: a whole number.
+
+    `totals` keeps the float - only the sentence rounds - and it rounds half up, the
+    rule the card scores follow, so a mean printed here and the same number printed on
+    a card can never disagree by a half."""
+    return "—" if value is None else "%d" % math.floor(value + 0.5)
 
 
 def _last_batch_text(batch: dict | None) -> str:
@@ -426,77 +412,6 @@ def _last_batch_text(batch: dict | None) -> str:
     clock = re.search(r"\d{1,2}:\d{2}", label)
     return "最近一次 %s · 入选 %d" % (
         clock.group(0) if clock else label, batch["funnel"]["selected"])
-
-
-def _last_mcap(chain_id: str) -> dict[str, float]:
-    """What each token was worth the last time a round saw it.
-
-    Read from the snapshots rather than the lexicon row: the row only carries its
-    baseline, which is the moment the entry was filed, and an entry written a week ago
-    would still read at its filing size. Snapshots without a market cap are skipped -
-    most of them are the scan pass, which never priced anything - so this is the newest
-    snapshot that could answer, not simply the newest snapshot.
-    """
-    key = "$.market_cap_usd"
-    conn = db.connect()
-    try:
-        rows = conn.execute(
-            "SELECT ca, mcap FROM ("
-            "  SELECT s.ca AS ca,"
-            "         CAST(json_extract(s.metrics_json, ?) AS REAL) AS mcap,"
-            "         ROW_NUMBER() OVER (PARTITION BY s.ca ORDER BY s.created_at DESC)"
-            "           AS rn"
-            "  FROM snapshots s JOIN runs r ON r.id = s.run_id"
-            "  WHERE r.chain_id = ?"
-            "    AND json_extract(s.metrics_json, ?) IS NOT NULL"
-            ") WHERE rn = 1",
-            (key, chain_id, key),
-        ).fetchall()
-    finally:
-        conn.close()
-    return {str(r["ca"]).lower(): r["mcap"] for r in rows}
-
-
-def _lexicon_rows(chain_id: str, current: list[str]) -> list[dict]:
-    conn = db.connect()
-    try:
-        rows = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT ca, symbol, tag, narrative, product, social, concl, review_state,"
-                " updated_at, refresh_reason, baseline_at, research_state, research_note"
-                " FROM lexicon WHERE chain_id = ?"
-                " ORDER BY symbol COLLATE NOCASE",
-                (chain_id,),
-            ).fetchall()
-        ]
-    finally:
-        conn.close()
-    evidence = research.sources_by_ca(chain_id)
-    caps = _last_mcap(chain_id)
-    lex_cfg = (config.chain(chain_id).get("pipeline") or {}).get("lexicon") or {}
-    now = datetime.now().astimezone()
-    hit = set(current)
-    for row in rows:
-        row["current"] = row["ca"] in hit
-        # Same rule as the card and the API row: one function decides what stale means, and
-        # the page only draws its answer.
-        verdict = lexicon_rules.due(row, {}, lex_cfg, now)
-        row["age_hours"] = None if verdict.age_hours is None else round(verdict.age_hours, 1)
-        row["stale"] = verdict.action == "rewrite"
-        row["sources"] = evidence.get(str(row["ca"]).lower(), [])
-        row["mcap"] = money(caps.get(str(row["ca"]).lower()))
-    hit_rank = {ca: index for index, ca in enumerate(current)}
-    rows.sort(
-        key=lambda r: (
-            hit_rank.get(r["ca"], len(hit_rank)),  # this round's picks first, in rank order
-            r["review_state"] != "confirmed",      # then the rest: confirmed before drafts
-            # "~" sorts after every letter, so a file with no symbol yet ends the
-            # table instead of leading it. The frozen prototype orders it the same way.
-            (r["symbol"] or "~").lower(),
-        )
-    )
-    return [LexiconRowOut(**row).model_dump() for row in rows]
 
 
 @router.post("/run", response_model=None)
@@ -523,11 +438,14 @@ def recompute(chain_id: str, body: SettingsIn) -> JSONResponse:
     would produce a diff against a smaller pool than the round actually ran, which is a
     fabricated answer, and worse than no answer.
     """
-    _chain_or_404(chain_id)
+    chain = _chain_or_404(chain_id)
     current, _meta = effective_payload(chain_id)
     _reject_unknown_paths(current, body.patch)
-    _validate(config.merge_patch(current, _resolve_blanks(_yaml_defaults(chain_id),
-                                                          body.patch)))
+    labels = forms.field_labels(chain)
+    _validate(config.merge_patch(current,
+                                 _resolve_blanks(_yaml_defaults(chain_id), body.patch,
+                                                 labels=labels)),
+              labels)
     return JSONResponse(
         status_code=501,
         content={

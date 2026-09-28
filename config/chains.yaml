@@ -48,10 +48,13 @@ chains:
         # 这一条在代码里是默认开启的，写在这里只是让你在设定页看得见、关得掉：
         # 曾经因为老版本的设置里没有这个键，一轮把四千个空壳行全判成「未知=通过」。
         require_market_data: true
-        # 距高回撤：距「历史最高市值」和「主池近 10 日最高价」各回撤 70% 以上即淘汰，两边
-        # 都要成立才算。第一个口径读的是本项目每轮扫描记下的最高市值（免费、覆盖全池），
-        # 只有它先判深才会去问 GeckoTerminal 的日线高点（每个 token 三次限速请求），所以
-        # 平时不花时间。首见、没有历史的币不算「跌下来的币」，直接通过。
+        # 距高回撤：距历史最高点回撤 70% 以上即淘汰。口径是主池的日线全历史高点
+        # （GeckoTerminal，池子有多久读多久），这一个读数跌够就淘汰 —— 另一个读数
+        # （本项目历轮扫描见过的最高市值）只是下界，本身偏浅，只用来在池面读不到时
+        # 报「未判定」，不会单独放行也不会单独拦截。判定分两处：gate 只为自己历史
+        # 已判深的那几个币买池面读数（一次问二十个会被 GeckoTerminal 限流），其余
+        # 由画卡那一遍判 —— 那一遍本来就要为每个入选币读一次主池，跌够当场淘汰并
+        # 顺位补下一个。首见、没有历史的币不算「跌下来的币」，直接通过。
         drawdown_max_pct: -70
         top10_max_pct: 40
         bundling_max_pct: 25
@@ -63,22 +66,14 @@ chains:
         require_verified_source: true
         source_verification_mode: dual
         lp_unjudged_passes: true
-        forbid_dangerous_perms: [mintable, blacklist, pausable, hidden_owner]
+        # 危险权限只留「真能卷走资产」的三条：隐藏所有者、可改持有人余额、可夺回所有权。
+        # mintable / blacklist / pausable / is_proxy 照常读、卡片上照常显示，只是不再当门槛：
+        # 发射台币的 mint 权大多在发射台合约手里，当门槛会连带误杀（UBI 就是这么被砍的）。
+        forbid_dangerous_perms: [hidden_owner, owner_change_balance, can_take_back_ownership]
         honeypot_max_pct: 45
-      # 词条档案的新鲜度。每个档案记着「建档时的市值 / 持有人」，入选时按这几条判断
-      # 要不要重写：过期、市值波动、持有人增加，任一命中就重写；都没命中且在跳过窗口
-      # 内才复用。刷新条件优先于跳过窗口：5 小时涨 40% 的币正是最该重读的时候。
-      # 跳过窗口只管「用本轮事实重写」这一条路；发布后的重档调研是另一条路，它读的是
-      # 官网／X／GitHub 这类外部证据，每次重写档案都会把 research_state 归零，
-      # 于是新的档案照样会被调研一次。
-      lexicon:
-        expire_days: 2          # 超过这个天数未重写 = 过期
-        mcap_move_pct: 40       # 市值较建档波动超过这个百分比 = 重写
-        holders_gain_pct: 40    # 持有人较建档增加超过这个百分比 = 重写
-        rewrite_skip_hours: 6   # 这个小时内刚重写过、且没触发上面任何一条 = 直接复用
       scoring:
         onchain_weight: 55
-        product_weight: 45
+        offchain_weight: 45
         onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
         onchain_factor_weights:
           liquidity: 20
@@ -86,10 +81,14 @@ chains:
           holders: 20
           top10_concentration: 20
           bundling: 20
-        unlisted_policy: pending_review
+        offchain_factor_weights:
+          f_completeness: 20
+          f_substance: 20
+          f_team: 20
+          f_narrative: 20
+          f_community: 20
     report:
       per_round: 5
-      research_enabled: true    # 发布后异步跑深度调研、回填词条档案
       push_target: telegram
       push_content: [cards, table]
     alerts:
@@ -134,20 +133,9 @@ chains:
         lp_unjudged_passes: true
         forbid_dangerous_perms: [mintable, blacklist, pausable, hidden_owner]
         honeypot_max_pct: 45
-      # 词条档案的新鲜度。每个档案记着「建档时的市值 / 持有人」，入选时按这几条判断
-      # 要不要重写：过期、市值波动、持有人增加，任一命中就重写；都没命中且在跳过窗口
-      # 内才复用。刷新条件优先于跳过窗口：5 小时涨 40% 的币正是最该重读的时候。
-      # 跳过窗口只管「用本轮事实重写」这一条路；发布后的重档调研是另一条路，它读的是
-      # 官网／X／GitHub 这类外部证据，每次重写档案都会把 research_state 归零，
-      # 于是新的档案照样会被调研一次。
-      lexicon:
-        expire_days: 2          # 超过这个天数未重写 = 过期
-        mcap_move_pct: 40       # 市值较建档波动超过这个百分比 = 重写
-        holders_gain_pct: 40    # 持有人较建档增加超过这个百分比 = 重写
-        rewrite_skip_hours: 6   # 这个小时内刚重写过、且没触发上面任何一条 = 直接复用
       scoring:
         onchain_weight: 55
-        product_weight: 45
+        offchain_weight: 45
         onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
         onchain_factor_weights:
           liquidity: 20
@@ -155,10 +143,14 @@ chains:
           holders: 20
           top10_concentration: 20
           bundling: 20
-        unlisted_policy: pending_review
+        offchain_factor_weights:
+          f_completeness: 20
+          f_substance: 20
+          f_team: 20
+          f_narrative: 20
+          f_community: 20
     report:
       per_round: 5
-      research_enabled: true    # 发布后异步跑深度调研、回填词条档案
       push_target: telegram
       push_content: [cards, table]
     alerts:

@@ -18,7 +18,17 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 3 added `dexscreener_url` to every snapshot payload. The column-based migrations above
 #: cannot see it (it lives inside `metrics_json`), so this one is keyed on the version the
 #: database was on - see `_backfill_dex_url`.
-SCHEMA_VERSION = 3
+#: 4 replaced the lexicon's two judgement columns with the five off-chain scores, gave it
+#: the round it belongs to, and dropped the cross-round refresh bookkeeping: an entry now
+#: lives for exactly one round.
+#: 5 gave every card block its own text column and dropped the ad-hoc trio (`mech_text`,
+#: `pros`, `cons`): `narr_text` / `prod_text` / `substance_text` / `team_text` / `social`
+#: are the five 链下调研 blocks, in the order the card prints them, and the five `f_*`
+#: judgements beside them are the same five things. 本期点评 retired with them.
+#: 6 collapsed the research pass into the round: research now runs before anything is
+#: written, so the queue-and-restate bookkeeping (`research_state`, `research_note`) is
+#: gone and the lexicon row is written once, already final.
+SCHEMA_VERSION = 6
 
 
 def now_iso() -> str:
@@ -40,15 +50,40 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 #: table that already exists, and the database on this machine is the one that proved it.
 _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("runs", "progress_label", "TEXT"),
-                  ("lexicon", "baseline_mcap", "REAL"),
-                  ("lexicon", "baseline_holders", "INTEGER"),
-                  ("lexicon", "baseline_at", "TEXT"),
-                  ("lexicon", "baseline_safety", "TEXT"),
-                  ("lexicon", "refresh_reason", "TEXT"),
-                  ("lexicon", "research_state", "TEXT NOT NULL DEFAULT 'none'"),
-                  ("lexicon", "research_note", "TEXT"),
+                  ("lexicon", "run_id", "TEXT"),
+                  ("lexicon", "f_completeness", "REAL"),
+                  ("lexicon", "f_substance", "REAL"),
+                  ("lexicon", "f_team", "REAL"),
+                  ("lexicon", "f_narrative", "REAL"),
+                  ("lexicon", "f_community", "REAL"),
+                  ("lexicon", "substance_text", "TEXT"),
+                  ("lexicon", "team_text", "TEXT"),
                   ("tokens", "peak_market_cap_usd", "REAL"),
                   ("tokens", "peak_market_cap_at", "TEXT"))
+
+#: Columns the previous lexicon carried. Nothing reads them, a fresh database never
+#: creates them, and leaving them behind on an old one is a table that lies about what
+#: the code uses - so they are dropped once, on the upgrade that removed their readers.
+#: A SQLite too old to drop a column simply keeps them; nothing depends on either way.
+_DROPPED_COLUMNS = (("lexicon", "baseline_mcap"),
+                    ("lexicon", "baseline_holders"),
+                    ("lexicon", "baseline_at"),
+                    ("lexicon", "baseline_safety"),
+                    ("lexicon", "refresh_reason"),
+                    ("lexicon", "review_state"),
+                    ("lexicon", "narrative"),
+                    ("lexicon", "product"),
+                    ("lexicon", "mech_text"),
+                    ("lexicon", "pros"),
+                    ("lexicon", "cons"),
+                    ("lexicon", "research_state"),
+                    ("lexicon", "research_note"))
+
+#: Indexes over columns that are gone. SQLite refuses to drop a column an index still names
+#: ("error in index ... after drop column"), and that refusal is caught below - so without
+#: this the column would quietly survive on the one database that had the index. DROP INDEX
+#: IF EXISTS is idempotent, so this runs on every start like the rest of the migration.
+_DROPPED_INDEXES = ("idx_lexicon_state",)
 
 
 def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
@@ -65,11 +100,15 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
         if column not in have:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, kind))
             fresh.add((table, column))
-    # Only on the round that adds the column: the rows that already exist need the
-    # verdict they were written against, or the refresh rule that reads it never fires.
-    if ("lexicon", "baseline_safety") in fresh:
-        filled = _backfill_safety_baseline(conn)
-        log.info("lexicon: stamped %d entries with the safety verdict they were written against", filled)
+    for name in _DROPPED_INDEXES:
+        conn.execute("DROP INDEX IF EXISTS %s" % name)
+    for table, column in _DROPPED_COLUMNS:
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+        if column in have:
+            try:
+                conn.execute("ALTER TABLE %s DROP COLUMN %s" % (table, column))
+            except sqlite3.Error:  # pragma: no cover - old SQLite, nothing depends on it
+                pass
     if ("tokens", "peak_market_cap_usd") in fresh:
         seeded = _backfill_token_peaks(conn)
         log.info("tokens: seeded %d peak market caps from the snapshot history", seeded)
@@ -80,36 +119,6 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     if own:
         conn.close()
     return conn
-
-
-def _backfill_safety_baseline(conn: sqlite3.Connection) -> int:
-    """Stamp existing entries with the safety verdict they were written against.
-
-    A comparison against a column nobody ever filled never fires, so the column has to
-    arrive with history rather than empty. The verdict is not guessed: it is read back off
-    the snapshot nearest that entry's own timestamp, which is the reading the writer had in
-    hand while it wrote those words. A row with no snapshot from its own era keeps a blank,
-    and a blank never fires - the honest answer when the evidence is gone.
-
-    Imported here rather than at module level: this is the data layer, and the wording of a
-    verdict belongs to `core.lexicon`. The import is one-way, so there is no cycle.
-    """
-    from ..core.lexicon import safety_signature
-
-    rows = conn.execute("SELECT ca, updated_at FROM lexicon").fetchall()
-    filled = 0
-    for row in rows:
-        snap = conn.execute(
-            "SELECT safety_json FROM snapshots WHERE ca = ? AND created_at <= ?"
-            " ORDER BY created_at DESC LIMIT 1", (row["ca"], row["updated_at"])
-        ).fetchone()
-        signature = safety_signature(json.loads(snap["safety_json"] or "{}")) if snap else ""
-        if not signature:
-            continue
-        conn.execute("UPDATE lexicon SET baseline_safety = ? WHERE ca = ?",
-                     (signature, row["ca"]))
-        filled += 1
-    return filled
 
 
 def _backfill_token_peaks(conn: sqlite3.Connection) -> int:

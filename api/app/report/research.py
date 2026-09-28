@@ -1,73 +1,101 @@
-"""The heavy pass: after the publish, go and read the outside world.
+"""The reading pass: the outside world in, one entry per token out.
 
-The cheap draft writes an entry out of what the round already knows, which is market facts
-and a safety block - nothing about what the thing actually is. That is why its prompt can
-only say "do not invent", and why the entry ages: the facts move and the words do not.
+This is where an entry comes from, and the only place. It runs inside the round, before
+the score, because the entry is 45% of that score as well as the words on the card - a
+card written from one judgement beside a score computed from another is two claims about
+one token, and the judge stage of `pipeline/decide.py` says so where the order is set.
 
-So a second pass reads the project itself. It runs after the publish on purpose. Publishing
-is a deadline; reading a website is not. The round reaches `sent` in seconds and this walks
-it to `researched` in the background, which is what that state was declared for long before
-anything wrote it.
+None of it is carried over from an earlier round: the facts move and the words do not, so
+every judged token is read again every round.
 
-Per token: up to `MAX_PAGES` outside pages (the site, X, GitHub, docs, TG - whatever the round
-already learned, never a search engine), the text of those pages handed to the model, and the
-entry rewritten from evidence. A page whose HTML comes back as an empty shell - a launchpad
-front end is a title tag and a bundle - is fetched a second time through a reader that renders
-it, because a page nobody could read is indistinguishable, to the model, from a project with
-nothing to say. Same nine fields and same JSON contract as a draft, so an entry has one shape
-whether it came from a draft or from research. The pages are kept in
-`lexicon_sources` so the archive can point at what the words were read off.
+Per token: up to `MAX_PAGES` outside pages, the text of those pages handed to the model,
+and the entry written from evidence. The pages are the round's own links plus the ones a
+search confirms, and the two are combined rather than chosen between: the sources know
+about tokens no search can find, a search finds what the sources never listed, and both
+kinds of candidate earn their place by the same read. The search is asked for every token,
+including the ones the sources already gave a handle to: a handle a source published is a
+candidate, not a fact, and reading the account it names is what turns it into a tier - a
+search is what finds the account the source got wrong. It costs a subprocess and no tokens.
+A search that is unavailable costs the card its extra material and nothing else. A page
+whose HTML comes back as an empty shell - a launchpad front end is a title tag and a
+bundle - is fetched a second time through a reader that renders it, because a page nobody
+could read is indistinguishable, to the model, from a project with nothing to say. The
+pages are kept in `lexicon_sources` so the archive can point at what the words were read
+off.
 
-The reads are side by side: one token's pages are four different hosts, and the tokens of a
-round are independent of each other, so what a pass waits for is one page plus one model
-call rather than the sum of all of them.
+The reads are side by side: one token's pages are four different hosts, and the tokens of
+a round are independent of each other, so what a round waits for is one page plus one model
+call rather than the sum of all of them. The model calls are the half that costs money and
+the half that has a ceiling, so that is the width `CH_RESEARCH_WORKERS` turns, and the
+links are found at their own width before it.
 
-It never blocks a round and it never raises: a token it cannot research keeps the entry it
-has, and its row says `failed` with the reason.
+It never raises for one token: a project that cannot be read or cannot be written about
+leaves that token without an entry, which keeps it out of the ranking rather than filling
+the gap with prose nobody decided. A rejected answer is not one of those cases yet: it
+is asked for once more, with its own rejection quoted back, because a missing judgement
+is a slip to correct rather than a token to drop. The round says so in its own note.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from html import unescape
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .. import llm
+from ..search.base import TweetRow
+from ..search.discover import Discovery, discover
+from ..search.identify import fetch_page
 from ..sources import http
-from ..sources.http import SourceError, UA_HTML
+from ..sources.http import SourceError
 from ..store import db
-from . import draft as draft_stage
 from . import facts
+from . import lexicon
 from .schema import LexiconDraft, validate_lexicon
 
 log = logging.getLogger("crypto-hunter.pipeline")
 
-PROMPT_VERSION = "research.md@4"
+PROMPT_VERSION = "research.md@7"
 
-#: How many outside pages one token gets, and how much of them the model sees. Both are caps
-#: on a cost no round waits for; the four are the kinds a launch actually publishes.
-MAX_PAGES = 4
-MAX_CHARS = 8000
+#: What a rejected answer is told before it is asked again. Its own JSON goes back with it
+#: along with the finding that rejected it, because the validator is the one thing here
+#: that knows which field was missing - and the ask is to correct that answer, not to write
+#: a new one, since a second pass over the same pages is how the same field goes missing
+#: twice. Every rejection this model has produced was bookkeeping of that kind: one of the
+#: five `f_*` judgements left out while the prose beside it was written.
+REPAIR_HEAD = """上一次的回答没有通过校验：
+%s
+
+下面是你上一次的回答：
+%s
+
+按上面列出的问题修正它，重新输出完整的 JSON：结构与上一次完全一样，字段一个都不能少，
+不要输出多余文本。"""
+
+#: How many outside pages one token gets, and how much of them the model sees. Both are
+#: caps on a cost no round waits for, and the eight are what the three ways in add up to:
+#: the account and the site the search proved, the channels the project's own pages point
+#: at, and the round's own links of the kinds a launch publishes.
+MAX_PAGES = 8
+#: The page half of the budget. A page that is too long is a document nobody trimmed, so
+#: the pages are what gets cut - the eight share this between them. Together with
+#: `POST_CHARS`, this is the 30000 characters a round may put in front of the model.
+MAX_CHARS = 15000
+#: The post half, and it is spent differently on purpose: a post that is cut is a claim
+#: without its ending, so whole posts are taken until this runs out rather than each one
+#: being trimmed.
+POST_CHARS = 15000
 #: A page shorter than this after tags are stripped is a login wall or an empty shell, not
 #: evidence. Handing it to the model only invites the model to fill the gap from memory.
 MIN_CHARS = 80
-#: A reader that renders the page before returning it, for the sites whose HTML is an empty
-#: shell. It is a second opinion, not the default: it is slower and rate limited, and most of
-#: what this pass reads is plain HTML that the plain fetch already returns.
-READER_PREFIX = "https://r.jina.ai/"
-#: The reader answers a browser User-Agent with 403 and a plain one with the rendered page -
-#: the same kind of edge rule the GMGN adapter met on the TLS handshake, decided by the header
-#: this time. Same UA the reference implementation fetched it with, not a disguise.
-UA_READER = {"User-Agent": "curl/8.5.0"}
 #: Socials worth fetching, in the order they are tried. Telegram is in the list because its
 #: public preview (`t.me/<name>`) carries the channel title, the member count and the last
 #: posts - the things the reader of a card wants before trusting a community.
 READABLE_SOCIALS = ("twitter", "telegram", "github", "docs")
-#: The states a research pass can leave behind, terminal ones included.
-TERMINAL = ("done", "failed")
 #: What a stored page kind reads as on screen. A kind this build does not know prints as
 #: itself, which is how a new kind stays visible instead of turning into a blank.
 KIND_LABELS = {"website": "官网", "twitter": "X", "github": "GitHub", "docs": "文档",
@@ -79,110 +107,37 @@ KIND_LABELS = {"website": "官网", "twitter": "X", "github": "GitHub", "docs": 
 LINK_WORKERS = 4
 #: How many tokens one pass researches at the same time. The cards in a round are independent
 #: of each other; the one shared resource is the model, so this is the knob to turn down first
-#: when the provider starts answering 429.
-WORKERS = 3
+#: when the provider starts answering 429. It gates the model calls only - the links and the
+#: pages were already found under `SEARCH_WORKERS` - so raising it widens nothing else.
+#:
+#: Measured against this endpoint (2026-09-27, one card's worth of output per call):
+#: four calls in flight took 36.7s wall clock and twelve took 33.6s for three times the
+#: output - per-call latency does not grow with the width, so the phase costs one wave
+#: instead of the sum of them. Twelve was clean, and twenty was clean on short answers
+#: (20/20, no refusals, median 3.7s); the ceiling was never reached. Twelve is also the
+#: width a round needs: it is `enrich_limit`, so the whole judged pool goes in one wave.
+DEFAULT_WORKERS = 12
+
+
+def _workers() -> int:
+    """How many cards one pass researches at once. Read per pass, like the batch size."""
+    raw = os.environ.get("CH_RESEARCH_WORKERS", "").strip()
+    try:
+        return max(1, int(raw or DEFAULT_WORKERS))
+    except ValueError:
+        return DEFAULT_WORKERS
+
+#: How many tokens have their links found at the same time, which is a different width from
+#: `DEFAULT_WORKERS` on purpose. This half is a search subprocess and a few page reads per token: it
+#: costs no tokens and does not queue on the model, so the only limit is the search backend's
+#: patience. Fifteen in flight was measured clean - twenty answered 429 on three of twenty
+#: tokens - and it is also the faster setting, because a batch that ends early leaves workers
+#: idle while the tail finishes.
+SEARCH_WORKERS = 15
 
 _BLOCKS = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
 _MARKUP = re.compile(r"<[^>]+>")
 
-
-def enabled(chain: Mapping[str, Any] | None) -> bool:
-    """Whether this chain researches at all. On by default: it costs the round no time."""
-    return bool(((chain or {}).get("report") or {}).get("research_enabled", True))
-
-
-def queue(chain: Mapping[str, Any], result: Any) -> list[str]:
-    """Line up the round picks for a research pass, and return what was lined up.
-
-    Called from the round thread right after the publish, and it only writes rows: the
-    reading happens on the research worker, so a website that takes thirty seconds cannot
-    make a round take thirty seconds longer. An entry already `done` is left alone - it was
-    read against the same facts, and re-reading the same pages for a token that did not move
-    is the kind of work that makes a pipeline feel expensive.
-    """
-    if not enabled(chain):
-        return []
-    cas = [str(item.ca).lower() for item in (getattr(result, "picked", None) or [])]
-    if not cas:
-        return []
-    marks = ",".join("?" * len(cas))
-    conn = db.connect()
-    try:
-        conn.execute(
-            "UPDATE lexicon SET research_state = 'queued'"
-            " WHERE ca IN (%s) AND COALESCE(research_state, 'none') <> 'done'" % marks,
-            cas,
-        )
-    finally:
-        conn.close()
-    return cas
-
-
-def claim(limit: int = 1) -> list[dict]:
-    """Take up to `limit` queued entries out of the line, one claimant per row.
-
-    The guarded UPDATE is the lock. Two workers - or a restart overlapping one - cannot
-    walk away with the same entry, because the second UPDATE matches nothing and rowcount
-    says so.
-    """
-    conn = db.connect()
-    taken: list[dict] = []
-    try:
-        rows = conn.execute(
-            "SELECT * FROM lexicon WHERE research_state = 'queued'"
-            " ORDER BY updated_at LIMIT ?", (limit,)
-        ).fetchall()
-        for row in rows:
-            cur = conn.execute(
-                "UPDATE lexicon SET research_state = 'running'"
-                " WHERE ca = ? AND research_state = 'queued'", (row["ca"],)
-            )
-            if cur.rowcount:
-                taken.append(dict(row))
-    finally:
-        conn.close()
-    return taken
-
-
-def set_state(ca: str, state: str, note: str | None = None) -> None:
-    """Move one entry along the research states, with the reason when there is one."""
-    conn = db.connect()
-    try:
-        conn.execute(
-            "UPDATE lexicon SET research_state = ?, research_note = ? WHERE ca = ?",
-            (state, (note or None) if note else None, ca),
-        )
-    finally:
-        conn.close()
-
-
-def requeue_running() -> int:
-    """Put back whatever a killed process left at `running`. Returns how many.
-
-    `running` is a claim held in a process memory, so it cannot survive the process. Left
-    alone, those rows would sit there being neither queued nor finished, and the round they
-    belong to would never reach `researched`.
-    """
-    conn = db.connect()
-    try:
-        cur = conn.execute(
-            "UPDATE lexicon SET research_state = 'queued'"
-            " WHERE research_state = 'running'"
-        )
-        return cur.rowcount or 0
-    finally:
-        conn.close()
-
-
-def queued_count() -> int:
-    conn = db.connect()
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM lexicon WHERE research_state = 'queued'"
-        ).fetchone()
-    finally:
-        conn.close()
-    return int(row["n"] or 0)
 
 
 def save_sources(chain_id: str, ca: str, pages: list[dict]) -> None:
@@ -219,34 +174,12 @@ def sources_for(ca: str) -> list[dict]:
     ]
 
 
-def sources_by_ca(chain_id: str) -> dict[str, list[dict]]:
-    """Every evidence page this chain has filed, grouped by CA, newest first per token.
-
-    One query for the whole table, because the archive page asks about a hundred entries at
-    once and a lookup per entry would be a hundred visits to the same file.
-    """
-    conn = db.connect()
-    try:
-        rows = conn.execute(
-            "SELECT ca, kind, url FROM lexicon_sources WHERE chain_id = ?"
-            " ORDER BY fetched_at DESC", (chain_id,)
-        ).fetchall()
-    finally:
-        conn.close()
-    out: dict[str, list[dict]] = {}
-    for row in rows:
-        kind = str(row["kind"] or "")
-        out.setdefault(str(row["ca"]).lower(), []).append(
-            {"kind": kind, "label": KIND_LABELS.get(kind, kind or "来源"), "url": row["url"]})
-    return out
-
-
 def links_for(metrics: Mapping[str, Any]) -> list[tuple[str, str]]:
-    """The pages worth reading for one token, most direct first, capped at `MAX_PAGES`.
+    """The pages the round already learned for one token, most direct first.
 
-    Only what the round already learned. A search engine would be a second data source with
-    its own rules and its own failures; this pass exists to read the project, not to hunt for
-    it, and a wrong URL guessed from a symbol is worse than no page at all.
+    Uncapped on purpose: these are the candidates the search is asked to confirm, and a list
+    that has already been trimmed to `MAX_PAGES` cannot be added to. The cap belongs to
+    `merge_links`, where the reading list is finally decided.
     """
     found: list[tuple[str, str]] = []
     for url in metrics.get("websites") or []:
@@ -266,7 +199,52 @@ def links_for(metrics: Mapping[str, Any]) -> list[tuple[str, str]]:
             continue
         seen.add(key)
         unique.append((kind, url))
-    return unique[:MAX_PAGES]
+    return unique
+
+
+def search_links(chain_id: str, ca: str, symbol: str | None,
+                 known: list[tuple[str, str]], *, search: bool = True) -> Discovery | None:
+    """Read the round's links, and search for the ones the sources never listed.
+
+    Never raises. This runs behind a publish, and a token whose search is unavailable is a
+    token whose card keeps the links the round already had - not a card that failed. A
+    provider that is down, or out of quota, costs the reader the extra material and nothing
+    else.
+    """
+    try:
+        return discover(chain_id, ca, symbol or "", known=known, search=search)
+    except Exception as exc:
+        log.info("search for %s unavailable: %r", ca, exc)
+        return None
+
+
+def merge_links(found: Discovery | None,
+                known: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The confirmed pages first, the harvested ones next, then the round's own.
+
+    Confirmation supersedes but never deletes. A confirmed account replaces an unconfirmed
+    one of the same kind, because two X accounts in one prompt is a question the writer
+    cannot answer; a harvested channel replaces the one a data source listed for the same
+    reason - it is the same channel read off the project's own page; and everything else the
+    round already knew is kept, because those links came out of the token's own metadata
+    and a search that found nothing is not a reason to read less than before.
+    """
+    verified = list(found.official_links) if found is not None else []
+    harvested = list(found.harvested) if found is not None else []
+    merged: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for kind, url in verified + harvested:
+        if url.lower() in seen:
+            continue
+        seen.add(url.lower())
+        merged.append((kind, url))
+    replaced = {kind for kind, _ in merged}
+    for kind, url in known:
+        if kind in replaced or url.lower() in seen:
+            continue
+        seen.add(url.lower())
+        merged.append((kind, url))
+    return merged[:MAX_PAGES]
 
 
 def _plain(html: str) -> str:
@@ -276,32 +254,28 @@ def _plain(html: str) -> str:
 
 
 def _read(kind: str, url: str, budget: int) -> dict | None:
-    """One page, or None.
+    """One page as text, or None.
 
-    The plain fetch first; when the text it returns is too short to be a page, the same URL
-    goes through a reader that renders it. A launchpad front end is a title tag and a
-    bundle, so the plain fetch of it comes back as thirty characters of shell - and a site
-    with a working dApp behind it is exactly the site this pass exists to describe. One try
-    each: this pass is behind a publish, not in front of one.
+    The plain fetch, and the browser behind it for the sites that answer with a shell: the
+    same reading the search layer judges a candidate site by (identify.fetch_page), so a
+    page is not quoted to the model from one document and judged from another. Accounts are
+    the exception, and identify.NO_RENDER is where that is written down: X serves a bio to a
+    plain client and a login wall to a browser, and Telegram's preview page already has
+    everything in it, so those two are read the cheap way and only that way.
+
+    A page that is still too short to be a page after that is a login wall or an empty
+    shell, and handing it to the model only invites the model to fill the gap from memory.
+    One try: this pass is behind a publish, not in front of one.
     """
-    body = _fetch_text(url, UA_HTML)
-    if len(body) < MIN_CHARS:
-        rendered = _fetch_text(READER_PREFIX + url, UA_READER)
-        if len(rendered) > len(body):
-            body = rendered
+    try:
+        body = _plain(fetch_page(url))
+    except SourceError as exc:
+        log.info("research could not read %s: %s", url, exc)
+        return None
     if len(body) < MIN_CHARS:
         log.info("research found nothing on %s", url)
         return None
     return {"kind": kind, "url": url, "text": body[:budget]}
-
-
-def _fetch_text(url: str, headers: dict) -> str:
-    """One URL as plain text. Empty when it cannot be read; never raises."""
-    try:
-        return _plain(http.get(url, headers, tries=1, sleep=1))
-    except SourceError as exc:
-        log.info("research could not read %s: %s", url, exc)
-        return ""
 
 
 #: How many snapshots back a link is looked for. A source that goes quiet for a round - or a
@@ -368,31 +342,153 @@ def _facts_line(ca: str, symbol: str | None, metrics: Mapping[str, Any],
     return "本轮事实：\n" + facts.block(row, safety)
 
 
+#: How the two halves of the outside world are headed in the prompt. The pages carry their
+#: own kind and URL; the posts are named for what they are, because a model that reads a
+#: post as a page quotes it back as the project's own description.
+POSTS_HEAD = "## 官方 X 时间线（最近 %d 条 · 正文完整 · 含时间与互动）"
+TALK_HEAD = "## X 第三方讨论（搜索命中的陌生账号 · 只给统计 · 无正文）"
+
+
+def post_block(rows: Sequence[TweetRow], budget: int) -> tuple[str, int]:
+    """One account's posts as whole posts, newest first, and how many of them arrived.
+
+    Whole ones and not trimmed ones. The engagement beside a post is most of what the round
+    reads it for, and half a sentence with a number stuck to it is worse than the post left
+    out - so the budget decides how many posts arrive rather than how long each may be, and
+    what it dropped is logged instead of quietly shortened.
+    """
+    shown: list[str] = []
+    used = 0
+    for row in rows:
+        entry = "%s ｜ 赞 %d ｜ 转 %d ｜ 评 %d ｜ 阅 %d\n%s" % (
+            row.created_at or "—", row.likes, row.retweets, row.replies, row.views, row.text)
+        if shown and used + len(entry) > budget:
+            break
+        shown.append(entry)
+        used += len(entry)
+    if len(shown) < len(rows):
+        log.info("timeline: %d of %d posts fit the budget", len(shown), len(rows))
+    return "\n\n".join(shown), len(shown)
+
+
+def talk_block(rows: Sequence[TweetRow], official: Sequence[str]) -> str:
+    """What strangers posted about the token, as counts rather than as text.
+
+    The project's own posts are removed by handle, not by display name: a name is whatever
+    the account felt like that week and the handle is what identifies it. What is left is the
+    one thing the round owns about third-party discussion - how much of it there was, over
+    how long, and how much of it landed - and it is counts because the prose is a stranger's
+    and a stranger's prose is not evidence about the project.
+    """
+    mine = {handle.lower().lstrip("@") for handle in official if handle}
+    others = [row for row in rows if row.handle.lower().lstrip("@") not in mine]
+    if not others:
+        return ""
+    authors = {row.handle.lower() for row in others}
+    likes = sorted(row.likes for row in others)
+    when = sorted(row.created_at[:10] for row in others if row.created_at)
+    return ("命中 %d 条 ｜ 作者 %d 个 ｜ 时间 %s ~ %s ｜ 合计赞 %d ｜ 中位赞 %d ｜ 最高赞 %d"
+            % (len(others), len(authors), when[0] if when else "—",
+               when[-1] if when else "—", sum(likes), likes[len(likes) // 2], likes[-1]))
+
+
 def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dict],
-        safety: Mapping[str, Any] | None = None) -> dict:
-    """One model call: the pages in, the entry out, the same contract as a draft."""
-    context = "\n\n".join(
+        safety: Mapping[str, Any] | None = None, *,
+        timeline: Sequence[TweetRow] = (), talk: Sequence[TweetRow] = (),
+        official: Sequence[str] = (), run_id: str = "") -> dict:
+    """One model call: the pages and the posts in, the entry out, the same contract.
+
+    A rejected answer buys exactly one more call, and only a rejected answer pays for it.
+    The second ask carries the first answer and the findings together, so the model
+    corrects a bookkeeping slip instead of writing the entry again from the pages. It is
+    free to come back wrong a second time: `one` is still the place where a draft that
+    fails twice ends the token, which is the same place a draft failed once before this
+    existed.
+    """
+    blocks = ["\n\n".join(
         "### %s %s\n%s" % (page["kind"], page["url"], page["text"]) for page in pages
-    )
+    )]
+    posts, shown = post_block(timeline, POST_CHARS)
+    if posts:
+        blocks.append((POSTS_HEAD % shown) + "\n" + posts)
+    discussion = talk_block(talk, official)
+    if discussion:
+        blocks.append(TALK_HEAD + "\n" + discussion)
+    blocks.append(_facts_line(ca, symbol, metrics, safety))
+    messages = [
+        {"role": "system", "content": lexicon.read_prompt("research.md")},
+        {"role": "user", "content": "\n\n".join(blocks)},
+    ]
+    raw = llm.complete_json(messages, purpose="research", prompt_version=PROMPT_VERSION,
+                            run_id=run_id)
+    issues = validate_lexicon(raw, [ca])
+    if not issues:
+        return raw
+    log.info("research %s: rejected (%s), asking once more", ca, "; ".join(issues[:3]))
+    answer = json.dumps(raw, ensure_ascii=False)
     return llm.complete_json(
-        [
-            {"role": "system", "content": draft_stage.read_prompt("research.md")},
-            {"role": "user",
-             "content": context + "\n\n" + _facts_line(ca, symbol, metrics, safety)},
+        messages + [
+            {"role": "assistant", "content": answer},
+            {"role": "user", "content": REPAIR_HEAD % ("\n".join(issues[:8]), answer)},
         ],
-        purpose="research",
-        prompt_version=PROMPT_VERSION,
+        purpose="research_repair",
+        prompt_version=PROMPT_VERSION + "+repair",
+        run_id=run_id,
     )
 
 
-def one(row: Mapping[str, Any]) -> dict:
-    """Read, ask, store - for one entry. Raises; `work_once` is what catches it."""
+def gather(row: Mapping[str, Any]) -> dict:
+    """The links one token will be read from, found and merged. Never raises.
+
+    Split out of `one` so it can run at its own width. Finding the links is a search and a
+    handful of page reads; writing the card is a model call. The two have nothing to say to
+    each other and one of them is thirty times more expensive, so they are not paced the
+    same way - see `SEARCH_WORKERS`.
+
+    A failure is carried rather than raised: the token still reaches `one`, and fails there
+    with the same message it always did, on its own row.
+    """
+    ca = str(row["ca"]).lower()
+    try:
+        metrics, safety = _latest_metrics(ca)
+        known = links_for(metrics)
+        found = search_links(str(row["chain_id"]), ca, row.get("symbol"), known)
+        # What the search layer decided is invisible from outside it, and a search that failed
+        # and a search that found nothing are the two facts a card's author cannot tell apart.
+        # Both are one line here, on the pass that paid for them.
+        if found is not None and found.errors:
+            log.info("search for %s: %s", ca, " | ".join(found.errors)[:200])
+        merged = merge_links(found, known)
+        log.info("links for %s: %d to read, handle %r, %d posts, %d harvested", ca,
+                 len(merged), found.timeline_handle if found else "",
+                 len(found.timeline) if found else 0, len(found.harvested) if found else 0)
+        # The posts travel beside the links rather than inside them: a timeline is not a page
+        # to read, it is the account the pages proved, asked what it has been saying.
+        return {"ca": ca, "links": merged, "metrics": metrics,
+                "safety": safety, "timeline": list(found.timeline) if found else [],
+                "talk": list(found.tweets) if found else [],
+                "official": found.mine if found else [], "error": ""}
+    except Exception as exc:
+        log.info("links for %s unavailable: %r", ca, exc)
+        return {"ca": ca, "links": [], "metrics": {}, "safety": {}, "timeline": [],
+                "talk": [], "official": [], "error": repr(exc)[:200]}
+
+
+def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None) -> dict:
+    """Read, ask, store - for one entry. Raises; `research_entries` keeps it to itself.
+
+    `gathered` is the earlier pass's answer for this token; without it this reads the links
+    itself, which is what a caller driving one token wants.
+    """
     started = time.monotonic()
     ca = str(row["ca"]).lower()
     chain_id = str(row["chain_id"])
     symbol = row.get("symbol")
-    metrics, safety = _latest_metrics(ca)
-    links = links_for(metrics)
+    if gathered is None:
+        gathered = gather(row)
+    if gathered.get("error"):
+        raise SourceError(str(gathered["error"]))
+    metrics, safety, links = gathered["metrics"], gathered["safety"], gathered["links"]
     if not links:
         raise SourceError("没有可读的外链（官网 / X / GitHub 都没有）")
     budget = max(1200, MAX_CHARS // len(links))
@@ -407,66 +503,83 @@ def one(row: Mapping[str, Any]) -> dict:
     if not pages:
         raise SourceError("外链都打不开或读不到正文")
     read_s = time.monotonic() - started
-    raw = ask(ca, symbol, metrics, pages, safety)
+    raw = ask(ca, symbol, metrics, pages, safety,
+              timeline=gathered.get("timeline") or (),
+              talk=gathered.get("talk") or (),
+              official=gathered.get("official") or (),
+              run_id=str(row.get("run_id") or ""))
     model_s = time.monotonic() - started - read_s
     issues = validate_lexicon(raw, [ca])
     if issues:
         raise ValueError("research draft rejected: %s" % "; ".join(issues[:3]))
     draft = LexiconDraft.model_validate(raw)
     entry = {key.lower(): value for key, value in draft.entries.items()}[ca]
-    payload = entry.model_dump()
-    payload["symbol"] = symbol or None
+    payload = lexicon.entry_payload(entry, symbol)
     # The pages are stored before the text: evidence is worth keeping even when the write
     # that follows it is refused, and the card can then show what was read either way.
     save_sources(chain_id, ca, pages)
-    written = draft_stage.store_entries(
-        chain_id, {ca: payload}, metrics={ca: metrics}, safety={ca: safety},
-        reasons={ca: "重档调研：读了 %d 个外链" % len(pages)},
-    )
-    log.info("research %s: %d/%d pages in %.1fs, model %.1fs, total %.1fs",
-             ca, len(pages), len(links), read_s, model_s, time.monotonic() - started)
-    if ca not in written:
-        # A confirmed entry is a human decision, and this pass does not overturn it. The
-        # evidence is still filed - that is the part a person can act on.
-        set_state(ca, "done", note="人工已确认，本次调研只存证据，未改文字")
-        return {"ca": ca, "chain_id": chain_id, "state": "done", "pages": len(pages),
-                "text": "kept"}
-    # The card that is on screen was copied out of the entry this pass just replaced. Its
-    # round is still at `sent` - waiting for exactly this - so the words go back onto the
-    # card, and the reader gets the researched version without the round being re-run.
-    cards = draft_stage.restate_cards(chain_id, [ca])
-    if cards:
-        log.info("restated %d card(s) for %s from the researched entry", cards, ca)
-    set_state(ca, "done")
-    return {"ca": ca, "chain_id": chain_id, "state": "done", "pages": len(pages),
-            "text": "rewritten"}
+    lexicon.store_entries(chain_id, str(row.get("run_id") or ""), {ca: payload})
+    log.info("research %s: %d/%d pages, %d posts, handle %s, model %.1fs, total %.1fs",
+             ca, len(pages), len(links), len(gathered.get("timeline") or ()),
+             gathered.get("official") or "-", model_s, time.monotonic() - started)
+    return payload
 
 
-def work_once(limit: int = 2) -> list[dict]:
-    """One pass over up to `limit` queued entries. Never raises.
+def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
+                     notes: list[str] | None = None,
+                     on_done: Callable[[float, float], None] | None = None) -> dict[str, dict]:
+    """This round's entry for every token it has to judge. Never raises.
 
-    The caller owns a background thread that has to outlive bad pages, dead DNS and a model
-    that answers with something that is not JSON: everything one token can get wrong is
-    caught here and written on its own row, so the next token still gets its turn.
+    `targets` is the judged pool - the tokens the gate cleared and the round is about to
+    score. The answer is keyed by CA and holds only the tokens that produced an entry: a
+    token whose pages would not load, or whose answer was not the contract, is absent, and an
+    absent entry is a token with no score. That is where it belongs, rather than being ranked
+    on numbers nobody produced while carrying prose nobody wrote.
+
+    The two halves are paced apart on purpose. Finding the links is a search subprocess and a
+    few page reads and costs no tokens, so it goes out at `SEARCH_WORKERS`. Writing the entry
+    is a model call, so it goes out at `CH_RESEARCH_WORKERS`. Neither half is worth queuing
+    behind the other: the first produces the second's input, and one token failing either
+    half is not the next token failing it.
     """
+    if not targets or not llm.configured():
+        return {}
+    rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
+             "symbol": target.get("symbol"), "run_id": run_id} for target in targets]
+    total = len(rows)
+    done = 0
 
-    def one_card(row: Mapping[str, Any]) -> dict:
-        """One card, and every way it can fail kept to itself. Raises nothing."""
-        ca = str(row["ca"])
+    def tell() -> None:
+        nonlocal done
+        done += 1
+        if on_done:
+            on_done(done, total)
+
+    # The links first, and wider: this half is a subprocess and a few page reads, so throwing
+    # it at the wall costs nothing and the model calls then have their whole input ready.
+    gathered = {item["ca"]: item for item in
+                http.pmap(gather, rows, workers=min(SEARCH_WORKERS, total))}
+
+    failed: list[str] = []
+
+    def entry_for(row: dict) -> tuple[str, dict] | None:
+        """One token, and every way it can fail kept to itself. Raises nothing."""
+        ca = row["ca"]
         try:
-            return one(row)
+            return ca, one(row, gathered.get(ca))
         except Exception as exc:
-            log.warning("research on %s failed: %r", ca, exc)
-            set_state(ca, "failed", note=repr(exc)[:200])
-            return {"ca": ca, "chain_id": str(row["chain_id"]), "state": "failed"}
+            reason = str(exc) or repr(exc)
+            log.info("research on %s failed: %s", ca, reason)
+            failed.append("%s（%s）" % (row.get("symbol") or ca[:10], reason[:60]))
+            return None
+        finally:
+            tell()
 
-    claimed = claim(limit)
-    if not claimed:
-        return []
-    # The cards are researched side by side. Each one is a page read plus a model call, and
-    # five of those in a row is five waits for the same thing; `one_card` is still the
-    # boundary, so a card that fails writes its own row while the others carry on. A card
-    # missing from the answer is one whose own handler died, which the caller may read as
-    # "not settled" - the same thing a dropped tick means.
-    return [row for row in http.pmap(one_card, claimed, workers=min(WORKERS, len(claimed)))
-            if row]
+    entries: dict[str, dict] = {}
+    for result in http.pmap(entry_for, rows, workers=min(_workers(), total)):
+        if result:
+            ca, payload = result
+            entries[ca] = payload
+    if failed and notes is not None:
+        notes.append("链下调研未完成：" + "、".join(failed[:6]))
+    return entries

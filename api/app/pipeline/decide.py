@@ -9,20 +9,25 @@ the thing worth testing, and the order must not be a special case for tests.
 What the stages are, and why they are in this order:
 
 1. **collect**    - one bulk pull per source, merged field-wise.
-2. **prefilter**  - the pool rules, which are free: they read the bulk pull alone.
-3. **shortlist**  - the prefilter survivors by 24h volume, cut to `enrich_limit`. The
-   expensive per-token questions are spent here and nowhere else.
-4. **enrich**     - per-token answers from every source, including the deployer.
-5. **gate**       - the entrapment ceiling, the source check, LP lock, permissions.
-6. **draft**      - a lexicon entry for any shortlisted token that has none, because
-   this chain's 未入库标的 policy is "待建档，本轮不参与排名": without the entry there is no
-   product score, and without a product score there is no ranking. The same stage also
-   rewrites the entries that have gone stale (`core.lexicon`), and that has to happen here
-   rather than after the publish: the entry is 45% of the score as well as the words on the
-   card, so a card written from a fresh entry beside a score computed from a stale one would
-   be two claims about one token.
-7. **score**      - five on-chain percentiles inside this round, plus the product block.
-8. **select**     - the top `per_round` by total, and the in-pool ranks for the card.
+2. **prefilter**  - the pool rules the bulk pull alone can answer: the market bands and the
+   two floors. Free, because no request is spent on them.
+3. **top-up**     - the rows the bulk sweep left without a chip number (holders, top-10,
+   bundling) are asked about by name, and then the chip rules run over the whole pool.
+   未判定 never rejects, so a blank is only a blank once someone has been paid to look -
+   the hard filter's second half runs after this, not before it.
+4. **shortlist**  - the pool survivors by `liquidity_usd`, deepest first. The expensive
+   per-token questions are spent here and nowhere else.
+5. **enrich**     - per-token answers from every source, including the deployer.
+6. **gate**       - the entrapment ceiling, the source check, LP lock, permissions.
+7. **judge**      - the off-chain entry for every token this round shortlisted: five 0-5
+   judgements and the prose beside them, written against this round's facts. It has to
+   happen here rather than after the publish, because the entry is 45% of the score as
+   well as the words on the card - a card written from a fresh entry beside a score
+   computed from an older one would be two claims about one token. A token the model did
+   not answer for has no entry and stays out of the ranking; nothing is carried over from
+   an earlier round, so the two can never disagree.
+8. **score**      - five on-chain percentiles inside this round, plus the off-chain block.
+9. **select**     - the top `per_round` by total, and the in-pool ranks for the card.
 """
 
 from __future__ import annotations
@@ -32,8 +37,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .. import cancel
-from ..core import filters, funnel, lexicon, scoring
-from ..core.models import DropReason, SafetyFacts, ScoreBreakdown, TokenMetrics
+from ..core import filters, funnel, scoring
+from ..core.models import SafetyFacts, ScoreBreakdown, TokenMetrics
 from ..sources import onchain, registry
 from ..sources.base import SourceReport
 from ..sources.http import pmap
@@ -57,9 +62,9 @@ GATE_ROUNDS = 0
 #: twelve and stopped once it held twice the report count; judging the whole pool is what
 #: made our rounds take twenty minutes, because per-token reads are paced per host and that
 #: cap is serial - more workers cannot shorten it. Twenty is the operator's number: the
-#: pool is sorted by 24h volume, so these are the twenty most traded candidates, and the
-#: rest are left 未判定 (neither passed nor dropped) rather than quietly judged on stale
-#: bulk numbers. 0 restores "judge the whole pool".
+#: pool is sorted by liquidity, so these are the twenty with the most standing depth behind
+#: them, and the rest are left 未判定 (neither passed nor dropped) rather than quietly
+#: judged on stale bulk numbers. 0 restores "judge the whole pool".
 GATE_LIMIT = 20
 
 #: How many candidates are asked about at once. Every host paces itself, so this number
@@ -83,13 +88,59 @@ STAGES = ("collected", "scored", "selected")
 #: fields. So it is asked once - after the picks are known, about the picks alone.
 DEFERRED_ENRICH: tuple[str, ...] = ("geckoterminal",)
 
-Lexicon = Callable[[str], dict | None]
-#: `gaps` in, first drafts out, and told how far along it is so the bar can move while
-#: the model writes.
+#: The per-token sources the top-up pass asks about a row whose chip picture is missing.
+#:
+#: `gmgn` is the chip source: the holder count, the top-10 share and the bundling rate are
+#: per-token questions the scan sources do not all answer, and a row with no chip number is
+#: exactly the row the hard filter has to be able to see - the tokens a launchpad reports
+#: had four holders and 72% in ten wallets, and every one of them sat in the pool as a
+#: blank, which is a blank the rules read as 未判定 and 未判定 never rejects.
+#: `dexscreener` rides along for its own reason: it is the round's market caliber, and the
+#: depth some launchpads report through their own API is inflated (5.52x on every Tolly row,
+#: with the market cap and the volume identical), so the depth the sort and the liquidity
+#: floor are about to read is re-read from the source of record before either of them run.
+MARKET_ENRICH: tuple[str, ...] = ("dexscreener", "gmgn")
+
+#: How many times the gate budget the top-up pass reaches, deepest pool first. A row below
+#: that line cannot reach the gate's top `cap` even if every row above it is dropped, so
+#: asking about it would cost the same and change no verdict.
+ENRICH_POOL_MULTIPLE = 3
+
+
+def _gate_cap(cfg: dict) -> int:
+    """How many survivors the gate judges: the operator's knob, or the module default."""
+    cap = cfg.get("gate_limit")
+    return GATE_LIMIT if cap is None else int(cap)
+
+
+def _depth(row: Candidate) -> tuple[float, float]:
+    """The shortlist key: liquidity, deepest first, with 24h volume breaking an exact tie.
+
+    Liquidity is the key; volume is not a second key that can outrank it. Depth is the
+    expensive number to stand up and volume is the cheap one to fake, so a pool is ranked
+    by what is behind it - and where two pools are exactly as deep, by which one is traded.
+    """
+    return (-(row.metrics.liquidity_usd or 0), -(row.metrics.volume_24h_usd or 0))
+
+
+def _needs_chips(metrics: TokenMetrics) -> bool:
+    """A row the bulk sweep left without one of the chip numbers the hard filter reads.
+
+    GMGN is the only scan source that carries all three, so this is really the question "did
+    GMGN list this token" - and the read that answers it brings the honeypot flag back with
+    them, which is why that flag is not a fourth condition here. A row that already carries
+    the three carries its flag as well, and the gate re-reads the flag through `check_all`
+    for every candidate either way.
+    """
+    return (
+        metrics.holders is None
+        or metrics.top10_pct is None
+        or metrics.bundling_pct is None
+    )
+
+#: This round’s `targets` in, the off-chain judgement for each out, and told how far
+#: along it is so the bar can move while the model writes.
 Drafts = Callable[[list[dict], Callable[[float, float], None]], dict[str, dict]]
-#: `targets` in (each carrying its own `reason`), rewritten entries out - `{}` for the ones
-#: that were not rewritten, a confirmed entry among them.
-Refresh = Callable[[list[dict], Callable[[float, float], None]], dict[str, dict]]
 
 
 @dataclass
@@ -106,12 +157,9 @@ class Candidate:
     score: float | None = None
     rank: int | None = None
     evidence: dict = field(default_factory=dict)
-    #: The lexicon entry this token was scored against, resolved once and kept, so the
+    #: This round’s off-chain judgement of the token, resolved once and kept, so the
     #: writer and the score cannot end up reading two different entries.
     entry: dict = field(default_factory=dict)
-    #: The badge for a card whose words are older than its numbers: how long ago the entry
-    #: was written, and why it was not rewritten this round. Empty when this round wrote it.
-    entry_note: str = ""
     #: How this token moved since the last round, in the card's own units.
     deltas: list[dict] = field(default_factory=list)
     #: Whether the per-token sources were asked about it. An enriched token's facts are
@@ -201,9 +249,7 @@ class Engine:
         sources: list | None = None,
         extras: tuple | None = None,
         reader=onchain,
-        lexicon: Lexicon | None = None,
         drafts: Drafts | None = None,
-        refresh: Refresh | None = None,
         previous: list[dict] | None = None,
         peaks: dict[str, float] | None = None,
     ) -> None:
@@ -217,9 +263,7 @@ class Engine:
             registry.ENRICH_ONLY if extras is None and sources is None else (extras or ())
         )
         self.reader = reader
-        self.lexicon = lexicon or (lambda ca: None)
-        self.drafts = drafts or (lambda gaps, _tell: {})
-        self.refresh = refresh or (lambda targets, _tell: {})
+        self.drafts = drafts or (lambda targets, _tell: {})
         self.previous = list(previous or [])
         #: 距高回撤 reads its high from here: the highest market cap this project has seen
         #: for a CA. The pipeline hands it over, because a store read belongs to the caller
@@ -237,7 +281,7 @@ class Engine:
         fires inside the long phases, so the page has something to draw between them.
 
         `clock` is the phase stopwatch. A caller that owns what happens after this returns
-        - the commentary, the write - hands its own in, so those phases land on the same
+        - the write - hands its own in, so those phases land on the same
         log line instead of the round's last stretch going unmeasured.
 
         `on_funnel` fires with whatever the round knows so far: the source counts once
@@ -309,9 +353,9 @@ class Engine:
             notes.append("数据源未答复：" + "、".join(failed_sources) + "（本轮按缺值处理）")
         stage(STAGES[0])
         items: dict[str, Candidate] = {}
-        survivors: list[Candidate] = []
+        pool: list[Candidate] = []
         for ca, metrics in universe.metrics.items():
-            verdict = filters.check_prefilter(metrics, prefilter_cfg)
+            verdict = filters.check_prefilter_free(metrics, prefilter_cfg)
             item = Candidate(
                 ca=ca,
                 metrics=metrics,
@@ -319,13 +363,35 @@ class Engine:
                 unknown=[reason.value for reason in verdict.unknown],
             )
             if verdict.passed:
-                survivors.append(item)
+                pool.append(item)
             else:
                 item.decision = "dropped"
             items[ca] = item
 
-        survivors.sort(key=lambda row: -(row.metrics.volume_24h_usd or 0))
+        # 流动性, and nothing else - deepest pool first, with 24h volume breaking an exact
+        # tie and never outranking depth.
+        pool.sort(key=_depth)
         clock.mark("prefilter")
+
+        # 二档: the chip rules read numbers the bulk sweep only carries for the rows its
+        # sources happen to list, and 未判定 never rejects - so a row missing one is asked
+        # about by name *before* the rules that read it run. A blank at this point is a blank
+        # the paid read could not fill either.
+        cap = _gate_cap(cfg)
+        self._top_up(pool, universe, cap, told=told("topup"))
+        pool.sort(key=_depth)      # the top-up may have corrected a row's depth
+        clock.mark("topup")
+
+        survivors: list[Candidate] = []
+        for item in pool:
+            verdict = filters.check_prefilter_enriched(item.metrics, prefilter_cfg)
+            item.failed = [reason.value for reason in verdict.failed]
+            item.unknown = [reason.value for reason in verdict.unknown]
+            if verdict.passed:
+                survivors.append(item)
+            else:
+                item.decision = "dropped"
+
         # The hard filter is done: everything it rejected is rejected, and what is left is
         # the pool the gate is about to spend its minutes on. 淘汰 is written here too, not
         # only at the gate: the strip under the panel reads `runs`, and a strip that says
@@ -355,30 +421,26 @@ class Engine:
         unjudged = [item for item in survivors if not item.enriched]
         if unjudged:
             notes.append(
-                "按 24h 成交额排序，本轮只判定前 %d 个候选；其余 %d 个未判定"
+                "按流动性排序，本轮只判定前 %d 个候选；其余 %d 个未判定"
                 "（既不计通过也不计淘汰）" % (len(survivors) - len(unjudged), len(unjudged))
             )
 
         if not gated:
             notes.append("本轮没有标的通过安全判定，未产出报告")
 
-        gaps = [
+        # Every judged token is judged again this round. Nothing is carried over from the
+        # round before, which is what makes the prose on a card and the score beside it the
+        # same dossier by construction rather than by a refresh rule.
+        targets = [
             {"ca": item.ca, "symbol": item.symbol, "metrics": item.metrics, "facts": item.facts}
             for item in gated
-            if not self.lexicon(item.ca)
         ]
-        # The rewrite pass runs beside the draft pass, before the score, and the reason it
-        # has to be before the score is the whole point: the entry is 45% of the product
-        # block as well as the words on the card. Rewriting after the ranking would publish
-        # a card whose prose and whose score were read off two different dossiers.
-        stale = self._stale(gated, cfg)
-        drafted = self.drafts(gaps, told("draft")) if gaps else {}
-        refreshed = self.refresh(stale, told("draft")) if stale else {}
+        judged = self.drafts(targets, told("draft")) if targets else {}
         clock.mark("draft")
-        missing = [item for item in gated if not (self.lexicon(item.ca) or drafted.get(item.ca))]
+        missing = [item for item in gated if not judged.get(item.ca)]
         if missing:
             notes.append(
-                "未建档：" + "、".join(item.symbol or item.ca[:10] for item in missing)
+                "未判定：" + "、".join(item.symbol or item.ca[:10] for item in missing)
                 + "（本轮不参与排名）"
             )
 
@@ -388,15 +450,12 @@ class Engine:
         # against a peer whose numbers were never refreshed.
         percentiles = scoring.CandidateSetPercentile([item.metrics for item in survivors])
         for item in gated:
-            fresh = refreshed.get(item.ca) or drafted.get(item.ca)
-            entry = fresh or self.lexicon(item.ca)
-            item.entry = dict(entry or {})
-            # Only when the words are not this round's. A fresh entry needs no badge; an old
-            # one gets one, and getting one is the difference between a card that ages and a
-            # card that lies.
-            if not fresh and entry:
-                item.entry_note = self._entry_note(item, cfg)
-            item.breakdown = scoring.score_token(item.metrics, item.facts, cfg, percentiles, entry)
+            # An unjudged token stays out of the ranking: `None` here is what makes
+            # `score_token` report it as pending instead of reading the blank as zeros.
+            judged_entry = judged.get(item.ca)
+            item.entry = dict(judged_entry or {})
+            item.breakdown = scoring.score_token(item.metrics, item.facts, cfg, percentiles,
+                                                 judged_entry)
             item.score = item.breakdown.total
             item.deltas = self._deltas(item)
         clock.mark("score")
@@ -408,18 +467,13 @@ class Engine:
             [item for item in gated if item.score is not None],
             key=lambda row: -(row.score or 0),
         )
-        picked = ranked[:per_round]
+        picked = self._picks(ranked, universe, per_round, prefilter_cfg, run_id)
         # The place each token took in this round's score order, for the 退出 chip: a
         # token that left by ranking sixth and a token that left by falling under a
         # floor are two different events, and the bar used to call both 跌出. Kept local
         # rather than written onto `item.rank`, which is the card's own number and only
         # ever set for the tokens that got one.
         pool_rank = {item.ca: index for index, item in enumerate(ranked, start=1)}
-        # The deferred read, spent on the picks alone - see `DEFERRED_ENRICH`. It runs
-        # after the score on purpose: nothing it fills is scored, and the card is the only
-        # reader that wants it.
-        cancel.raise_if(run_id)
-        self._enrich(picked, universe, only=DEFERRED_ENRICH)
         clock.mark("sharpen")
         for index, item in enumerate(picked, start=1):
             item.decision = "selected"
@@ -451,54 +505,47 @@ class Engine:
             unjudged=len(unjudged),
         )
 
-    # ------------------------------------------------------------------- lexicon
+    def _top_up(self, pool: list[Candidate], universe: collector.Universe, cap: int,
+               told: Callable[[float, float], None] | None = None) -> None:
+        """Buy the chip picture for the rows the bulk sweep left blank, before it is read.
 
-    def _stale(self, gated: list[Candidate], cfg: dict) -> list[dict]:
-        """The entries this round has to rewrite, each carrying the reason it is due.
+        The chip rules can only reject a row whose number someone answered, and the bulk
+        pull answers them only for the tokens its own list carries: the rows a launchpad
+        reports arrive with market numbers and no chip numbers at all. Reading that blank as
+        a small holder count is a wrong drop; reading it as "nothing to see" is a wrong pass,
+        and the wrong pass is the one that put a family of four-holder rows in the candidate
+        pool. So the blanks are filled here, by name, and the rules run afterwards - which
+        two sources answer is spelled out on `MARKET_ENRICH`.
 
-        The reason travels with the target because it lands in `lexicon.refresh_reason`:
-        a row that says why it changed is worth more than one that only says when.
+        Only rows missing one of those fields are asked about, and only the deepest
+        `ENRICH_POOL_MULTIPLE` gate budgets of them: a row ranked below that cannot reach
+        the gate even if every row above it drops, so the read would cost the same and
+        change no verdict. An uncapped gate (a budget of 0, which means judge the whole
+        pool) tops the whole pool up, because every row in it can still reach the gate.
+        The answers land on the item and not on `facts`, and the row is not marked
+        enriched - the gate's own pass is what reaches a safety verdict, and a row the
+        sorting left out of the gate must not look like one that got a full read.
         """
-        out = []
-        for item in gated:
-            entry = self.lexicon(item.ca)
-            if not entry:
-                continue
-            # `item.facts` goes with the numbers: an entry whose words were written while
-            # the LP question was open is due as soon as the answer lands, whatever the
-            # price did in the meantime.
-            verdict = lexicon.due(entry, self._entry_metrics(item), cfg.get("lexicon"),
-                                  safety=item.facts)
-            if verdict.action != "rewrite":
-                continue
-            out.append({"ca": item.ca, "symbol": item.symbol, "metrics": item.metrics,
-                        "facts": item.facts, "reason": verdict.reason})
-        return out
+        if not pool:
+            return
+        # A budget of 0 is "judge the whole pool", so the whole pool is what gets filled.
+        reach = max(cap, 1) * ENRICH_POOL_MULTIPLE if cap else len(pool)
+        wanted = [item for item in pool if _needs_chips(item.metrics)][:reach]
+        if not wanted:
+            return
+        total = len(wanted)
+        counted = 0
+        counting = threading.Lock()
 
-    @staticmethod
-    def _entry_metrics(item: Candidate) -> dict:
-        """The two readings the refresh conditions measure: market cap and holders."""
-        return {"market_cap_usd": item.metrics.market_cap_usd, "holders": item.metrics.holders}
+        def one_done() -> None:
+            nonlocal counted
+            with counting:
+                counted += 1
+                here = counted
+            if told:
+                told(here, total)
 
-    def _entry_note(self, item: Candidate, cfg: dict) -> str:
-        """What the card says when it shows words this round did not write.
-
-        Two cases, and they are not the same sentence: a rewrite that was skipped on purpose
-        (the entry is confirmed, and a human owns those words) and one that was attempted and
-        failed. Saying "未重写" without saying which would leave the reader unable to tell a
-        model outage from a rule.
-        """
-        entry = self.lexicon(item.ca) or {}
-        verdict = lexicon.due(entry, self._entry_metrics(item), cfg.get("lexicon"),
-                              safety=item.facts)
-        age = lexicon.age_text(verdict.age_hours)
-        if verdict.action != "rewrite":
-            return "解读写于 %s · 本轮数据已更新" % age
-        if str(entry.get("review_state")) == "confirmed":
-            return "解读写于 %s · 人工已确认，未自动改写" % age
-        return "解读写于 %s · 本轮重写未完成，仍用旧档" % age
-
-    # -------------------------------------------------------------------- stages
+        self._enrich(wanted, universe, one_done, only=MARKET_ENRICH, light=True)
 
     def _gate(self, survivors: list[Candidate], universe: collector.Universe, cfg: dict,
               batch: int, told: Callable[[float, float], None] | None = None,
@@ -518,10 +565,8 @@ class Engine:
         qualified nothing at all - that is not a short report, it is a reading of the pool,
         and it keeps looking rather than shipping an empty page.
         """
-        prefilter_cfg = cfg.get("prefilter") or {}
         limit = int(cfg.get("gate_rounds") or GATE_ROUNDS)
-        cap = cfg.get("gate_limit")
-        cap = GATE_LIMIT if cap is None else int(cap)
+        cap = _gate_cap(cfg)
         total = len(survivors)
         # The bar measures the pool the round intends to judge, not the whole survivor
         # list: with a cap in place the honest denominator is the cap, and the fallback
@@ -569,14 +614,14 @@ class Engine:
             self._enrich(chunk, universe, judged, defer=DEFERRED_ENRICH)
             for item in chunk:
                 cancel.raise_if(run_id)
-                # 距高回撤 is the one gate rule with a second half to read, and that half is
-                # the expensive one: ask the pool side about the flagged tokens alone,
-                # before the verdict is read. Everyone else is judged on the free half.
-                peak = self.peaks.get(item.ca)
-                if filters.drawdown_needs_pool(item.metrics, prefilter_cfg, peak):
-                    self._enrich([item], universe, None, only=DEFERRED_ENRICH)
+                # 距高回撤 is judged from what the row already carries: the high GMGN
+                # measured, and the high this project recorded. The gate buys no pool read
+                # of its own - the pool history can only ever drop a token, never save one,
+                # and the free readings cover the tokens that read used to be bought for
+                # (see `filters.drawdown_readings`). A pick is judged again against its
+                # pools by the pass that reads them anyway (`_picks`).
                 verdict = filters.check_all(item.metrics, item.facts, cfg,
-                                            peak_market_cap_usd=peak)
+                                            peak_market_cap_usd=self.peaks.get(item.ca))
                 item.failed = [reason.value for reason in verdict.failed]
                 item.unknown = [reason.value for reason in verdict.unknown]
                 if verdict.passed:
@@ -587,9 +632,52 @@ class Engine:
             rounds += 1
         return gated
 
+    # ------------------------------------------------------------------- the reads
+
+    def _picks(self, ranked: list[Candidate], universe: collector.Universe, per_round: int,
+               prefilter: dict, run_id: str | None) -> list[Candidate]:
+        """The cards, taken in score order, with 距高回撤 judged as their pool is read.
+
+        The deferred pass below spends one GeckoTerminal request per pool on the pools that
+        draw the card, and that request carries their historical high. So 距高回撤 is judged
+        a second time here, where that reading finally exists: the gate ruled on the two free
+        readings (the high GMGN measured and the high this project recorded), and the pool
+        history is what can still drop a pick neither of them has a high for - a reading
+        that had to be bought anyway, and one that silence must not be read as a pass for
+        (`metrics.drawdown_unread`). A pick that is 70% below its high is dropped
+        and the next candidate by score takes the place, so a round still publishes
+        `per_round` cards whenever the pool below them has that many live tokens.
+        """
+        picked: list[Candidate] = []
+        cursor = 0
+        while len(picked) < per_round and cursor < len(ranked):
+            cancel.raise_if(run_id)
+            # Only as many as still fit: a drop is the round asking about one more.
+            batch = ranked[cursor:cursor + (per_round - len(picked))]
+            cursor += len(batch)
+            # The deferred read, spent on the picks alone - see `DEFERRED_ENRICH`. It runs
+            # after the score on purpose: nothing it fills is scored, and the card is the
+            # only reader that wants it.
+            self._enrich(batch, universe, only=DEFERRED_ENRICH)
+            for item in batch:
+                verdict = filters.check_drawdown(item.metrics, prefilter, self.peaks.get(item.ca))
+                if verdict.passed:
+                    # A pick whose pool history came back unreadable is 未判定, not silently
+                    # passed: this is the only pass that buys that read, so it is the only
+                    # place the round can learn the question went unanswered.
+                    item.unknown = list(dict.fromkeys(
+                        item.unknown + [reason.value for reason in verdict.unknown]))
+                    picked.append(item)
+                    continue
+                item.decision = "dropped"
+                item.failed = [reason.value for reason in verdict.failed]
+        return picked
+
+
     def _enrich(self, shortlist: list[Candidate], universe: collector.Universe,
                 done: Callable[[], None] | None = None, *,
-                defer: tuple[str, ...] = (), only: tuple[str, ...] = ()) -> None:
+                defer: tuple[str, ...] = (), only: tuple[str, ...] = (),
+                light: bool = False) -> None:
         """Ask every source about every shortlisted token, then re-merge the token's view.
 
         Per token the sources are asked at the same time and each host paces itself, so five
@@ -601,6 +689,9 @@ class Engine:
         asks about on its own - the two halves of `DEFERRED_ENRICH`. `extra_sources` are
         asked here and nowhere else: they have no bulk row to sharpen, so the pull cannot
         have asked them, and a pass that names an `only` is asking for its own short list.
+        `light` asks each source's cheap entry instead (`fetch_chips`), for the passes that
+        read one number off the answer - see `_top_up`. A source without one is still
+        asked the full way.
         The later pass adds
         its answers to the first pass's `views` rather than starting over, because
         re-merging from the bulk rows alone would replace a source's fresh per-token
@@ -619,8 +710,11 @@ class Engine:
             def ask(source) -> tuple[str, tuple[TokenMetrics, SafetyFacts] | None]:
                 """One source's answer, or None. A source that raises has said nothing,
                 which the merge already reads as a gap - it is not this round's failure."""
+                fetch = getattr(source, "fetch_chips", None) if light else None
                 try:
-                    return source.name, source.fetch_token(self.chain["id"], item.ca)
+                    if fetch is None:
+                        return source.name, source.fetch_token(self.chain["id"], item.ca)
+                    return source.name, fetch(self.chain["id"], item.ca)
                 except Exception:
                     return source.name, None
 
@@ -666,8 +760,18 @@ class Engine:
         pmap(one, shortlist, workers=ENRICH_WORKERS)
 
     def _lock_facts(self, item: Candidate) -> None:
-        """The LP question, asked of the chain rather than of a vendor."""
+        """The LP question. GMGN answers it, and its answer is the one of record.
+
+        `lock_summary.is_locked` is the verdict the settings page means by 已锁, and it is
+        the only one of the readings that covers the v4 shape: a v4 pool has no LP token
+        and no pool contract, so a chain read can only guess from position NFTs. The chain
+        read stays as the fallback for the tokens GMGN has no sheet for, and the GoPlus LP
+        holder table after it.
+        """
         creator = item.facts.creator or item.metrics.creator or ""
+        if item.facts.lp_source == "gmgn" and item.facts.lp_locked is not None:
+            item.evidence = {"creator": creator, "lp_from": "gmgn"}
+            return
         try:
             locked, basis, evidence = self.reader.lock_facts(
                 self.chain,
@@ -796,14 +900,16 @@ class Engine:
             return "本轮未被任何数据源拉到"
         if item.decision == "dropped":
             reason = funnel.first_reason({"failed": item.failed})
-            return _rule_note(reason, item.metrics, prefilter, safety) if reason else "本期被硬过滤淘汰"
+            if not reason:
+                return "本期被硬过滤淘汰"
+            return _rule_note(reason, item.metrics, prefilter, safety, self.peaks.get(ca))
         rank = pool_rank.get(ca)
         if rank is not None:
             return "本期综合分排名第 %d，入选只取前 %d" % (rank, per_round)
         if not item.enriched:
             # 候选, but the gate's budget ran out before anyone asked about it. A silence,
             # and it says so rather than borrowing a verdict it never got.
-            return "本轮未判定（按 24h 成交额排序，判定名额之外）"
+            return "本轮未判定（按流动性排序，判定名额之外）"
         return "本期无综合分"
 
 def _absorb(base: SafetyFacts, extra: SafetyFacts) -> SafetyFacts:
@@ -869,7 +975,8 @@ def _clause(name: str, value, limit, *, formatter=None, wording: str = "低于�
     return "%s %s %s %s" % (name, render(value), wording, render(limit))
 
 
-def _rule_note(reason: str, metrics: TokenMetrics, prefilter: dict, safety: dict) -> str:
+def _rule_note(reason: str, metrics: TokenMetrics, prefilter: dict, safety: dict,
+               peak_market_cap_usd: float | None = None) -> str:
     """Which rule rejected a token this round, in the reader's own words and numbers.
 
     The label is `funnel.RULE_LABEL` - the words the settings row is drawn under - and the
@@ -912,8 +1019,12 @@ def _rule_note(reason: str, metrics: TokenMetrics, prefilter: dict, safety: dict
         return _clause("陷阱占比", metrics.honeypot_pct, safety.get("honeypot_max_pct"),
                        formatter=_pct, wording="高于上限")
     if reason == "market_cap_drawdown":
-        return _clause("距高回撤", metrics.drawdown_pct, prefilter.get("drawdown_max_pct"),
-                       formatter=_pct, wording="超过")
+        # The number that decided, not the pool reading: the rule drops on the deepest of
+        # several readings of the same high, so a clause quoting any single one of them could
+        # print a figure that is above the bound the sentence names.
+        readings = filters.drawdown_readings(metrics, prefilter, peak_market_cap_usd)
+        return _clause("距高回撤", min(readings) if readings else None,
+                       prefilter.get("drawdown_max_pct"), formatter=_pct, wording="超过")
     if reason == "missing_data":
         return "五个评分因子全无数据"
     if reason == "source_unverified":

@@ -10,12 +10,12 @@ CA = "0x0bb3befba323578dad33efb6356c69b557787777"
 def _seed(conn, *, run_id: str, run_key: str, symbol_in_snapshot, roster_symbol):
     conn.execute(
         "INSERT INTO runs (id, run_key, chain_id, trigger, status, selected, started_at)"
-        " VALUES (?, ?, 'arc', 'manual', 'sent', 1, '2026-09-24T20:00:00+08:00')",
+        " VALUES (?, ?, 'arc', 'manual', 'researched', 1, '2026-09-24T20:00:00+08:00')",
         (run_id, run_key),
     )
     conn.execute(
         "INSERT INTO reports (run_id, ca, rank, status, payload_json, created_at)"
-        " VALUES (?, ?, 1, 'sent', '{}', '2026-09-24T20:05:00+08:00')",
+        " VALUES (?, ?, 1, 'written', '{}', '2026-09-24T20:05:00+08:00')",
         (run_id, CA),
     )
     metrics = {"ca": CA, "market_cap_usd": 120_000.0}

@@ -20,8 +20,6 @@ export type SettingsForm = components["schemas"]["SettingsFormOut"];
 export type SettingsBlock = components["schemas"]["BlockOut"];
 export type SettingsGroup = components["schemas"]["GroupOut"];
 export type SettingsField = components["schemas"]["FieldOut"];
-export type LexiconRow = components["schemas"]["LexiconRowOut"];
-export type LexiconEntry = components["schemas"]["LexiconOut"];
 export type Segment = components["schemas"]["SegmentOut"];
 export type ChangeOut = components["schemas"]["ChangeOut"];
 export type RuleCount = components["schemas"]["RuleCountOut"];
@@ -33,6 +31,19 @@ export class ApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
     super(`${status} ${detail}`);
   }
+}
+
+/** What to put on the screen when a request failed.
+ *
+ * The backend writes the detail of a 4xx for the operator (C-003), so that sentence is
+ * the message and the status line in front of it is noise. A 5xx detail is written for
+ * nobody - "500 Internal Server Error" is a report, not advice - so it keeps its code.
+ */
+export function errorText(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.status >= 500 ? `HTTP ${error.status} ${error.detail}` : error.detail;
+  }
+  return String(error);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -94,10 +105,3 @@ export const putSettings = (chainId: string, patch: Record<string, unknown>, not
 export const runNow = (chainId: string) =>
   request<Run>(`/chains/${encodeURIComponent(chainId)}/settings/run`, { method: "POST" });
 
-export const listLexicon = (chainId: string, reviewState?: string) =>
-  request<LexiconEntry[]>(
-    `/lexicon?chain_id=${encodeURIComponent(chainId)}` +
-      (reviewState ? `&review_state=${encodeURIComponent(reviewState)}` : ""),
-  );
-
-export const listPendingLexicon = () => request<LexiconEntry[]>("/lexicon/pending");

@@ -81,15 +81,25 @@ export function useSettingsState(chainId: string) {
   const setEnabled = (key: string, next: boolean) =>
     setEnabledDraft((prev) => ({ ...prev, [key]: next }));
 
-  const commit = () => {
+  /** Save the draft, and answer whether it landed.
+   *
+   *  A save the backend refuses is reported by the bar above the form (`save.error`), so
+   *  the promise resolves either way: `void commit()` has nowhere to put a second copy of
+   *  the reason and must not leave an unhandled rejection in the console. 立即运行 reads
+   *  the answer, so it never starts a round under settings that did not save. */
+  const commit = (): Promise<boolean> => {
     if (Object.keys(draft).length === 0 && Object.keys(enabledDraft).length === 0) {
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
     const patch = toPatch(draft, enabledDraft, fieldByKey);
-    return save.mutateAsync(patch).then(() => {
-      setDraft({});
-      setEnabledDraft({});
-    });
+    return save.mutateAsync(patch).then(
+      () => {
+        setDraft({});
+        setEnabledDraft({});
+        return true;
+      },
+      () => false,
+    );
   };
 
   const groupDirty = (fields: SettingsField[]) => fields.filter(isDirty).length;

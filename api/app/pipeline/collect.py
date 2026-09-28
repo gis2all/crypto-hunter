@@ -28,6 +28,11 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
     "market_cap_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
+    # The token own high. Only GMGN reports one (its `history_highest_market_cap`), and it
+    # is not interchangeable with the pool history below it: GeckoTerminal answers the same
+    # question in a price, and no merge can convert one into the other. Listed explicitly so
+    # a future source cannot quietly outrank the one that measured it.
+    "high_market_cap_usd": ("gmgn",),
     "liquidity_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
     "volume_24h_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
     "price_usd": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout"),
@@ -68,6 +73,10 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "creator": ("gmgn", "radardex", "tolly"),
     "renames": ("gmgn",),
     "dex_pair": ("geckoterminal",),
+    # Only the pool history answers these two, and it is the only reading that can fail to -
+    # see `filters.check_drawdown`.
+    "drawdown_pct": ("geckoterminal",),
+    "drawdown_unread": ("geckoterminal",),
     "main_pool": ("geckoterminal", "tolly"),
     "pools": ("geckoterminal", "radardex"),
     "price_series": ("geckoterminal",),

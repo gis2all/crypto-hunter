@@ -9,10 +9,6 @@ race it.
 Idempotence belongs to the database, not to the ticker: `runs.run_key` is unique per
 (chain, slot), so a tick that fires twice, or a process restarted inside the same minute,
 creates one round and leaves the rest alone.
-
-There is a second worker, for the research pass. It is separate on purpose: research spends
-minutes on other people servers, and a round waiting behind it would be a round that got
-slow because somebody else website was slow. The ticker hands it work and moves on.
 """
 
 from __future__ import annotations
@@ -24,7 +20,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .. import config
-from ..report import research
 from . import run as pipeline_run
 
 log = logging.getLogger("crypto-hunter.schedule")
@@ -37,17 +32,6 @@ _lock = threading.Lock()
 _executor: ThreadPoolExecutor | None = None
 _thread: threading.Thread | None = None
 _stopping = threading.Event()
-
-#: The research worker, and the flag that says it is busy. One pass at a time: two passes
-#: would double the load on the same hosts for no gain, and the cards inside a pass are
-#: already read side by side (see `research.WORKERS`).
-_research_lock = threading.Lock()
-_research_executor: ThreadPoolExecutor | None = None
-#: How many entries one research pass takes. A round publishes five cards and the pass reads
-#: them at the same time, so one tick covers a whole round instead of leaving the last cards
-#: to wait half a minute for the next one. Still a cap: a pass that never ends is a pass
-#: nobody can watch.
-RESEARCH_BATCH = 6
 
 
 def executor() -> ThreadPoolExecutor:
@@ -81,53 +65,6 @@ def _work(chain_id: str, run_id: str) -> dict:
         except Exception:  # pragma: no cover - nothing left to try
             log.exception("could not record the failure of round %s", run_id)
         raise
-
-
-def research_executor() -> ThreadPoolExecutor:
-    """The research worker. Its own pool so it can never sit in front of a round."""
-    global _research_executor
-    with _lock:
-        if _research_executor is None:
-            _research_executor = ThreadPoolExecutor(max_workers=1,
-                                                   thread_name_prefix="research")
-    return _research_executor
-
-
-def research_tick() -> bool:
-    """Hand the queued entries to the research worker, if it is free.
-
-    Skipped rather than queued when the worker is busy: the lock is the whole scheduler, and
-    a pass that is still running will pick up whatever is left on the next tick anyway.
-    Returns whether a pass was started.
-    """
-    if not _research_lock.acquire(blocking=False):
-        return False
-    try:
-        research_executor().submit(_research_work)
-    except Exception:  # pragma: no cover - a pool that cannot start work
-        _research_lock.release()
-        raise
-    return True
-
-
-def _research_work() -> list[dict]:
-    """One research pass, then the state transitions it can now justify.
-
-    The round goes to `researched` here rather than in the round: the round thread that
-    published is long gone, and this is the only place that knows a pass has finished.
-    """
-    try:
-        done = research.work_once(RESEARCH_BATCH)
-        for chain_id in {row.get("chain_id") for row in done if row.get("chain_id")}:
-            for run_id in pipeline_run.researched_runs(str(chain_id)):
-                pipeline_run.mark_researched(run_id)
-                log.info("round %s is researched", run_id)
-        return done
-    except Exception:  # a broken pass must not take the worker down
-        log.exception("research pass failed")
-        return []
-    finally:
-        _research_lock.release()
 
 
 def parse_slots(cron: str) -> tuple[set[int], set[int]] | None:
@@ -233,10 +170,6 @@ def _loop() -> None:
             tick()
         except Exception:  # a broken tick must not take the ticker down
             log.exception("tick failed")
-        try:
-            research_tick()
-        except Exception:  # same rule for the second worker
-            log.exception("research tick failed")
 
 
 def start() -> None:
@@ -255,26 +188,15 @@ def start() -> None:
     # Outside the lock: `recover` submits, and `submit` takes the same lock to build the
     # executor, which `threading.Lock` does not allow twice from one thread.
     recover()
-    # A claim does not survive the process that made it, so whatever was `running` when this
-    # process was not is put back in the line before the ticker starts looking.
-    requeued = research.requeue_running()
-    if requeued:
-        log.warning("%d entries were left mid-research by a previous process: queued again",
-                    requeued)
 
 
 def stop() -> None:
-    global _executor, _research_executor, _thread
+    global _executor, _thread
     _stopping.set()
     thread, _thread = _thread, None
     if thread is not None:
         thread.join(timeout=5)
     with _lock:
         pool, _executor = _executor, None
-        research_pool, _research_executor = _research_executor, None
     if pool is not None:
         pool.shutdown(wait=False)
-    # `wait=False` on the research pool too: a pass in flight is holding the lock, and a
-    # shutdown that waited for it would make closing the app as slow as the slowest page.
-    if research_pool is not None:
-        research_pool.shutdown(wait=False)

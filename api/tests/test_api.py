@@ -71,7 +71,7 @@ def test_settings_default_to_yaml_then_version_up(client):
     assert default["version"] == 0 and default["source"] == "config/chains.yaml"
     assert default["payload"]["report"]["per_round"] == 5
 
-    payload = {"pipeline.scoring.onchain_weight": 55, "pipeline.scoring.product_weight": 45}
+    payload = {"pipeline.scoring.onchain_weight": 55, "pipeline.scoring.offchain_weight": 45}
     first = client.put(f"/api/v1/chains/{ARC}/settings", json={"patch": payload, "note": "tweak"}).json()
     assert first["version"] == 1 and first["source"] == "db"
 
@@ -88,13 +88,36 @@ def test_settings_reject_unknown_paths(client):
 
 
 def test_weight_sum_is_guarded_on_the_real_path(client):
-    """The knobs the settings page edits live under pipeline.scoring, not at the top."""
+    """The knobs the settings page edits live under pipeline.scoring, not at the top, and
+    the refusal reads like the page does: it names the box and prints the current sum
+    instead of leaving the operator to add five numbers by hand."""
     path = f"/api/v1/chains/{ARC}/settings"
-    both_weights = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.product_weight": 50}
-    assert client.put(path, json={"patch": both_weights}).status_code == 422
 
-    factor_weight = {"pipeline.scoring.onchain_factor_weights.liquidity": 30}
-    assert client.put(path, json={"patch": factor_weight}).status_code == 422
+    both = {"pipeline.scoring.onchain_weight": 60, "pipeline.scoring.offchain_weight": 50}
+    blocked = client.put(path, json={"patch": both})
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"] == (
+        "链上质量权重 ＋ 链下调研权重必须等于 100%，当前 110%（链上质量 60% ＋ 链下调研 50%）")
+
+    onchain = {"pipeline.scoring.onchain_factor_weights.liquidity": 30}
+    blocked = client.put(path, json={"patch": onchain})
+    assert blocked.status_code == 422
+    assert "链上质量五项权重合计要等于 100%，当前 110%" in blocked.json()["detail"]
+    assert "流动性 30%" in blocked.json()["detail"]
+
+    offchain = {"pipeline.scoring.offchain_factor_weights.f_team": 30}
+    blocked = client.put(path, json={"patch": offchain})
+    assert blocked.status_code == 422
+    assert "链下调研五项权重合计要等于 100%，当前 110%" in blocked.json()["detail"]
+    assert "团队与 dev 可信度 30%" in blocked.json()["detail"]
+
+    # Rebalanced, the same knob saves: the check is on the sum, not on any single row.
+    balanced = {"pipeline.scoring.offchain_factor_weights.f_team": 30,
+                "pipeline.scoring.offchain_factor_weights.f_substance": 10}
+    saved = client.put(path, json={"patch": balanced})
+    assert saved.status_code == 200
+    weights = saved.json()["payload"]["pipeline"]["scoring"]["offchain_factor_weights"]
+    assert weights["f_team"] == 30 and weights["f_substance"] == 10
 
 
 def test_settings_patch_takes_dotted_paths_and_coerces(client):
@@ -128,11 +151,23 @@ def test_settings_form_shows_the_saved_version_not_the_yaml(client):
 def test_a_blank_on_a_knob_that_has_a_number_is_refused_not_stored(client):
     """Only a knob that ships blank may be handed back blank. Clearing 流动性's floor
     would leave the round a rule it cannot compare at all, and that used to reach the
-    database and surface as a 500 on the next save - a 422 at the door says which box."""
+    database and surface as a 500 on the next save - a 422 at the door says which box,
+    in the words printed next to it and not in the path this layer happens to walk."""
     path = f"/api/v1/chains/{ARC}/settings"
     resp = client.put(path, json={"patch": {"pipeline.prefilter.liquidity_min_usd": ""}})
     assert resp.status_code == 422
-    assert "liquidity_min_usd" in resp.json()["detail"]
+    assert resp.json()["detail"] == "「流动性」不能留空：这个格子必须有个数"
+
+    # A range is one label over two boxes, so the refusal has to say which end went blank.
+    resp = client.put(path, json={"patch": {"pipeline.prefilter.market_cap_max_usd": ""}})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "「市值上限」不能留空：这个格子必须有个数"
+
+    # The page posts a nested group, not a dotted path (toPatch builds the tree), and the
+    # label map has to survive that shape as well - it is threaded through the whole walk.
+    resp = client.put(path, json={"patch": {"pipeline": {"prefilter": {"liquidity_min_usd": ""}}}})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "「流动性」不能留空：这个格子必须有个数"
 
 def test_a_text_knob_can_still_be_cleared(client):
     """The blank rule is about numbers only. Emptying a text knob is a legitimate
@@ -168,12 +203,13 @@ def test_a_ceiling_that_starts_blank_still_saves_as_a_number(client):
 def test_settings_form_is_data_not_markup(client):
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
     assert form["chain_id"] == ARC
-    assert [b["key"] for b in form["blocks"]] == ["onchain", "product", "run"]
+    assert [b["key"] for b in form["blocks"]] == ["onchain", "offchain", "run"]
     fields = [f for b in form["blocks"] for g in b["groups"] for f in g["fields"]]
     assert len({f["key"] for f in fields}) == len(fields)
     assert all("." in f["key"] for f in fields)
-    assert {f["widget"] for f in fields} >= {"num", "range", "bool", "select", "checks", "ro", "sum"}
-    assert isinstance(form["totals"], dict) and isinstance(form["lexicon"], list)
+    assert {f["widget"] for f in fields} >= {"num", "range", "bool", "select", "checks", "ro"}
+    assert isinstance(form["totals"], dict)
+    assert "lexicon" not in form, "the off-chain block is scored, not browsed"
     blob = json.dumps(form, ensure_ascii=False)  # every label is data, never markup
     assert not re.search(r"</?(b|code|br|a|span|div|i)\b", blob)
 
@@ -200,32 +236,36 @@ def test_scan_rows_list_scanners_only(client):
     ]
 
 
-def test_the_freshness_knobs_are_controls_and_not_decoration(client):
-    """Four knobs behind `core.lexicon.due`, plus the two read-only rows that say what they
-    are doing right now. A knob on screen with no rule behind it is worse than no knob."""
+def test_the_offchain_block_weights_its_five_judgements(client):
+    """The five judgements are weights now (2026-09-28), drawn like the on-chain block's
+    factors: a 20% knob each. The anchor a judgement is scored against and the 数据来源
+    line both read once, so they live in the group's 说明 instead of taking five rows."""
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
     fields = _fields(form)
-    for key in ("pipeline.lexicon.expire_days", "pipeline.lexicon.mcap_move_pct",
-                "pipeline.lexicon.holders_gain_pct", "pipeline.lexicon.rewrite_skip_hours"):
-        assert fields[key]["widget"] == "num", key
-        assert fields[key]["value"], key
-    assert fields["pipeline.scoring.lexicon_stale"]["widget"] == "ro"
-    assert fields["report.research_enabled"]["widget"] == "bool"
-    # The two read-only rows are fed by totals, so a totals field missing from the response
-    # model would drop them on the floor - which is exactly what happened once already.
-    assert form["totals"]["lexicon_stale"] == 0
-    assert form["totals"]["lexicon_research"].startswith("已重档")
+    assert fields["pipeline.scoring.offchain_weight"]["widget"] == "num"
+    for key in ("f_completeness", "f_substance", "f_team", "f_narrative", "f_community"):
+        row = fields["pipeline.scoring.offchain_factor_weights." + key]
+        assert row["widget"] == "num", key
+        assert row["value"] == "20", key
+        assert row["unit"] == "%", key
+    assert "pipeline.scoring.source" not in fields
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    detail = groups["scoring"]["detail"]
+    assert "数据来源：每轮全新调研" in detail
+    assert "0–5 · 有界面 / 能交互 / 收费并迭代" in detail
+    assert "0–5 · 互动率与持续性，粉丝数无效" in detail
+    # There is no research on/off switch any more: the reading pass is what writes the
+    # entry, and an entry is what the 45% block is scored from - it cannot be optional.
+    assert "report.research_enabled" not in fields
 
 
 def test_a_knob_that_is_a_setting_can_be_changed(client):
     path = f"/api/v1/chains/{ARC}/settings"
-    patched = client.put(
-        path, json={"patch": {"pipeline.lexicon.rewrite_skip_hours": 12}}
-    )
+    patched = client.put(path, json={"patch": {"report.per_round": 3}})
     assert patched.status_code == 200
 
     fields = _fields(client.get(f"{path}/form").json())
-    assert fields["pipeline.lexicon.rewrite_skip_hours"]["value"] == "12"
+    assert fields["report.per_round"]["value"] == "3"
 
 
 def test_run_rows_say_what_a_change_does_instead_of_counting(client):
@@ -243,7 +283,7 @@ def test_caliber_line_is_generated_from_the_settings(client):
     assert len(lines) == 3
     assert lines[0].startswith("硬过滤：市值 $10K – $200K ｜ 流动性 ≥ $5K")
     assert "陷阱占比 < 45%" in lines[1]
-    assert lines[2] == "评分 = 质量分 55%（流动性/成交/持有人/集中度/捆绑）+ 赛道产品分 45%（词条库）"
+    assert lines[2] == "评分 = 质量分 55%（流动性/成交/持有人/集中度/捆绑）+ 链下调研分 45%（每轮全新调研）"
 
 
 def test_caliber_line_follows_a_change(client):
@@ -260,19 +300,6 @@ def test_caliber_reads_the_holder_band_only_when_there_is_a_ceiling(client):
     chain = copy.deepcopy(config.chain(ARC))
     chain["pipeline"]["prefilter"]["holders_max"] = 2000
     assert "持有人 100 – 2000" in forms.caliber_text(chain)[0]
-
-def test_lexicon_rows_without_a_symbol_sort_last(client):
-    """A drafted file has no symbol yet; it belongs at the end of the table, not in
-    front of the named entries."""
-    for ca, sym in (("0xaaa", "Zeta"), ("0xbbb", None), ("0xccc", "Alpha")):
-        body = {"tag": "meme", "narrative": 3.0, "product": 3.0}
-        if sym:
-            body["symbol"] = sym
-        assert client.put(f"/api/v1/lexicon/{ca}", json=body).status_code == 200
-
-    rows = client.get(f"/api/v1/chains/{ARC}/settings/form").json()["lexicon"]
-    assert [r["ca"] for r in rows] == ["0xccc", "0xaaa", "0xbbb"]
-
 
 def test_push_group_carries_no_read_only_banner(client):
     """The banner was a `sub` row reading 只读状态（系统告诉你的，不是你配的）. Cut on
@@ -294,15 +321,16 @@ def test_push_content_chip_carries_the_card_count(client):
     assert labels["table"] == "对比表"
 
 
-def test_read_only_rows_carry_the_prototype_action(client):
-    """The credentials and copy rows sit next to an action in the prototype. Ours is
-    inert, but it has to be there and say why, or the row reads differently."""
+def test_read_only_rows_carry_no_inert_action(client):
+    """数据源凭据 used to sit next to a dead 重新授权 button, and 复制参数 next to a dead
+    复制. Neither action exists, so the rows carry the reading alone."""
     fields = _fields(client.get(f"/api/v1/chains/{ARC}/settings/form").json())
     sources = fields["runtime.sources"]
     assert sources["ro_row"] is True and sources["ro_value"] is True
-    assert sources["ro_button"] == "重新授权" and sources["ro_button_note"]
-    copy_row = fields["runtime.copy"]
-    assert copy_row["ro_button"] == "复制" and copy_row["ro_button_note"]
+    assert "runtime.copy" not in fields
+    assert not any(
+        key in field for field in fields.values() for key in ("ro_button", "ro_button_note")
+    )
 
 
 def test_credentials_read_in_scan_order(client):
@@ -343,7 +371,7 @@ def test_measured_averages_come_from_the_scores_not_from_the_rounded_cards(clien
     try:
         conn.execute(
             "INSERT INTO runs (id, run_key, chain_id, trigger, status, selected)"
-            " VALUES ('r1', 'r1', ?, 'manual', 'sent', 5)",
+            " VALUES ('r1', 'r1', ?, 'manual', 'researched', 5)",
             (ARC,),
         )
         for index, total in enumerate([60.072, 56.5309, 54.9015, 53.9655, 53.269]):
@@ -376,11 +404,70 @@ def test_the_market_cap_reason_follows_the_rounds_own_bound():
     assert assemble._decline_reasons(metrics, safety, 20000) == []
 
 
-def test_settings_can_be_copied_from_a_chain_that_is_not_collecting_yet(client):
-    """BSC is declared and carries defaults, so it is a real copy source - the rail
-    showing it as「待接」does not make the row meaningless."""
+def test_settings_carry_no_cross_chain_copy_row(client):
+    """复制参数 was never wired up, so the row is gone rather than left inert."""
     form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
-    assert _fields(form)["runtime.copy"]["value"] == "从「BSC 雷达」复制"
+    assert "runtime.copy" not in _fields(form)
+
+
+def test_eliminations_travel_in_the_group_note(client):
+    """本轮淘汰 left the rows: the counts are a reading of the group, not a second value
+    beside every knob, so they print inside the header note."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    for key in ("hard", "safety"):
+        group = groups[key]
+        assert group["detail"].count("本轮淘汰：") == 1
+        assert all(f["drop_count"] is None for f in group["fields"])
+
+
+def test_the_scan_reading_names_each_scanner_and_keeps_it_off_the_row():
+    """The four switches carry no numbers any more: what each scanner fed the round is a
+    reading, and it reads in the group note."""
+    from app.api.v1 import forms
+    from app.api.v1.schemas import FieldOut
+
+    chain = config.chain(ARC)
+    built = forms.build(
+        chain,
+        {
+            "sources": [{"name": "gmgn", "count": 119}, {"name": "radardex", "count": 3025}],
+            "universe": 3630,
+        },
+        {},
+    )
+    groups = {g["key"]: g for b in built["blocks"] for g in b["groups"]}
+    raw = next(f for f in groups["output"]["fields"] if f["key"] == "pipeline.scan_sources")
+    field = FieldOut.model_validate(raw)
+    assert field.drop_count is None
+    assert all(c.count is None for c in field.checks)
+    assert groups["output"]["detail"].splitlines()[0] == (
+        "本轮扫描源：GMGN 活跃榜 119 · RadarDEX 发射台 3,025；去重后进入漏斗 3,630 个。"
+    )
+
+
+def test_the_block_weights_live_in_the_notes_not_beside_the_titles(client):
+    """占 55% / 占 45% are gone from the block headers. Each weight is stated in the note of
+    the group that owns its knob, and the page header still spells the split out; 运行 never
+    scored, so it says nothing at all."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    assert not any("weight" in block for block in form["blocks"])
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    assert groups["quality"]["detail"].startswith("链上质量占综合分 55%。")
+    assert groups["scoring"]["detail"].startswith("链下调研占综合分 45%。")
+    bar = "".join(run["text"] for run in form["note_bar"])
+    assert "链上质量 55%" in bar and "链下调研 45%" in bar
+
+def test_the_group_readings_left_the_page_for_the_note(client):
+    """漏斗, 提示不淘汰 and 本轮违规 are one-click readings now: the group draws no
+    trailing line, and every one of them is in the header's 说明."""
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    groups = {g["key"]: g for b in form["blocks"] for g in b["groups"]}
+    hard, safety = groups["hard"], groups["safety"]
+    assert hard["note"] == "" and "漏斗：扫描" in hard["detail"]
+    assert safety["note"] == ""
+    assert "提示不淘汰：mintable、blacklist、pausable、is_proxy" in safety["detail"]
+    assert "本轮违规：" in safety["detail"]
 
 
 def test_lexicon_updated_date_comes_from_the_registry_file(tmp_path):
@@ -402,21 +489,6 @@ def test_recompute_is_explicitly_blocked(client):
     resp = client.post(f"/api/v1/chains/{ARC}/settings/recompute", json={"patch": {}})
     assert resp.status_code == 501
     assert resp.json()["blocked_by"]
-
-
-def test_lexicon_pending_flow(client):
-    assert client.get("/api/v1/lexicon").json() == []
-    created = client.put(
-        "/api/v1/lexicon/0xABC",
-        json={"symbol": "BCAT", "tag": "meme", "narrative": 3.5, "product": 4.0},
-    )
-    assert created.status_code == 200
-    assert created.json()["review_state"] == "pending"
-    assert len(client.get("/api/v1/lexicon/pending").json()) == 1
-
-    confirmed = client.put("/api/v1/lexicon/0xABC", json={"symbol": "BCAT", "review_state": "confirmed"})
-    assert confirmed.json()["review_state"] == "confirmed"
-    assert client.get("/api/v1/lexicon/pending").json() == []
 
 
 def test_every_candidate_that_missed_the_cut_is_in_the_pool(isolated_db):

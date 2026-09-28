@@ -55,13 +55,18 @@ PUSH_CONTENT = {
     "cards": "报告卡",
     "table": "对比表",
     "links": "原链接",
-    "lexicon": "词条判决书",
 }
 PUSH_TARGETS = {"telegram": "Telegram", "discord": "Discord", "none": "仅落库不推"}
 INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
-UNLISTED_LABELS = {
-    "pending_review": "待建档，本轮不参与排名",
-    "zero": "按 0 计",
+#: The five 0-5 judgements the off-chain block is computed from, with the anchor each one
+#: is scored against. The anchors are 口径, not knobs: they ride in the group's 说明, and
+#: the weights that split the block live in `pipeline.scoring.offchain_factor_weights`.
+OFFCHAIN_LABELS = {
+    "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
+    "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
+    "f_team": ("团队与 dev 可信度", "0–5 · 只奖可追溯；批量建币一票降档"),
+    "f_narrative": ("叙事与官方关系", "0–5 · 离开 Arc 跑不起来 = 5"),
+    "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
 }
 ALERT_LABELS = {
     "rename_count": "X 改名次数",
@@ -87,6 +92,39 @@ def _checks(values: list[str], labels: dict[str, str]) -> list[dict]:
     return [{"value": v, "label": labels.get(v, v)} for v in values]
 
 
+def _drop_reading(fields: list[dict]) -> str:
+    """This round's eliminations, per rule, on the group note.
+
+    The counts used to ride in a trailing column. A column of numbers reads as data
+    even when every row in it is a rule, so each count travels with the definition of
+    the rule that produced it instead of standing beside the knob.
+    """
+    parts = [
+        "%s -%s" % (field["label"], format(field["drop_count"], ","))
+        for field in fields
+        if field.get("drop_count")
+    ]
+    return "本轮淘汰：" + (" · ".join(parts) if parts else "无")
+
+def _scan_reading(checks: list[dict], universe: int) -> str:
+    """What each scanner contributed this round, for the group note.
+
+    The counts used to ride on the four checkboxes and one more beside the label. The row
+    is the switches now; the round's own numbers read in one place.
+    """
+    parts = [
+        "%s %s" % (check["label"], format(check["count"], ","))
+        for check in checks
+        if check.get("count")
+    ]
+    if not parts:
+        return ""
+    line = "本轮扫描源：" + " · ".join(parts)
+    if universe:
+        line += "；去重后进入漏斗 %s 个" % format(universe, ",")
+    return line + "。"
+
+
 def build(
     chain: dict,
     totals: dict,
@@ -98,11 +136,11 @@ def build(
     prefilter = pipeline.get("prefilter") or {}
     safety = pipeline.get("safety") or {}
     scoring = pipeline.get("scoring") or {}
-    lexicon_cfg = pipeline.get("lexicon") or {}
     schedule = chain.get("schedule") or {}
     report = chain.get("report") or {}
     alerts = chain.get("alerts") or {}
     factor_weights = scoring.get("onchain_factor_weights") or {}
+    offchain_weights = scoring.get("offchain_factor_weights") or {}
 
     def drops(*reasons: str) -> int | None:
         values = [rule_counts.get(r) for r in reasons if rule_counts.get(r) is not None]
@@ -160,7 +198,7 @@ def build(
         _field(
             "pipeline.prefilter.drawdown_max_pct", "距高回撤", "num",
             str(prefilter.get("drawdown_max_pct", "")), op="≤", unit="%",
-            check_label="历史最高市值 · 主池近 10 日最高价 双确认",
+            check_label="源高点 / 库记录高点 / 池面全历史，任一跌够即淘汰",
             drop_count=drops("market_cap_drawdown"),
         ),
     ]
@@ -183,8 +221,12 @@ def build(
             "pipeline.safety.forbid_dangerous_perms", "无危险权限", "checks",
             list(safety.get("forbid_dangerous_perms") or []),
             checks=_checks(
-                ["mintable", "blacklist", "pausable", "hidden_owner"], {}
+                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"],
+                {"hidden_owner": "隐藏所有者",
+                 "owner_change_balance": "可改持有人余额",
+                 "can_take_back_ownership": "可夺回所有权"},
             ),
+            # 提示项照常读、卡片上照常显示，只是不淘汰 —— 门槛只留真能卷走资产的三条。
             drop_count=drops("dangerous_perm"),
         ),
         _field(
@@ -194,9 +236,16 @@ def build(
         ),
     ]
 
+    # The two judgement groups read their eliminations from the group note now, so the
+    # counts leave the rows: a row keeps only the knob, the reading moves behind the icon.
+    hard_drops = _drop_reading(hard_fields)
+    safety_drops = _drop_reading(safety_fields)
+    for field in hard_fields + safety_fields:
+        field["drop_count"] = None
+
     quality_fields = [
         _field(
-            "pipeline.scoring.onchain_weight", "质量分权重", "num",
+            "pipeline.scoring.onchain_weight", "链上质量权重", "num",
             str(scoring.get("onchain_weight", 55)), unit="%", dim="占综合分", dim_in="label",
         )
     ]
@@ -209,76 +258,42 @@ def build(
                 str(factor_weights.get(factor, "")), unit="%", dim=how, dim_in="label",
             )
         )
-    quality_fields.append(_field("pipeline.scoring.factor_sum", "合计", "sum", "100", unit="%"))
 
-    product_fields = [
-        _field("pipeline.scoring.product_weight", "赛道产品权重", "num",
-               str(scoring.get("product_weight", 45)), unit="%", dim="占综合分",
+    # The five rows are weights, not readings, so they are drawn like the on-chain block's
+    # factors: a knob per judgement, the anchor it is scored against folded into the 说明.
+    offchain_fields = [
+        _field("pipeline.scoring.offchain_weight", "链下调研权重", "num",
+               str(scoring.get("offchain_weight", 45)), unit="%", dim="占综合分",
                dim_in="label"),
-        _field("pipeline.scoring.source", "数据来源", "ro", "词条库"),
-        _field("pipeline.scoring.narrative_scale", "叙事贴合", "ro", "0–5 · 判定项"),
-        _field("pipeline.scoring.product_scale", "产品完成", "ro", "0–5 · 判定项"),
-        _field("pipeline.scoring.unlisted_policy", "未入库标的", "ro",
-               UNLISTED_LABELS.get(scoring.get("unlisted_policy", "zero"), "按 0 计")),
-    ]
-
-    lexicon_fields = [
-        _field("pipeline.scoring.lexicon_size", "入库条目", "ro", str(totals.get("lexicon_size", 0))),
-        _field("pipeline.scoring.lexicon_hit", "本轮命中", "ro",
-               "%s / %s" % (totals.get("lexicon_hit", 0), totals.get("selected", 0))),
-        _field("pipeline.scoring.lexicon_updated", "最近更新", "ro",
-               _stamp(totals.get("lexicon_updated"))),
-        _field("pipeline.scoring.lexicon_flow", "维护方式", "ro", "LLM 补写 → 人工确认"),
-        # The four knobs behind `core.lexicon.due`. They are settings rather than constants
-        # because how long a verdict stays good is a judgement about this chain, not about the
-        # code - and because a wrong value here is paid for in rewrites nobody wanted.
-        _field("pipeline.lexicon.expire_days", "档案有效期", "num",
-               str(lexicon_cfg.get("expire_days", 2)), op=">", unit="天",
-               dim="超期即重写", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.mcap_move_pct", "市值波动重写", "num",
-               str(lexicon_cfg.get("mcap_move_pct", 40)), op="≥", unit="%",
-               dim="较建档基准", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.holders_gain_pct", "持有人增长重写", "num",
-               str(lexicon_cfg.get("holders_gain_pct", 40)), op="≥", unit="%",
-               dim="较建档基准", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.rewrite_skip_hours", "重写跳过窗口", "num",
-               str(lexicon_cfg.get("rewrite_skip_hours", 6)), op="<", unit="小时",
-               dim="短于此且未触发刷新条件 = 直接复用", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.scoring.lexicon_stale", "库内待重写", "ro",
-               "%s 条" % totals.get("lexicon_stale", 0)),
-        _field("pipeline.scoring.lexicon_research", "重档调研", "ro",
-               totals.get("lexicon_research") or "—"),
-        _field("pipeline.scoring.lexicon_unlisted", "未入库标的", "ro",
-               UNLISTED_LABELS.get(scoring.get("unlisted_policy", "zero"), "按 0 计")),
+    ] + [
+        _field("pipeline.scoring.offchain_factor_weights.%s" % key, label, "num",
+               str(offchain_weights.get(key, "")), unit="%")
+        for key, (label, _anchor) in OFFCHAIN_LABELS.items()
     ]
 
     interval = int(schedule.get("interval_hours") or 3)
     slots = interval_slots(interval)
+    scan_checks = _source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or [])
+    scan_reading = _scan_reading(scan_checks, totals.get("universe") or 0)
+    for check in scan_checks:
+        check["count"] = None
     output_fields = [
         _field("report.per_round", "每轮报告数", "num", str(report.get("per_round", 5)), unit="份",
                drop_x="下轮生效"),
         _field("pipeline.gate_limit", "判定候选数", "num",
                str(pipeline.get("gate_limit", 20)), op="≤", unit="个",
-               dim="按 24h 成交额取前 N；0 = 判完整个幸存者池", dim_in="field",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
                options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
                drop_x="下轮生效"),
         _field("schedule.cron", "触发时刻", "derived", "/".join("%02d" % s for s in slots),
-               dim="由间隔生成", dim_in="field"),
+               ),
         _field("schedule.push_delay_minutes", "推送延迟", "num",
                str(schedule.get("push_delay_minutes", 6)), op="+", unit="分钟",
-               dim="先发后研", dim_in="field", drop_x="下轮生效"),
-        # The one switch on this page whose work happens entirely after the round is over,
-        # so it can default to on without costing a round a single second.
-        _field("report.research_enabled", "重档调研", "bool",
-               bool(report.get("research_enabled", True)),
-               check_label="发布后异步读官网 / X / GitHub，用外部证据重写词条档案",
                drop_x="下轮生效"),
         _field("pipeline.scan_sources", "扫描源", "checks",
                list(pipeline.get("scan_sources") or []),
-               checks=_source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or []),
-               drop_count=totals.get("universe") or None, drop_prefix=""),
+               checks=scan_checks),
     ]
 
     alert_fields = []
@@ -304,7 +319,7 @@ def build(
         _field("report.push_content", "推送内容", "checks",
                list(report.get("push_content") or []),
                checks=_checks(
-                   ["cards", "table", "links", "lexicon"],
+                   ["cards", "table", "links"],
                    {**PUSH_CONTENT, "cards": f"{totals.get('selected') or 0} 张报告卡"},
                ),
                drop_x="下轮生效"),
@@ -319,97 +334,86 @@ def build(
                        if name in SOURCE_ORDER else len(SOURCE_ORDER),
                    )
                ) or "—",
-               ro_row=True, ro_value=True,
-               ro_button="重新授权",
-               ro_button_note="尚未接入：目前只能读凭据清单，授权流程还没做"),
-        _field("runtime.copy", "复制参数", "ro",
-               ("从「%s」复制" % totals.get("copy_from")) if totals.get("copy_from") else "没有其他链可复制",
-               ro_row=True, ro_value=True,
-               ro_button="复制",
-               ro_button_note="尚未接入：跨链复制参数还没做"),
+               ro_row=True, ro_value=True),
     ]
 
     blocks = [
         {
             "key": "onchain",
             "title": "链上质量",
-            "weight": "占 %s%%" % scoring.get("onchain_weight", 55),
             "columns": 3,
             "groups": [
                 {
+                    "key": "quality", "title": "评分口径", "hint": "",
+                    "fields": quality_fields,
+                    "note": "",
+                    "detail": (
+                        "链上质量占综合分 %s%%。\n" % scoring.get("onchain_weight", 55)
+                        + "5 项各自归一后加权求和 = 质量分，"
+                        "五项权重合计需等于 100%。\n"
+                        "链上质量权重与链下调研权重互补，"
+                        "合计 100%；改一边另一边跟着走。"
+                    ),
+                },
+                {
                     "key": "hard", "title": "硬过滤", "hint": "",
                     "fields": hard_fields,
-                    "note": (
+                    "note": "",
+                    "detail": (
                         "漏斗：扫描 {universe:,} → 淘汰 {dropped:,}"
-                        " → 候选 {candidates} → 入选 {selected}"
+                        " → 候选 {candidates} → 入选 {selected}。\n"
+                        "不满足直接淘汰，不进后面的评分。\n"
+                        + hard_drops + "。\n"
+                        "改动后旧计数作废，重跑本轮才作数。"
                     ).format(
                         universe=totals.get("universe", 0),
                         dropped=max(0, totals.get("universe", 0) - totals.get("candidates", 0)),
                         candidates=totals.get("candidates", 0),
                         selected=totals.get("selected", 0),
                     ),
-                    "detail": (
-                        "不满足直接淘汰，不进后面的评分。\n"
-                        "每条右侧是本轮被该条淘汰的数量；"
-                        "一旦改动，旧计数作废并标「待重算」。"
-                    ),
                 },
                 {
                     "key": "safety", "title": "安全门槛", "hint": "",
                     "fields": safety_fields,
                     "note": "",
-                    "detail": (
-                        "必判：没有「不判就放过」这一档，不合格同样淘汰。\n"
-                        "门槛只切换判定口径，不提供整条关闭"
-                        " —— 硬线变软线必须是显式动作，"
-                        "不能悄悄生效。"
-                    ),
-                    "warn": totals.get("safety_warn") or "",
-                },
-                {
-                    "key": "quality", "title": "质量分构成", "hint": "",
-                    "fields": quality_fields,
-                    "note": "",
-                    "detail": (
-                        "5 项各自归一后加权求和 = 质量分，"
-                        "权重合计必须等于 100%。\n"
-                        "质量分权重与赛道产品权重互补，"
-                        "合计 100%；改一边另一边跟着走。"
+                    "detail": "\n".join(
+                        line
+                        for line in (
+                            "必判：没有「不判就放过」这一档，不合格同样淘汰。",
+                            "门槛只切换判定口径，不提供整条关闭"
+                            " —— 硬线变软线必须是显式动作，不能悄悄生效。",
+                            "提示不淘汰：mintable、blacklist、pausable、is_proxy。",
+                            safety_drops + "。",
+                            totals.get("safety_warn") or "",
+                        )
+                        if line
                     ),
                 },
             ],
         },
         {
-            "key": "product",
-            "title": "赛道产品",
-            "weight": "占 %s%%" % scoring.get("product_weight", 45),
+            "key": "offchain",
+            "title": "链下调研",
             "columns": 2,
             "groups": [
                 {
                     "key": "scoring", "title": "评分口径", "hint": "",
-                    "fields": product_fields,
+                    "fields": offchain_fields,
                     "note": "",
-                    "detail": (
-                        "和链上那 %s%% 的根本区别：这一项"
-                        "抓不到，只能读官网／X／GitHub 之后下判断。 "
-                        "判断结果写进词条库，一份判断可被"
-                        "多轮复用，也可以随时改——改了"
-                        "下一轮就按新分算。"
-                    ) % scoring.get("onchain_weight", 55),
-                },
-                {
-                    "key": "lexicon", "title": "词条库状态", "hint": "",
-                    "fields": lexicon_fields,
-                    # This group is read as two columns, so it has to be short: the reading
-                    # that used to sit at its foot opens from the 说明 icon instead.
-                    "note": "",
-                    "detail": (
-                        "库越大，这 45% 的判断越稳、越省事。"
-                        "长期看它是这个系统里唯一会越用越值钱的资产。\n"
-                        "「库内待重写」是整库口径（按上面四条规则在今天算），一轮只重写"
-                        "进入本轮判定候选的那些——判定候选上限见「运行」里的「判定候选数」。\n"
-                        "「重档调研」是发布之后的异步那一遍：读官网／X／GitHub，"
-                        "用外部证据重写档案，每个标的一次，失败会写明原因，不阻塞任何一轮。"
+                    # The prepended share is formatted on its own: an outer %-format would
+                    # run over the "45%" it just produced and choke on the stray percent.
+                    "detail": "\n".join(
+                        [
+                            "链下调研占综合分 %s%%。" % scoring.get("offchain_weight", 45),
+                            "数据来源：每轮全新调研 —— 判断和它依据的事实永远是同一份，"
+                            "不沿用上一轮的结论。",
+                            "和链上那 %s%% 的根本区别：这一项抓不到，"
+                            "只能读官网／X／GitHub 之后下判断。"
+                            % scoring.get("onchain_weight", 55),
+                            "五个 0–5 判断（权重默认各 20%）：",
+                        ]
+                        + ["%s %s" % (label, anchor)
+                           for label, anchor in OFFCHAIN_LABELS.values()]
                     ),
                 },
             ],
@@ -417,13 +421,20 @@ def build(
         {
             "key": "run",
             "title": "运行",
-            "weight": "不进分",
-            "avg": totals.get("last_batch") or "",
             "columns": 3,
             "groups": [
                 {
                     "key": "output", "title": "产出与节奏", "hint": "",
                     "fields": output_fields, "note": "",
+                    "detail": "\n".join(
+                        line
+                        for line in (
+                            scan_reading,
+                            "判定候选数按流动性取前 N，0 = 判完整个幸存者池。",
+                            "触发时刻由间隔生成；推送延迟 = 报告发布后等待的分钟数。",
+                        )
+                        if line
+                    ),
                 },
                 {
                     "key": "alerts", "title": "提醒", "hint": "",
@@ -444,6 +455,26 @@ def build(
         },
     ]
     return {"blocks": blocks, "stages": run_stages or []}
+
+
+def field_labels(chain: dict) -> dict[str, str]:
+    """Every dotted key the settings page shows -> the words it prints for that box.
+
+    Read when the API refuses a save: a refusal has to name the box the operator can see,
+    never a dotted path. Composed from the same `build` the page renders, so the answer and
+    the row above it cannot drift apart (C-003). A range is one label over two boxes, so
+    its two ends are told apart as 下限 / 上限 - "「市值」不能留空" would not say which.
+    """
+    labels: dict[str, str] = {}
+    for block in build(chain, {}, {})["blocks"]:
+        for group in block["groups"]:
+            for field in group["fields"]:
+                if field.get("widget") == "range" and field.get("key2"):
+                    labels[field["key"]] = field["label"] + "下限"
+                    labels[field["key2"]] = field["label"] + "上限"
+                else:
+                    labels[field["key"]] = field["label"]
+    return labels
 
 
 def interval_slots(hours: int) -> list[int]:
@@ -533,7 +564,7 @@ def caliber_text(chain: dict) -> list[str]:
         "貔貅 = 0" if prefilter.get("forbid_honeypot") else "貔貅 不设门槛",
         "24h 成交 ≥ %s" % _usd(prefilter.get("volume_24h_min_usd")),
         "零数据淘汰 ≥ %s 项可打分字段" % _num(prefilter.get("min_scored_fields")),
-        ("距高回撤 ≥ %s%% 双确认" % _num(abs(prefilter["drawdown_max_pct"]))
+        ("距高回撤 ≥ %s%%（源高点 / 库记录高点 / 池面全历史，任一跌够）" % _num(abs(prefilter["drawdown_max_pct"]))
          if prefilter.get("drawdown_max_pct") is not None else "距高回撤 不设门槛"),
     ]
     verified = ("双源：GoPlus + Sourcify"
@@ -550,10 +581,10 @@ def caliber_text(chain: dict) -> list[str]:
     return [
         "硬过滤：" + " ｜ ".join(hard),
         "安全门槛：" + " ｜ ".join(guard),
-        "评分 = 质量分 %s%%（%s）+ 赛道产品分 %s%%（词条库）" % (
+        "评分 = 质量分 %s%%（%s）+ 链下调研分 %s%%（每轮全新调研）" % (
             _num(scoring.get("onchain_weight", 55)),
             "/".join(FACTOR_SHORT.get(f, f) for f in factors),
-            _num(scoring.get("product_weight", 45)),
+            _num(scoring.get("offchain_weight", 45)),
         ),
     ]
 

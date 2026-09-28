@@ -1,8 +1,8 @@
 """The contract the LLM must satisfy; mirrors report/prompts/*.md.
 
-Two drafts are possible, and neither is free-form: the lexicon entry carries the two
-numbers that feed the 45% product block, so an entry without them could not be scored,
-and the commentary carries the words that go on a card.
+The entry is not free-form: the lexicon entry carries the five 0-5 judgements the 45%
+off-chain block is computed from, so an entry without them could not be scored, and the prose
+beside them is what the card prints.
 """
 
 from __future__ import annotations
@@ -19,42 +19,48 @@ log = logging.getLogger(__name__)
 #: batch of entries, and rejecting a batch over one long field costs every entry in it - the
 #: same reason the floors above sit below what the prompts ask for. A field that runs long is
 #: logged and stored; the writer is what has to change, not the reader.
-CAPS = {"concl": 500, "narr_text": 150, "prod_text": 200, "mech_text": 200,
-        "pros": 100, "cons": 100}
-
-#: 本期点评 has to carry 变化 + 对比 + 看点隐患, so its cap is wider than any single field's.
-PER_TOKEN_CAP = 300
+#:
+#: `concl` is the verdict at the top of the card; the rest are its 链下调研 fold, one field
+#: per block and one block per judgement, named the way the card prints them. A field here
+#: with no block on the card would be prose nobody reads, and a block with no field would be a
+#: heading with nothing under it - so this list and the card's blocks move together.
+CAPS = {"concl": 500, "prod_text": 200, "substance_text": 200, "team_text": 200,
+        "narr_text": 200, "social": 200, "badge": 16}
 
 
 class NewTokenEntry(BaseModel):
-    """A lexicon draft for a token that has no entry yet. Human confirmation is separate.
+    """The lexicon entry for one token: the five judgements and the prose beside them.
 
-    `narrative` and `product` are the 0-5 judgements the product block is computed from.
-    They are required because an entry without them cannot enter the ranking - and a
-    required field the model cannot skip is cheaper than a score that silently does not
-    exist.
+    The five `f_*` fields are the 0-5 judgements the off-chain block is computed from -
+    产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与官方关系 / 社区活跃度. They
+    are required because an entry without them cannot enter the ranking, and a required
+    field the model cannot skip is cheaper than a score that silently does not exist.
+    There is no "undetermined": 0 is the judgement that the search found nothing.
+
+    The prose fields are the card's own blocks, one per judgement, named the way the card
+    prints them: `concl` is the verdict at the top, and the five under it are the 链下调研
+    fold. `test_prompts.py` reads the JSON example out of every prompt and compares it with
+    this model, so a field added here without its prompt - or the reverse - fails there
+    instead of silently in a round.
     """
 
     tag: str
-    narrative: float = Field(ge=0, le=5)
-    product: float = Field(ge=0, le=5)
+    f_completeness: float = Field(ge=0, le=5)
+    f_substance: float = Field(ge=0, le=5)
+    f_team: float = Field(ge=0, le=5)
+    f_narrative: float = Field(ge=0, le=5)
+    f_community: float = Field(ge=0, le=5)
+    badge: str = ""
     concl: str
-    narr_text: str
     prod_text: str
-    mech_text: str
-    pros: str
-    cons: str
+    substance_text: str
+    team_text: str
+    narr_text: str
     social: str = ""
 
 
 class LexiconDraft(BaseModel):
     entries: dict[str, NewTokenEntry] = Field(default_factory=dict)
-
-
-class Commentary(BaseModel):
-    per_token: dict[str, str] = Field(default_factory=dict)
-    overall: str = ""
-    new_tokens: dict[str, NewTokenEntry] = Field(default_factory=dict)
 
 
 def _log_long(ca: str, entry: Any, kind: str) -> None:
@@ -79,7 +85,7 @@ def _schema_issues(exc: ValidationError) -> list[str]:
 
 
 def validate_lexicon(raw: dict, expected_cas: list[str], min_chars: int = 160) -> list[str]:
-    """Problems with a lexicon draft, empty when acceptable."""
+    """Problems with a lexicon entry, empty when acceptable."""
     try:
         draft = LexiconDraft.model_validate(raw)
     except ValidationError as exc:
@@ -97,49 +103,4 @@ def validate_lexicon(raw: dict, expected_cas: list[str], min_chars: int = 160) -
         if not entry.tag:
             issues.append("tag missing: %s" % ca)
         _log_long(ca, entry, "lexicon")
-    return issues
-
-
-def validate_commentary(
-    raw: dict,
-    expected_cas: list[str],
-    min_chars: int = 160,
-    concl_min_chars: int = 160,
-) -> list[str]:
-    """Problems with a commentary draft, empty when acceptable. Cheap enough to run
-    before storing.
-
-    `min_chars` is the floor for the per-token 本期点评, which is the card body and has to be a
-    real paragraph. `concl` is the same paragraph the lexicon draft carries, and both prompts
-    ask 200-500 chars for it, so it gets the same floor as the lexicon path: a draft the
-    lexicon accepts must not be rejected here. The caps are logged, not enforced - see
-    `CAPS`.
-
-    The floor sits below what the prompts ask for on purpose. 160 catches a one-line throwaway
-    without turning a 180-character answer - a real, dense answer that simply ran shorter than
-    asked - into a rejected draft, and a rejected draft costs a whole batch of entries, not one
-    sentence."""
-    try:
-        draft = Commentary.model_validate(raw)
-    except ValidationError as exc:
-        return _schema_issues(exc)
-
-    issues: list[str] = []
-    lowered = {k.lower(): v for k, v in draft.per_token.items()}
-    for ca in expected_cas:
-        text = lowered.get(ca.lower())
-        if not text:
-            issues.append(f"missing per_token: {ca}")
-        elif len(text) < min_chars:
-            issues.append(f"too short: {ca} ({len(text)} < {min_chars})")
-        elif len(text) > PER_TOKEN_CAP:
-            log.warning("commentary %s: per_token over cap (%d > %d chars)", ca,
-                        len(text), PER_TOKEN_CAP)
-    for ca, entry in draft.new_tokens.items():
-        if len(entry.concl) < concl_min_chars:
-            issues.append(
-                f"new_tokens.concl too short: {ca} "
-                f"({len(entry.concl)} < {concl_min_chars})"
-            )
-        _log_long(ca, entry, "commentary")
     return issues

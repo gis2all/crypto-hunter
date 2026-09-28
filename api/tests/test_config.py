@@ -1,6 +1,33 @@
 """The chain config is the source of the口径; mistakes here poison everything."""
 
+import os
+
 from app import config
+
+
+def test_reloading_one_env_file_keeps_what_the_other_put_in(tmp_path):
+    """The LLM file is re-read on every model call; the search file is read once, at
+    import. While the record of what came from a file was one flat dict, that reload
+    withdrew the search file's credentials too - so from the first model call of every
+    process, every X search and every timeline failed "needs CH_X_AUTH_TOKEN" and the round
+    looked like it had simply found nothing."""
+    first = tmp_path / "llm.env"
+    second = tmp_path / "search.env"
+    first.write_text("CH_TEST_LLM_KEY=1\n", encoding="utf-8")
+    second.write_text("CH_TEST_SEARCH_KEY=2\n", encoding="utf-8")
+    os.environ.pop("CH_TEST_LLM_KEY", None)
+    os.environ.pop("CH_TEST_SEARCH_KEY", None)
+    try:
+        assert config.load_env_file(first) == 1
+        assert config.load_env_file(second) == 1
+        assert config.load_env_file(first) == 1
+        assert os.environ["CH_TEST_SEARCH_KEY"] == "2"
+        assert os.environ["CH_TEST_LLM_KEY"] == "1"
+    finally:
+        for path in (first, second):
+            config._FROM_FILE.pop(path, None)
+        os.environ.pop("CH_TEST_LLM_KEY", None)
+        os.environ.pop("CH_TEST_SEARCH_KEY", None)
 
 
 def test_both_chains_declared():
@@ -44,6 +71,14 @@ def test_the_holder_band_ships_with_an_open_ceiling():
 
 
 def test_scoring_weights_sum_to_100():
-    scoring = config.chain("arc")["pipeline"]["scoring"]
-    assert scoring["onchain_weight"] + scoring["product_weight"] == 100
-    assert len(scoring["onchain_factors"]) == 5
+    """Each block's five factors split a 100 that is theirs, not a share of the block
+    weight: the on-chain factors sum to 100 and so do the five off-chain judgements."""
+    for chain_id in ("arc", "bsc"):
+        scoring = config.chain(chain_id)["pipeline"]["scoring"]
+        assert scoring["onchain_weight"] + scoring["offchain_weight"] == 100
+        assert len(scoring["onchain_factors"]) == 5
+        assert sum(scoring["onchain_factor_weights"].values()) == 100
+        assert scoring["offchain_factor_weights"] == {
+            "f_completeness": 20, "f_substance": 20, "f_team": 20,
+            "f_narrative": 20, "f_community": 20,
+        }

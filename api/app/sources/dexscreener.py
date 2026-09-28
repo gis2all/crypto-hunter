@@ -13,9 +13,12 @@ Two decisions worth stating:
   answers nothing in the pull is a source that shows up in the credential row with a zero.
   It is asked per token, in the same enrich pass as the other per-token reads, so it costs a
   round one overlapping request per judged candidate.
-- **It fills links, and nothing else.** Its market cap, liquidity and volume answer the same
-  questions the scanners already answer better, and a fourth opinion on a number the score is
-  built from is how a round’s numbers start moving without anyone changing a rule.
+- **It is also the market numbers’ source of record.** Every scanner answered 市值 /
+  流动性 / 24h 成交 in its own caliber and the three do not agree: on every token checked,
+  Tolly’s `liquidity` came out at 5.52x this host’s, which is a ranking key handing one
+  source a five-fold head start. Since the round ranks on liquidity, the numbers now come
+  from here and the scanners’ own readings only stand where this host has no pair at all.
+  The 5.52 is why 14 tokens from a single launchpad took 14 of the gate’s 20 slots.
 """
 
 from __future__ import annotations
@@ -34,6 +37,39 @@ def _num(value: Any) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _numbers(metrics: TokenMetrics, pools: list[dict], best: dict) -> None:
+    """The market numbers, in the one caliber the round ranks on.
+
+    Liquidity and 24h volume are summed over the token’s pools on this chain: a token
+    spread over nine pools has the depth all nine of them hold, and the deepest single
+    pool is where Tolly’s inflated number came from. Market cap and price come from that
+    deepest pool alone - it is the price the page quotes and the one every pool agrees on.
+    """
+    liquidity = 0.0
+    volume = 0.0
+    quoted_volume = False
+    for row in pools:
+        liquidity += _num((row.get("liquidity") or {}).get("usd"))
+        raw = (row.get("volume") or {}).get("h24")
+        if raw is not None:
+            quoted_volume = True
+            volume += _num(raw)
+    if liquidity > 0:
+        metrics.liquidity_usd = round(liquidity, 2)
+        metrics.provenance["liquidity_usd"] = "dexscreener"
+    if quoted_volume:
+        metrics.volume_24h_usd = round(volume, 2)
+        metrics.provenance["volume_24h_usd"] = "dexscreener"
+    cap = _num(best.get("marketCap")) or _num(best.get("fdv"))
+    if cap > 0:
+        metrics.market_cap_usd = round(cap, 2)
+        metrics.provenance["market_cap_usd"] = "dexscreener"
+    price = _num(best.get("priceUsd"))
+    if price > 0:
+        metrics.price_usd = price
+        metrics.provenance["price_usd"] = "dexscreener"
 
 
 class DexScreener:
@@ -63,7 +99,10 @@ class DexScreener:
             ours = pairs if len(chains) == 1 else []
         if not ours:
             return metrics, SafetyFacts()
-        best = max(ours, key=lambda row: _num((row.get("liquidity") or {}).get("usd")))
+        # This host indexes the same CA on several chains; only this chain’s pools are ours.
+        pools = [row for row in ours if str(row.get("chainId") or "") == chain_id] or ours
+        best = max(pools, key=lambda row: _num((row.get("liquidity") or {}).get("usd")))
+        _numbers(metrics, pools, best)
         info = best.get("info") or {}
         socials: dict[str, str] = {}
         for entry in info.get("socials") or []:

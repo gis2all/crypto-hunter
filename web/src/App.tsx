@@ -15,7 +15,7 @@ import { applyTheme, readTheme, saveTheme, type Theme } from "./theme";
 //: A round in one of these has stopped moving, so the page stops watching it. `cancelled` is
 //: one of them: a round the operator stopped is over, and a page that kept polling it would
 //: keep the 已中止 panel open on a round that will never move again.
-const TERMINAL = new Set(["sent", "researched", "cancelled", "failed"]);
+const TERMINAL = new Set(["researched", "cancelled", "failed"]);
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -45,11 +45,7 @@ export default function App() {
   const list = useMemo(() => runs.data ?? [], [runs.data]);
   const run = list[batchIndex];
   const live = Boolean(run && !TERMINAL.has(run.status));
-  // `sent` is not the end of the page: the cards are up and the research pass is still
-  // reading the sites they were published from. Polling here is what lets the upgraded
-  // words appear without asking the reader to reload.
-  const settling = run?.status === "sent";
-  const liveRun = useLiveRun(run?.id, live ? "running" : settling ? "settling" : "off");
+  const liveRun = useLiveRun(run?.id, live ? "running" : "off");
   const batch = useBatch(run?.id);
   // Held here, not in the page: the two buttons that act on it stand in the topbar.
   const settings = useSettingsState(chainId);
@@ -83,16 +79,11 @@ export default function App() {
     }
   }, [live]);
 
-  // A round that finished has nothing left to watch, so the panel closes itself and hands
-  // the strip back to the cards. A round that failed keeps its place: the step it died on
-  // is the whole message, and 收起 is still there for when the reader is done with it. A
-  // round the operator stopped keeps its place for the same reason - 已中止 is the answer to
-  // the button they just pressed - and it is one line tall, so it costs nothing to leave.
-  useEffect(() => {
-    if (run && !live && run.status !== "failed" && run.status !== "cancelled") {
-      setRunPanelOpen(false);
-    }
-  }, [run, live]);
+  // A round that finished keeps its place instead of closing itself. The step list is where
+  // the round own timings are read - each row right column is that phase measured wall
+  // clock - and folding the panel away the moment the last stage ended is how the answer to
+  // "what took the time" was written and then hidden. A failed round, a stopped round and a
+  // finished one all behave the same way now: the panel stays until 收起 is pressed.
 
   useEffect(() => {
     const fresh = liveRun.data;

@@ -52,14 +52,22 @@ def _ceiling(value, ceiling, reason, failed, unknown) -> None:
         failed.append(reason)
 
 
-def check_prefilter(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
-    """Pool-level rules: two bands (market cap, holders), liquidity/volume floors,
-    concentration and bundling ceilings, and the zero-tolerance honeypot flag.
+def _ordered(reasons: list[DropReason]) -> list[DropReason]:
+    """The rules' own order, so which half of the prefilter saw a token first cannot
+    change which rule gets credited with rejecting it."""
+    order = {reason: index for index, reason in enumerate(PREFILTER_PRIORITY)}
+    return sorted(set(reasons), key=lambda reason: order.get(reason, len(order)))
 
-    These are computable from the universe pull alone, so they run before any
-    per-token request is spent. `require_market_data` is the one rule that reads absence
-    rather than a value, and it exists because unknown is otherwise never dropped. It is
-    on by default: a row with no market cap and no reserve is not an unanswered question.
+
+def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
+    """The half of the pool rules the universe pull alone can answer: the market-cap band,
+    the liquidity and 24h-volume floors, and the empty-shell rule.
+
+    It costs no request, which is why it runs first - and it is also why no rule that reads
+    the chip picture is in here. A rule reading a holder count this half never carried is
+    reading a blank, and 未判定 never rejects: it would either drop nobody or drop the wrong
+    token, and both are worse than waiting for the read. `check_prefilter_enriched` is the
+    other half, and it runs once the blanks have been filled.
     """
     failed: list[DropReason] = []
     unknown: list[DropReason] = []
@@ -72,6 +80,35 @@ def check_prefilter(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
            DropReason.LIQUIDITY, failed, unknown)
     _floor(metrics.volume_24h_usd, prefilter.get("volume_24h_min_usd"),
            DropReason.VOLUME_24H, failed, unknown)
+
+    # 空壳淘汰: a row no source could put a market cap or a reserve on is not a token we
+    # failed to measure, it is a token with nothing to measure. Unknown is never dropped,
+    # so without this rule any source that ships addresses without market data floods the
+    # funnel with rows every floor above waves straight through. Both fields missing is
+    # the signal; either one answering means there is something real to rank.
+    #
+    # On unless the chain turns it off. It used to be opt-in, and that was the hole: a round
+    # running against a settings version saved before the key existed judged four thousand
+    # empty rows on "every floor answered 未知". A missing knob is not a missing rule.
+    if prefilter.get("require_market_data", True):
+        if metrics.market_cap_usd is None and metrics.liquidity_usd is None:
+            failed.append(DropReason.MISSING_DATA)
+
+    return FilterVerdict(passed=not failed, failed=_ordered(failed), unknown=_ordered(unknown))
+
+
+def check_prefilter_enriched(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
+    """The half that reads the chip picture: the holder band, the top-10 and bundling
+    ceilings, and the honeypot flag.
+
+    These are the rules that need a per-token answer, and on a bulk row most of them read a
+    blank - so they run after `decide` has bought the numbers the bulk sweep did not carry.
+    A blank here is then a blank the paid read could not fill either, which is the only
+    sense in which 未判定 is an honest answer for them.
+    """
+    failed: list[DropReason] = []
+    unknown: list[DropReason] = []
+
     _floor(metrics.holders, prefilter.get("holders_min"),
            DropReason.HOLDERS, failed, unknown)
     # 持有人上限留空 = 不设上限。它和市值一样是「区间」而不是「下限」：一个键在设置页里
@@ -90,20 +127,22 @@ def check_prefilter(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
         elif metrics.honeypot_detected:
             failed.append(DropReason.HONEYPOT)
 
-    # 空壳淘汰: a row no source could put a market cap or a reserve on is not a token we
-    # failed to measure, it is a token with nothing to measure. Unknown is never dropped,
-    # so without this rule any source that ships addresses without market data floods the
-    # funnel with rows every floor above waves straight through. Both fields missing is
-    # the signal; either one answering means there is something real to rank.
-    #
-    # On unless the chain turns it off. It used to be opt-in, and that was the hole: a round
-    # running against a settings version saved before the key existed judged four thousand
-    # empty rows on "every floor answered 未知". A missing knob is not a missing rule.
-    if prefilter.get("require_market_data", True):
-        if metrics.market_cap_usd is None and metrics.liquidity_usd is None:
-            failed.append(DropReason.MISSING_DATA)
+    return FilterVerdict(passed=not failed, failed=_ordered(failed), unknown=_ordered(unknown))
 
-    return FilterVerdict(passed=not failed, failed=failed, unknown=unknown)
+
+def check_prefilter(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
+    """Both halves at once, for the one caller that has no enrich stage between them.
+
+    `check_all` is that caller: the safety gate re-runs the pool rules against the token's
+    own numbers, where every blank the pull left has already been asked about by name.
+    """
+    free = check_prefilter_free(metrics, prefilter)
+    enriched = check_prefilter_enriched(metrics, prefilter)
+    return FilterVerdict(
+        passed=free.passed and enriched.passed,
+        failed=_ordered(free.failed + enriched.failed),
+        unknown=_ordered(free.unknown + enriched.unknown),
+    )
 
 
 def scored_fields(metrics: TokenMetrics) -> int:
@@ -179,16 +218,24 @@ def check_safety(facts: SafetyFacts, safety: dict) -> FilterVerdict:
 #: The verifier `goplus_only` trusts. Named so the口径 and the code cannot drift apart.
 PRIMARY_VERIFIER = "GoPlus"
 
+#: The verifiers `dual` asks, one entry per source that can answer 已验证. A
+#: negative verdict needs every one of them to have answered: a verifier whose request
+#: failed has said nothing, and reading that silence as a veto is how a token GoPlus
+#: calls `is_open_source == 1` came out of the round as 未验证.
+DUAL_VERIFIERS = ("GoPlus", "Sourcify")
+
 
 def source_verdict(facts: SafetyFacts, mode: str) -> bool | None:
     """源码已验证, under whichever口径 the chain ran with. None means 未知, not a no.
 
     `dual` asks both verifiers and lets either one vouch: the reference implementation's
     rule is `GoPlus.is_open_source == '1' or Sourcify has a match`, so a verifier that has
-    never heard of the contract cannot veto one that vouched for it. It still has to be a
-    positive answer from somewhere - if a verifier answered "no record" and nobody
-    confirmed, the token is a no, not an unknown. Asking twice is worth something because
-    the second answer can turn that no into a yes. `goplus_only` lets GoPlus decide alone,
+    never heard of the contract cannot veto one that vouched for it. A *no* is read the
+    other way round: it stands only when every verifier answered. One that stayed silent -
+    its request failed, or it has no record for the chain at all - has not said no, and
+    letting the verifier that happened to reply decide is how a verified contract was
+    written down as unverified. Asking twice is worth something because the second
+    answer can turn a no into a yes. `goplus_only` lets GoPlus decide alone,
     which is the other option the settings page offers.
 
     A caller that filled in only the merged flag (a seeded snapshot) is judged on that
@@ -202,7 +249,11 @@ def source_verdict(facts: SafetyFacts, mode: str) -> bool | None:
         if PRIMARY_VERIFIER not in checked and PRIMARY_VERIFIER not in verified:
             return None
         return PRIMARY_VERIFIER in verified
-    return bool(verified)
+    if verified:
+        return True
+    if set(DUAL_VERIFIERS) - checked:
+        return None
+    return False
 
 
 def check_entrapment(metrics: TokenMetrics, safety: dict) -> FilterVerdict:
@@ -222,6 +273,14 @@ def check_entrapment(metrics: TokenMetrics, safety: dict) -> FilterVerdict:
     return FilterVerdict(passed=True)
 
 
+#: A high above this multiple of the chain own ceiling is a parsing artefact rather than a
+#: token that ran. Tolly reports launchpad shells at 8.9e13 with liquidity set to the same
+#: number and a cent of volume; read as a high, every later round would see that token down
+#: 100% and drop it forever. The same guard covers the store column and GMGN own high, so no
+#: single bad reading can turn into a permanent drop.
+HIGH_SANITY_MULTIPLE = 50
+
+
 def _drawdown_pct(now: float | None, peak: float | None) -> float | None:
     """How far below its own high a token trades, in percent, or None when unanswerable."""
     if not now or not peak or peak <= 0:
@@ -229,55 +288,70 @@ def _drawdown_pct(now: float | None, peak: float | None) -> float | None:
     return (now / peak - 1) * 100
 
 
+def _believable_high(value: float | None, prefilter: dict) -> float | None:
+    """One estimate of the token high, or None when it is missing or not believable."""
+    if value is None or value <= 0:
+        return None
+    ceiling = prefilter.get("market_cap_max_usd")
+    if ceiling and value > float(ceiling) * HIGH_SANITY_MULTIPLE:
+        return None
+    return float(value)
+
+
+def drawdown_readings(metrics: TokenMetrics, prefilter: dict,
+                      peak_market_cap_usd: float | None = None) -> list[float]:
+    """Every estimate of the same fall, in percent. The deepest one is the best one.
+
+    Three readings of one high, and they are estimates rather than a disagreement:
+
+    - `metrics.high_market_cap_usd`, the high the source itself measured (GMGN own column).
+      This is the reading the rule wants first: it is a measurement, not a sample.
+    - `peak_market_cap_usd`, the highest market cap this project ever recorded for the CA.
+      A lower bound on the same number - a token that spiked between two rounds carries a
+      high well below its real one - and the reason this side used to flag and never drop.
+      It is written back from the source high (`pipeline/write.py`), so once any source has
+      answered it carries a real high even in a round where that source says nothing.
+    - `metrics.drawdown_pct`, the pool history: what the pools the token trades in did over
+      their whole daily life (`sources/geckoterminal.py`).
+
+    Any one of them saying "past the ceiling" drops the token: of the 678 snapshots that
+    carried both readings on 2026-09-27, 169 had fallen 70% or more by the pool number while
+    our own side said they had not, and not one of them was dropped - which is what asking
+    the readings to agree did to this rule.
+    """
+    out: list[float] = []
+    now = metrics.market_cap_usd
+    for high in (metrics.high_market_cap_usd, peak_market_cap_usd):
+        value = _drawdown_pct(now, _believable_high(high, prefilter))
+        if value is not None:
+            out.append(value)
+    if metrics.drawdown_pct is not None:
+        out.append(metrics.drawdown_pct)
+    return out
+
+
 def check_drawdown(metrics: TokenMetrics, prefilter: dict,
-                   peak_market_cap_usd: float | None) -> FilterVerdict:
-    """距高回撤, judged twice: our own history first, the pool side to confirm.
+                   peak_market_cap_usd: float | None = None) -> FilterVerdict:
+    """距高回撤. One negative knob (`drawdown_max_pct`, -70 by default): a token this far
+    below its high has had its run.
 
-    The knob is one negative number (`drawdown_max_pct`, -70 by default) and it means the
-    same thing on both readings: a token this far below its high has already had its run.
-
-    The two are asked in that order on purpose. Ours is free and covers the whole scan, so
-    it decides whether the expensive question is worth asking at all - GeckoTerminal charges
-    three paced requests per token. `peak_market_cap_usd` is the highest market cap any
-    source has reported for this CA across every round, so it is not capped by this chain own
-    band: a token that ran to two million and came back into range still carries the two
-    million, which is exactly the fall this rule is about.
-
-    A token with no history is not a fallen token - it is one this project has never seen
-    before - so it passes without an unknown. Where our side flags a token and the pool side
-    has nothing to say, the answer is 未知: not dropped, and the settings page can show that
-    this rule wanted a second opinion it never got.
+    The readings are `drawdown_readings` and the deepest of them decides. A token with no
+    reading at all is not a fallen token - it is either one this project has never seen, or
+    one whose pool history could not be read - so it passes; the second of those is marked
+    未知 rather than passed in silence (`metrics.drawdown_unread`), because a throttled read
+    is a question we did not get to ask, not an answer.
     """
     ceiling = prefilter.get("drawdown_max_pct")
     if ceiling is None:
         return FilterVerdict(passed=True)
-    ceiling = float(ceiling)
-    own = _drawdown_pct(metrics.market_cap_usd, peak_market_cap_usd)
-    if own is None or own > ceiling:
-        return FilterVerdict(passed=True)
-    pool = metrics.drawdown_pct
-    if pool is None:
-        return FilterVerdict(passed=True, unknown=[DropReason.MARKET_CAP_DRAWDOWN])
-    if pool <= ceiling:
+    readings = drawdown_readings(metrics, prefilter, peak_market_cap_usd)
+    if any(value <= float(ceiling) for value in readings):
         return FilterVerdict(passed=False, failed=[DropReason.MARKET_CAP_DRAWDOWN])
+    if readings:
+        return FilterVerdict(passed=True)
+    if metrics.drawdown_unread:
+        return FilterVerdict(passed=True, unknown=[DropReason.MARKET_CAP_DRAWDOWN])
     return FilterVerdict(passed=True)
-
-
-def drawdown_needs_pool(metrics: TokenMetrics, prefilter: dict,
-                        peak_market_cap_usd: float | None) -> bool:
-    """Whether the pool side still has to be read before 距高回撤 can be judged.
-
-    True for the tokens our own history already put below the ceiling - the ones this rule
-    would drop if the second reading agreed. Everyone else is answered for free, which is
-    what keeps a rule that needs a pooled price history from costing a request per token.
-    """
-    ceiling = prefilter.get("drawdown_max_pct")
-    if ceiling is None:
-        return False
-    own = _drawdown_pct(metrics.market_cap_usd, peak_market_cap_usd)
-    if own is None or own > float(ceiling):
-        return False
-    return metrics.drawdown_pct is None
 
 
 def check_all(metrics: TokenMetrics, facts: SafetyFacts, pipeline_cfg: dict,

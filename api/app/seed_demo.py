@@ -249,8 +249,6 @@ def _socials(detail: dict) -> dict:
 
 def write_round(run_dir: Path, registry_path: Path) -> dict:
     data = json.loads(read(run_dir / "data.json"))
-    commentary = json.loads(read(run_dir / "commentary.json"))
-    notes = commentary.get("per_token") or {}
     sent = json.loads(read(run_dir / "sent.json"))
     registry = _registry(registry_path)
     lexicon_updated = _registry_meta(registry_path)
@@ -277,7 +275,7 @@ def write_round(run_dir: Path, registry_path: Path) -> dict:
         _write_items(conn, run_id, ranked, scanned)
         _write_snapshots(conn, run_id, scanned, now)
         _write_summary(conn, run_id, run_dir, data, sent, now)
-        _write_reports(conn, run_id, ranked, run_dir, top, notes, now)
+        _write_reports(conn, run_id, ranked, run_dir, top, now)
         _write_lexicon(conn, registry, top, lexicon_updated or now)
     finally:
         conn.close()
@@ -354,7 +352,7 @@ def _write_run(conn, run_id, version_id, universe, candidates, selected, sent, d
         " dropped, candidates, selected, settings_version_id, started_at, finished_at, error)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
         (run_id, "demo-2026-09-23T20:00+08", "arc", "reference", "2026-09-23T20:00+08",
-         RunStatus.SENT.value, universe, max(0, universe - candidates), candidates, selected,
+         RunStatus.RESEARCHED.value, universe, max(0, universe - candidates), candidates, selected,
          version_id, now, now),
     )
 
@@ -456,8 +454,8 @@ def _write_summary(conn, run_id, run_dir, data, sent, now) -> None:
         "scoring": {
             "onchain_weight": (config.chain("arc").get("pipeline") or {}).get("scoring", {}).get(
                 "onchain_weight", 55),
-            "product_weight": (config.chain("arc").get("pipeline") or {}).get("scoring", {}).get(
-                "product_weight", 45),
+            "offchain_weight": (config.chain("arc").get("pipeline") or {}).get("scoring", {}).get(
+                "offchain_weight", 45),
         },
         "note": "本轮的过滤、评分与文案由上一代管线产出，采集与评分在本仓库尚未实现。",
     }
@@ -467,7 +465,7 @@ def _write_summary(conn, run_id, run_dir, data, sent, now) -> None:
     )
 
 
-def _write_reports(conn, run_id, ranked, run_dir, top, notes, now) -> None:
+def _write_reports(conn, run_id, ranked, run_dir, top, now) -> None:
     for index, raw in enumerate(ranked, start=1):
         ca = raw["address"].lower()
         text = read(run_dir / "msgs" / ("msg%d.txt" % index))
@@ -475,28 +473,26 @@ def _write_reports(conn, run_id, ranked, run_dir, top, notes, now) -> None:
         meta = HEAD.match(head)
         tag = meta.group(2).strip() if meta else ""
         tail = meta.group(3).strip() if meta else ""
-        fit = re.search(r"叙事贴合\s*([\d.]+)\s*/\s*5", tail)
         kv = as_kv(sections.get("数据", ""))
         payload = {
             "tag": tag,
-            "fit_label": ("叙事贴合 %s/5" % fit.group(1)) if fit else "",
             # The 链上质量 rows exactly as the round wrote them. The card shows these
             # rather than re-deriving them, so the report reads as it was sent.
             "rows": {key: kv[key] for key in METRIC_KEYS if kv.get(key)},
             "safety": safety_display(sections.get("安全", "")),
             "verdict": LLM_MARK.sub("", sections.get("结论", "")).strip(),
-            "note": notes.get(ca, ""),
             "deltas": delta_pairs(sections.get("数据", "")),
             "sections": {
                 title: sections[title]
-                for title in ("产品完成度", "机制与 dev", "社媒", "优势", "风险")
+                for title in ("产品完成度", "项目实质与亮点", "团队与 dev 可信度",
+                              "叙事与官方关系", "社区活跃度")
                 if sections.get(title)
             },
         }
         conn.execute(
             "INSERT OR REPLACE INTO reports (run_id, ca, rank, verdict, status, payload_json,"
             " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (run_id, ca, index, payload["verdict"], "sent",
+            (run_id, ca, index, payload["verdict"], "written",
              json.dumps(payload, ensure_ascii=False), now),
         )
     del top
@@ -505,16 +501,21 @@ def _write_reports(conn, run_id, ranked, run_dir, top, notes, now) -> None:
 def _write_lexicon(conn, registry: dict, top: dict, updated: str) -> None:
     for ca, entry in registry.items():
         conn.execute(
-            "INSERT OR REPLACE INTO lexicon (ca, chain_id, symbol, tag, narrative, product,"
-            " social, concl, narr_text, prod_text, mech_text, pros, cons, watch, scenario,"
-            " review_state, evidence_json, updated_at)"
-            " VALUES (?, 'arc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            "INSERT OR REPLACE INTO lexicon (ca, chain_id, symbol, tag, f_completeness,"
+            " f_substance, f_team, f_narrative, f_community, social, concl, narr_text,"
+            " prod_text, mech_text, pros, cons, watch, scenario, evidence_json, updated_at)"
+            " VALUES (?, 'arc', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
             (
                 ca,
                 entry.get("sym"),
                 entry.get("tag"),
-                entry.get("narrative"),
-                entry.get("product"),
+                # The demo's own data carried two judgements; the five-score shape is what
+                # this build reads, so the three it never had get the middle of the scale.
+                entry.get("product", 3.0),
+                entry.get("substance", 3.0),
+                entry.get("team", 3.0),
+                entry.get("narrative", 3.0),
+                entry.get("community", 3.0),
                 entry.get("social"),
                 entry.get("concl"),
                 entry.get("narr_text"),
@@ -524,7 +525,6 @@ def _write_lexicon(conn, registry: dict, top: dict, updated: str) -> None:
                 entry.get("cons"),
                 entry.get("watch"),
                 entry.get("scenario"),
-                "confirmed" if ca in top else "pending",
                 updated,
             ),
         )

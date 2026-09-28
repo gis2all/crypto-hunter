@@ -1,14 +1,11 @@
-import { Boxes, ChevronRight, ExternalLink, ShieldCheck } from "lucide-react";
+import { Boxes, ChevronRight, ShieldCheck } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 
 import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
 import { Icon } from "../../components/Icon";
 import { Rich } from "../../components/Rich";
-
-function one(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : value.toFixed(1);
-}
+import { whole } from "../../format";
 
 /** The 结论, five lines of it, with the rest one hover away.
  *
@@ -89,10 +86,6 @@ export function Card({
   bulkTick: number;
 }) {
   const short = `${card.ca.slice(0, 6)}…${card.ca.slice(-4)}`;
-  // The chain-detail tables are optional in the schema: a card whose feed answered
-  // nothing has no table to draw, and an empty one would be a row of dashes.
-  const holders = card.safety.holders;
-  const pools = card.safety.pools;
   // Ranks 1-3 carry the podium strip; the colours live in app.css.
   const podium = card.rank >= 1 && card.rank <= 3 ? " podium-" + card.rank : "";
   // The size of the thing, beside the shape of its price: the two numbers a reader checks
@@ -110,7 +103,7 @@ export function Card({
           </span>
         </div>
         <div className="head-r">
-          <span className="score">{one(card.score)}</span>
+          <span className="score">{whole(card.score)}</span>
           <span className="score-label">综合分</span>
         </div>
       </header>
@@ -120,7 +113,7 @@ export function Card({
           <div className="sb-seg" style={{ flex: `${card.onchain_weight} 1 0` }}>
             <div className="sb-fill" style={{ width: `${card.onchain ?? 0}%` }} />
           </div>
-          <div className="sb-seg" style={{ flex: `${card.product_weight} 1 0` }}>
+          <div className="sb-seg" style={{ flex: `${card.offchain_weight} 1 0` }}>
             <div className="sb-fill alt" style={{ width: `${card.product ?? 0}%` }} />
           </div>
         </div>
@@ -128,14 +121,12 @@ export function Card({
           <span>
             <Icon as={ShieldCheck} />
             <b>链上质量</b>
-            <i>{one(card.onchain)}</i>
-            <em>×{card.onchain_weight}%</em>
+            <i>{whole(card.onchain)}</i>
           </span>
           <span className="r">
             <Icon as={Boxes} />
-            <b>赛道产品</b>
-            <i>{one(card.product)}</i>
-            <em>×{card.product_weight}%</em>
+            <b>链下调研</b>
+            <i>{whole(card.product)}</i>
           </span>
         </div>
       </div>
@@ -168,10 +159,6 @@ export function Card({
       <section className="card-sec sec-verdict">
         <h4 className="sec-h">
           结论
-          {/* The words and the numbers come from two different times. When the entry was
-              not written this round, the card says so, and says why - the alternative is a
-              verdict quoting a market cap four days old beside a table showing today. */}
-          {card.entry_note ? <em className="age-mark">{card.entry_note}</em> : null}
         </h4>
         <Verdict segments={card.verdict} full={openAll} />
       </section>
@@ -180,7 +167,6 @@ export function Card({
         <summary className="sec-sum">
           <Icon as={ChevronRight} />
           <span className="sec-h">链上质量</span>
-          <span className="sec-hint">质量表 / 安全 / 筹码 / 池子</span>
         </summary>
         <div className="sec-body">
           <div className="kv-grid">
@@ -199,17 +185,19 @@ export function Card({
               </div>
             ))}
           </div>
-          <div className="deltas">
-            {card.deltas.map((delta, index) => (
-              <span
-                key={`${index}-${delta.key}`}
-                className={`delta ${(delta.value ?? "").trim().startsWith("-") ? "neg" : "flat"}`}
-              >
-                <i>{delta.key}</i>
-                {delta.value}
-              </span>
-            ))}
-          </div>
+          {card.deltas.length > 0 ? (
+            <div className="deltas">
+              {card.deltas.map((delta, index) => (
+                <span
+                  key={`${index}-${delta.key}`}
+                  className={`delta ${(delta.value ?? "").trim().startsWith("-") ? "neg" : "flat"}`}
+                >
+                  <i>{delta.key}</i>
+                  {delta.value}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="safety">
             <div className="srow">
               <span className="srow-k">合约权限</span>
@@ -265,63 +253,6 @@ export function Card({
                 </span>
               </div>
             ) : null}
-            {holders && holders.rows.length > 0 ? (
-              <div className="srow">
-                <span className="srow-k">筹码分布</span>
-                <span className="srow-v hblock">
-                  <span className="hsum chips">
-                    {holders.summary.map((chip) => (
-                      <span key={chip.label} className={`chip chip-${chip.tone}`}>
-                        <b>{chip.label}</b>
-                        {chip.value}
-                      </span>
-                    ))}
-                    {holders.note ? (
-                      <span className="hnote">{holders.note}</span>
-                    ) : null}
-                  </span>
-                  <table className="htab">
-                    <tbody>
-                      {holders.rows.map((row) => (
-                        <tr key={row.addr_full || row.rank}>
-                          <td className="hrank">{row.rank}</td>
-                          <td className="haddr" title={row.addr_full}>
-                            {row.addr}
-                          </td>
-                          <td className="htags">{row.tags.join(" · ")}</td>
-                          <td className="hpct">{row.pct}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </span>
-              </div>
-            ) : null}
-            {pools && pools.rows.length > 0 ? (
-              <div className="srow">
-                <span className="srow-k">池子清单</span>
-                <span className="srow-v hblock">
-                  <table className="ptab">
-                    <tbody>
-                      {pools.rows.map((pool) => (
-                        <tr key={pool.pair_full || pool.name}>
-                          <td className="pname" title={pool.name}>
-                            {pool.name}
-                          </td>
-                          <td className="ppair" title={pool.pair_full}>
-                            {pool.pair}
-                          </td>
-                          <td className="pliq">{pool.liquidity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {pools.note ? (
-                    <span className="hnote">{pools.note}</span>
-                  ) : null}
-                </span>
-              </div>
-            ) : null}
           </div>
         </div>
       </details>
@@ -329,19 +260,16 @@ export function Card({
       <details key={`detail-${bulkTick}`} className="card-sec sec-detail" open={openAll}>
         <summary className="det-sum">
           <Icon as={ChevronRight} />
-          展开详述 <span>产品 / 机制 / 社媒 / 优势 / 风险 / 点评</span>
+          链下调研
         </summary>
         {card.details.map((detail) => (
           <section key={detail.title} className="dsec">
-            <h4 className="dsec-h">{detail.title}</h4>
+            <h4 className="dsec-h">
+              {detail.title}
+              {detail.badge ? <span className="dsec-badge">{detail.badge}</span> : null}
+            </h4>
             <div className="dsec-b">
-              {detail.variant === "note" ? (
-                <p className="note">
-                  <Rich segments={detail.body} />
-                </p>
-              ) : (
-                <Rich segments={detail.body} />
-              )}
+              <Rich segments={detail.body} />
             </div>
           </section>
         ))}
@@ -353,7 +281,6 @@ export function Card({
             {index > 0 ? " ｜ " : null}
             <a href={link.url} target="_blank" rel="noreferrer">
               {link.label}
-              <Icon as={ExternalLink} />
             </a>
           </Fragment>
         ))}

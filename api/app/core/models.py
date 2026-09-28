@@ -30,14 +30,13 @@ class DropReason(str, Enum):
 
 
 class RunStatus(str, Enum):
-    """Ordered stages. `sent` is a boundary: later stages may not rewrite a report."""
+    """Ordered stages. `researched` is the end: a stored report is never rewritten."""
 
     PENDING = "pending"
     COLLECTED = "collected"
     SCORED = "scored"
     SELECTED = "selected"
     WRITTEN = "written"
-    SENT = "sent"
     RESEARCHED = "researched"
     #: Stopped by the operator while it was running. Terminal, and its own state rather
     #: than `failed`: nothing broke, and a page that calls a deliberate stop a failure
@@ -62,6 +61,10 @@ class TokenMetrics(BaseModel):
     #: only reader that wants it, and "no source had a blurb" is itself worth printing.
     description: str | None = None
     market_cap_usd: float | None = None
+    #: The highest market cap a *source* has on record for this token - GMGN's
+    #: `history_highest_market_cap`. 距高回撤 reads it beside the pool own history and the
+    #: high this project sampled: three readings of one number, and the deepest of them wins.
+    high_market_cap_usd: float | None = None
     liquidity_usd: float | None = None
     volume_24h_usd: float | None = None
     turnovers: float | None = None
@@ -83,6 +86,9 @@ class TokenMetrics(BaseModel):
     price_series: list[float] = Field(default_factory=list)
     price_ath_usd: float | None = None
     drawdown_pct: float | None = None
+    #: True only when the pool history was asked for and could not be read - a throttle or a
+    #: timeout. The drawdown rule then answers 未判定 instead of reading that silence as a pass.
+    drawdown_unread: bool | None = None
     price_change_24h_pct: float | None = None
     launchpad: str | None = None
     #: Who deployed it - what the LP question is asked about, so it must survive the merge.
@@ -146,6 +152,10 @@ class SafetyFacts(BaseModel):
     creator: str | None = None
     lp_locked: bool | None = None
     lp_note: str | None = None
+    #: Which source answered 已锁: `gmgn` is the answer of record (its own security
+    #: sheet carries `lock_summary`), and a value that came from there is not overwritten
+    #: by the chain read, which cannot see a v4 position at all.
+    lp_source: str | None = None
     dangerous_perms: list[str] | None = None
     dev_holding_pct: float | None = None
     entrapment_pct: float | None = None

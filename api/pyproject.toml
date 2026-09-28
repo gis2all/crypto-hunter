@@ -12,6 +12,11 @@ dependencies = [
   # GMGN fingerprints TLS: httpx gets 403, a Chrome-impersonating client gets 200.
   # Measured 2026-09-24, see api/app/sources/SOURCES.md.
   "curl-cffi>=0.7",
+  # A site whose document arrives empty has to be drawn, and only a browser does that.
+  # Measured 2026-09-27: three of the project sites this pipeline had already read came
+  # back as eight to ten words with no address on them, and rendered into 377 to 600 words
+  # with it. See api/app/sources/browser.py for why this is a fallback and not a lane.
+  "playwright>=1.63",
   "tzdata>=2026.4",
 ]
 

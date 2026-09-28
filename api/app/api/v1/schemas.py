@@ -184,7 +184,7 @@ class SparkOut(BaseModel):
 
 class DetailOut(BaseModel):
     title: str
-    variant: str = "plain"
+    badge: str = ""
     body: list[SegmentOut]
 
 
@@ -198,19 +198,15 @@ class CardOut(BaseModel):
     ca: str
     sym: str
     tag: str = ""
-    fit_label: str = ""
     is_new: bool = False
     score: float | None = None
     onchain: float | None = None
     product: float | None = None
     onchain_weight: float = 55
-    product_weight: float = 45
+    offchain_weight: float = 45
     ranks: RanksOut
     spark: SparkOut
     verdict: list[SegmentOut]
-    #: Set when the conclusion is older than the numbers beside it: "解读写于 3 小时前 ·
-    #: 本轮数据已更新". Empty when this round wrote the words.
-    entry_note: str = ""
     metrics: list[MetricOut]
     deltas: list[DeltaOut]
     safety: SafetyOut
@@ -252,8 +248,8 @@ class BatchOut(BaseModel):
     push: PushOut
     note: str = ""
     #: Wall clock per pipeline phase, in seconds, keyed by the stopwatch's own names
-    #: (pull, dedupe, prefilter, gate, score, sharpen, draft, commentary, write). Empty
-    #: until the first phase ends, and empty for rounds that predate it.
+    #: (pull, gate, score, draft, write). Empty until the first phase ends, and empty
+    #: for rounds that predate it.
     phase_timings: dict[str, float] = Field(default_factory=dict)
     cards: list[CardOut]
     decline: list[DeclineRowOut]
@@ -292,8 +288,6 @@ class FieldOut(BaseModel):
     drop_prefix: str = "-"  # counted rows read as eliminations unless told otherwise
     ro_row: bool = False    # a system-supplied row: sunken, its label muted
     ro_value: bool = False  # the value sits next to an action, so it clamps
-    ro_button: str = ""    # the inert action the prototype puts beside the value
-    ro_button_note: str = ""  # why that action is inert
     pending: str | None = None
     enabled: bool | None = None
     enabled_key: str | None = None
@@ -312,7 +306,6 @@ class GroupOut(BaseModel):
     #: The 口径 folded into an icon: rules, definitions, what a field does not do. Read
     #: once and then in the way, so it is opened on demand rather than printed every time.
     detail: str = ""
-    warn: str = ""
 
 
 class FormTotalsOut(BaseModel):
@@ -322,47 +315,13 @@ class FormTotalsOut(BaseModel):
     onchain_avg: float | None = None
     product_avg: float | None = None
     total_avg: float | None = None
-    lexicon_size: int = 0
-    lexicon_hit: int = 0
-    lexicon_updated: str | None = None
-    #: How many entries the refresh rules would rewrite today, and where the deep pass
-    #: stands. Both are read-only rows on the settings page.
-    lexicon_stale: int = 0
-    lexicon_research: str | None = None
     run_seconds: int | None = None
     last_batch: str | None = None
-
-
-class LexiconRowOut(BaseModel):
-    ca: str
-    symbol: str | None = None
-    tag: str | None = None
-    narrative: float | None = None
-    product: float | None = None
-    #: The token size, formatted the way the card formats money ($64.2K): the market cap
-    #: its newest snapshot carries. The row baseline_mcap is the filing moment, not
-    #: today, so this is the one number that says how big it is now.
-    mcap: str = "—"
-    social: str | None = None
-    concl: str | None = None
-    review_state: str
-    updated_at: str
-    current: bool
-    #: The freshness badge, the research state, and the evidence the deep pass filed - the
-    #: same three things the card and the archive show, computed by the same rule.
-    refresh_reason: str | None = None
-    baseline_at: str | None = None
-    age_hours: float | None = None
-    stale: bool = False
-    research_state: str = "none"
-    research_note: str | None = None
-    sources: list["LinkOut"] = []
 
 
 class BlockOut(BaseModel):
     key: str
     title: str
-    weight: str = ""
     columns: int = 3
     groups: list[GroupOut]
 
@@ -375,47 +334,35 @@ class SettingsFormOut(BaseModel):
     #: The line in the bar that cannot be read off the page: how a change takes effect, and
     #: that a batch already run keeps the口径 it ran under. Opens from the bar's 说明 icon.
     note_detail: str = ""
-    #: The reading rules for the lexicon table: what 「本轮」 marks, that both score
-    #: columns are the raw 0-5 judgement, and what the weight folds them by. A rule,
-    #: not a reading, so it opens from the table header's icon instead of printing
-    #: itself under the rows.
-    lexicon_note: str = ""
     dirty_hint: str
     blocks: list[BlockOut]
     totals: FormTotalsOut
-    lexicon: list[LexiconRowOut]
     blocked: list[str]
 
 
 class LexiconOut(BaseModel):
     ca: str
     chain_id: str = "arc"
+    run_id: str | None = None
     symbol: str | None = None
     tag: str | None = None
-    narrative: float | None = None
-    product: float | None = None
+    #: The five 0-5 judgements this round made about the project.
+    f_completeness: float | None = None
+    f_substance: float | None = None
+    f_team: float | None = None
+    f_narrative: float | None = None
+    f_community: float | None = None
     social: str | None = None
     concl: str | None = None
     narr_text: str | None = None
     prod_text: str | None = None
-    mech_text: str | None = None
-    pros: str | None = None
-    cons: str | None = None
+    substance_text: str | None = None
+    team_text: str | None = None
     watch: str | None = None
     scenario: str | None = None
-    review_state: str
     evidence_json: str | None = None
     updated_at: str
-    #: The freshness bookkeeping. `entry_note` on a card is built from these: how old the
-    #: words are, why they were rewritten last, and where the deep pass stands.
-    refresh_reason: str | None = None
-    baseline_mcap: float | None = None
-    baseline_at: str | None = None
-    age_hours: float | None = None
-    stale: bool = False
-    research_state: str = "none"
-    research_note: str | None = None
-    #: The pages the deep pass read, so the archive can show its evidence.
+    #: The pages the reading pass kept, so an entry can show its evidence.
     sources: list["LinkOut"] = []
 
 

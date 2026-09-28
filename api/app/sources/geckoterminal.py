@@ -12,6 +12,7 @@ without a single per-token request.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics
@@ -23,9 +24,30 @@ FULL_PAGES = 12
 #: Pool list changes slowly; a new pool still shows up on page 1 of `new_pools` first.
 FULL_SWEEP_TTL = 6 * 3600
 POOLS_TTL = 12 * 3600
-OHLCV_TTL = 6 * 3600
+#: A day of daily candles only changes once a day. Six hours was four times the traffic for
+#: the same answer, and the traffic is what the API throttles - see `_read`.
+OHLCV_TTL = 24 * 3600
 TRADES_TTL = 3600
+#: A 429 is the API asking for a slower lane, not an answer about the pool. `http.get`
+#: already retries three times a second apart, which does not outlast a rate-limit window;
+#: these are the tries on top of it, and the wait between them.
+RATE_LIMIT_TRIES = 3
+RATE_LIMIT_BACKOFF = 5.0
 JOURNEY_DAYS = 7
+#: The daily window the high is read from. GeckoTerminal answers with the candles the pool
+#: actually has - a two-week-old pool returns fourteen - so asking for the maximum is asking
+#: for the pool whole life, which is what the drawdown rule means by the historical high.
+#: The card still draws `JOURNEY_DAYS` of it. Ten days was the old window and it read the
+#: wrong high: the token this rule is for spiked at the very start of its pool and has been
+#: falling since, so a ten-day high sits far above the price and close to it at the same
+#: time - ARCAT read -81% on ten days against -96% on its whole life.
+ATH_DAYS = 1000
+#: The pools 距高回撤 reads. A token high is not always in its deepest pool: ARCAT's main
+#: pool reached $3.06M of market cap while a second pool holding a third of its depth
+#: printed $5.77M. A pool under `POOL_ATH_SHARE` of the deepest one reserves is a dust
+#: print rather than a price anyone traded at, and is left out.
+POOL_ATH_POOLS = 2
+POOL_ATH_SHARE = 0.10
 
 
 def _num(value: Any) -> float | None:
@@ -161,17 +183,51 @@ class GeckoTerminal:
 
     # ------------------------------------------------------------- per token
 
+    def _read(self, url: str) -> Any:
+        """One read, with a throttle treated as a wait rather than as an answer.
+
+        GeckoTerminal answers a burst with HTTP 429 - measured 2026-09-28: five of twelve
+        daily histories asked for at once came back 429 while the same requests a minute
+        apart all succeeded. `http.get` retries three times a second apart, which does not
+        outlast a rate-limit window, so a 429 is worth waiting out here. A 404 is the API
+        saying "not one of ours" and is remembered (`http.NEGATIVE`); anything else is
+        silence, and silence is `None` - never a value a rule may read as an answer.
+        """
+        for attempt in range(RATE_LIMIT_TRIES):
+            try:
+                return json_get(url, UA_JSON, tries=3, sleep=1.0, timeout=30.0)
+            except SourceError as exc:
+                text = str(exc)
+                if "HTTP 404" in text:
+                    return NEGATIVE
+                if "HTTP 429" not in text or attempt + 1 >= RATE_LIMIT_TRIES:
+                    return None
+                time.sleep(RATE_LIMIT_BACKOFF * (attempt + 1))
+        return None
+
+    @staticmethod
+    def _ath_pools(pools: list[dict]) -> list[dict]:
+        """The pools whose history 距高回撤 reads: the deepest, plus any second pool that
+        carries at least `POOL_ATH_SHARE` of its reserves. See `POOL_ATH_POOLS`."""
+        ordered = sorted(pools, key=lambda row: -(row.get("liq") or 0))
+        if not ordered:
+            return []
+        deepest = ordered[0].get("liq") or 0
+        out = [ordered[0]]
+        for row in ordered[1:]:
+            if len(out) >= POOL_ATH_POOLS:
+                break
+            if deepest and (row.get("liq") or 0) >= deepest * POOL_ATH_SHARE:
+                out.append(row)
+        return out
+
     def _pools(self, chain_id: str, ca: str) -> list[dict] | None:
         def produce():
-            try:
-                payload = json_get(
-                    "%s/networks/%s/tokens/%s/pools?page=1" % (BASE, chain_id, ca),
-                    UA_JSON, tries=3, sleep=1.0, timeout=30.0,
-                )
-            except SourceError as exc:
-                # 404 is GeckoTerminal saying "not one of ours"; anything else is silence.
-                # Only the first is worth remembering - see `http.NEGATIVE`.
-                return NEGATIVE if "HTTP 404" in str(exc) else None
+            payload = self._read(
+                "%s/networks/%s/tokens/%s/pools?page=1" % (BASE, chain_id, ca)
+            )
+            if payload is None or payload is NEGATIVE:
+                return payload
             data = payload.get("data") if isinstance(payload, dict) else None
             if not data:
                 return NEGATIVE
@@ -189,24 +245,23 @@ class GeckoTerminal:
         return cached("gt:pools:%s" % ca, POOLS_TTL, produce)
 
     def journey(self, chain_id: str, pool: str | None) -> dict | None:
-        """The six-day price path the card draws, plus how far it has fallen from its high."""
+        """The six-day price path the card draws, plus how far it is below its historical high."""
         if not pool:
             return None
 
         def produce():
-            try:
-                payload = json_get(
-                    "%s/networks/%s/pools/%s/ohlcv/day?limit=10&currency=usd" % (BASE, chain_id, pool),
-                    UA_JSON, tries=3, sleep=1.0, timeout=30.0,
-                )
-            except SourceError as exc:
-                return NEGATIVE if "HTTP 404" in str(exc) else None
+            payload = self._read(
+                "%s/networks/%s/pools/%s/ohlcv/day?limit=%d&currency=usd"
+                % (BASE, chain_id, pool, ATH_DAYS)
+            )
+            if payload is None or payload is NEGATIVE:
+                return payload
             try:
                 rows = sorted(payload["data"]["attributes"]["ohlcv_list"], key=lambda r: r[0])
             except (KeyError, TypeError):
                 return None
             if not rows:
-                # An empty history is an answer: this pool has not traded in ten days.
+                # An empty history is an answer: this pool has never traded.
                 return NEGATIVE
             high = max(float(row[2]) for row in rows)
             last = float(rows[-1][4])
@@ -257,7 +312,11 @@ class GeckoTerminal:
         main = max(pools, key=lambda row: row.get("liq") or 0)
         total_liq = sum(row.get("liq") or 0 for row in pools)
         pair = main.get("pool")
-        path = self.journey(chain_id, pair)
+        # The high is read off every pool worth reading, the journey off the deepest one:
+        # the card draws the pool people trade in, and the fall is measured against the
+        # highest price any of them reached (see `_ath_pools`).
+        histories = [self.journey(chain_id, row.get("pool")) for row in self._ath_pools(pools)]
+        path = histories[0] if histories else None
         metrics.pools = len(pools)
         metrics.pool_volume_usd = sum(row.get("vol24") or 0 for row in pools) or None
         metrics.main_pool = main.get("name")
@@ -270,8 +329,18 @@ class GeckoTerminal:
         })
         if path:
             metrics.price_series = [point[1] for point in path["journey"]]
-            metrics.price_ath_usd = path["ath"]
-            metrics.drawdown_pct = path["dd"]
-            metrics.price_usd = metrics.price_usd or path["last"]
             metrics.provenance["price_series"] = "geckoterminal"
+        highs = [row["ath"] for row in histories if row and row.get("ath")]
+        last = path["last"] if path else metrics.price_usd
+        if highs and last:
+            metrics.price_ath_usd = max(highs)
+            metrics.drawdown_pct = (last / metrics.price_ath_usd - 1) * 100
+            metrics.provenance["drawdown_pct"] = "geckoterminal"
+        else:
+            # No reading at all: the pools answered nothing, or could not be asked. That is
+            # 未判定 - `filters.check_drawdown` prints it rather than passing in silence,
+            # which is what a throttled read used to look like.
+            metrics.drawdown_unread = True
+        if path:
+            metrics.price_usd = metrics.price_usd or path["last"]
         return metrics, SafetyFacts()

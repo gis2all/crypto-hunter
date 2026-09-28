@@ -1,4 +1,4 @@
-"""The state machine is what enforces "send first, research later"."""
+"""The state machine: a round only ever moves forward, and only along the path it walked."""
 
 import pytest
 
@@ -7,14 +7,14 @@ from app.pipeline import states
 
 
 def test_happy_path_is_walkable():
-    path = [S.PENDING, S.COLLECTED, S.SCORED, S.SELECTED, S.WRITTEN, S.SENT, S.RESEARCHED]
+    path = [S.PENDING, S.COLLECTED, S.SCORED, S.SELECTED, S.WRITTEN, S.RESEARCHED]
     for current, nxt in zip(path, path[1:]):
         assert states.can(current.value, nxt.value), f"{current} -> {nxt}"
 
 
-def test_sent_is_a_boundary():
-    assert states.can(S.SENT.value, S.RESEARCHED.value)
-    assert not states.can(S.SENT.value, S.WRITTEN.value)
+def test_written_is_the_last_step_before_researched():
+    assert states.can(S.WRITTEN.value, S.RESEARCHED.value)
+    assert not states.can(S.WRITTEN.value, S.SCORED.value)
 
 
 def test_skipping_stages_is_refused():
@@ -31,7 +31,7 @@ def test_cancelled_is_reachable_from_every_working_state():
     """A stop can land while a round is pulling, judging or writing - and it can never land
     on a state the round has already finished in, which is what keeps a published round from
     being relabelled as stopped."""
-    for state in (S.PENDING, S.COLLECTED, S.SCORED, S.SELECTED, S.WRITTEN, S.SENT):
+    for state in (S.PENDING, S.COLLECTED, S.SCORED, S.SELECTED, S.WRITTEN):
         assert states.can(state.value, S.CANCELLED.value), state
     for state in (S.RESEARCHED, S.CANCELLED, S.FAILED):
         assert not states.can(state.value, S.CANCELLED.value), state

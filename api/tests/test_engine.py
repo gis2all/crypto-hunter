@@ -14,7 +14,7 @@ CHAIN = {"id": "arc", "label": "Arc", "pipeline": {"scan_limit": 5000}, "sources
 def _settings(**over):
     settings = {
         "schedule": {},
-        "scoring": {"onchain_weight": 55, "product_weight": 45},
+        "scoring": {"onchain_weight": 55, "offchain_weight": 45},
         "report": {"per_round": 2},
         "pipeline": {
             "enrich_limit": 3,
@@ -64,6 +64,12 @@ class FakeReader:
     def lock_facts(self, chain, *, ca, pair, creator, launchpad):
         self.asked.append(ca)
         return (False if ca in self.unlocked else self.locked), "test basis", {}
+
+
+def _stub_drafts(targets, _tell):
+    """Every target gets the same five-line judgement, so ranking exists at all."""
+    return {t["ca"]: {"f_completeness": 3.0, "f_substance": 3.0, "f_team": 3.0,
+                      "f_narrative": 3.0, "f_community": 3.0} for t in targets}
 
 
 def _engine(sources, **kw):
@@ -202,13 +208,13 @@ def test_a_token_with_no_entry_cannot_rank_and_says_so():
     engine, _reader = _engine([source])
     result = engine.run(_settings(), "run-1")
     assert result.picked == []
-    assert any("未建档" in note for note in result.notes)
+    assert any("未判定" in note for note in result.notes)
 
 
 def test_the_picks_are_the_top_of_the_scored_set_in_order():
     rows = [_row("0x%02d" % i, volume_24h_usd=1000 * i) for i in range(1, 4)]
     source = FakeSource("gmgn", rows)
-    engine, _reader = _engine([source], lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+    engine, _reader = _engine([source], drafts=_stub_drafts)
     result = engine.run(_settings(), "run-1")
     assert [item.rank for item in result.picked] == [1, 2]
     assert result.picked[0].score >= result.picked[1].score
@@ -248,7 +254,7 @@ def test_the_percentile_denominator_is_the_survivors_not_the_gated_pool():
 def test_every_candidate_carries_its_reason_or_its_score():
     """Nothing is left in the middle: a token is dropped with a reason, or it has a number."""
     lake = [_row("0xsmall", market_cap_usd=10_000), _row("0x01"), _row("0x02", market_cap_usd=900_000)]
-    engine, _reader = _engine([FakeSource("gmgn", lake)], lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+    engine, _reader = _engine([FakeSource("gmgn", lake)], drafts=_stub_drafts)
     result = engine.run(_settings(), "run-1")
     for item in result.items.values():
         if item.decision == "dropped":
@@ -279,7 +285,7 @@ def test_a_gate_failure_is_a_drop_with_a_reason():
         [_row("0x01"), _row("0x02")],
         facts={"0x01": SafetyFacts(source_verified=False)},
     )
-    engine, _reader = _engine([source], lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+    engine, _reader = _engine([source], drafts=_stub_drafts)
     settings = _settings()
     settings["pipeline"]["safety"] = {"require_verified_source": True}
     result = engine.run(settings, "run-1")
@@ -310,6 +316,100 @@ def test_the_gate_spends_its_budget_on_the_biggest_movers_and_stops():
     assert len(source.asked) == 20
     assert source.asked[:3] == ["0x30", "0x29", "0x28"]
     assert result.qualified == 20
+
+
+def test_the_shortlist_ranks_on_liquidity_alone():
+    """流动性 and nothing else. Volume is the cheapest number on the page to fake - a few
+    hundred dollars in a loop buys a rank - so a pool is ordered by what is standing behind
+    it: the deep pool nobody is trading leads, and the busy pool with 9K of depth is last."""
+    source = FakeSource("gmgn", [
+        _row("0xaa", liquidity_usd=90_000, volume_24h_usd=120_000),
+        _row("0xbb", liquidity_usd=9_000, volume_24h_usd=500_000),
+        _row("0xcc", liquidity_usd=150_000, volume_24h_usd=2_000),
+    ])
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(), "run-1")
+
+    # 幸存者顺序 is the order the gate walks, so it is the order the budget is spent in.
+    assert [item.ca for item in result.survivors] == ["0xcc", "0xaa", "0xbb"]
+
+
+def test_volume_only_breaks_a_tie_on_depth():
+    """Two pools of exactly the same depth are separated by which of them is traded. Volume
+    never lifts a shallower row above a deeper one - that is the point of ranking on depth."""
+    source = FakeSource("gmgn", [
+        _row("0x01", liquidity_usd=20_000, volume_24h_usd=1_000),
+        _row("0x02", liquidity_usd=20_000, volume_24h_usd=90_000),
+        _row("0x03", liquidity_usd=19_000, volume_24h_usd=500_000),
+    ])
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(), "run-1")
+
+    assert [item.ca for item in result.survivors] == ["0x02", "0x01", "0x03"]
+
+
+def test_a_row_the_pull_left_without_a_chip_number_is_asked_about_before_the_filter():
+    """二档. A launchpad row arrives with market numbers and no holder count, and a blank is
+    未判定 - which never rejects. So the number is bought before the rule that reads it runs,
+    and the row leaves through the hard filter rather than through the safety gate."""
+    lake = [_row("0x01", holders=None, top10_pct=None, bundling_pct=None)]
+    source = FakeSource("gmgn", lake, per_token={
+        "0x01": _row("0x01", holders=4, top10_pct=72.8, bundling_pct=72.8),
+    })
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(), "run-1")
+
+    assert source.asked == ["0x01"], "the blank was filled before it was judged"
+    assert result.survivors == []
+    assert result.items["0x01"].decision == "dropped"
+    assert result.items["0x01"].failed == ["holders"]
+    assert result.prefilter_dropped == 1
+
+
+def test_the_top_up_asks_the_cheap_entry_when_the_source_offers_one():
+    """The top-up is paced per source request, so it asks the narrow read: on 29 rows the
+    full read cost 53.1s and the chip-only one 13.6s (measured). The gate keeps asking the
+    full way - the safety verdict comes from there."""
+
+    class Chipped(FakeSource):
+        def __init__(self, name, rows, **kw):
+            super().__init__(name, rows, **kw)
+            self.chips = []
+
+        def fetch_chips(self, chain_id, ca):
+            self.chips.append(ca)
+            return self.per_token.get(ca) or _row(ca), SafetyFacts()
+
+    lake = [_row("0x01", holders=None, top10_pct=None, bundling_pct=None)]
+    source = Chipped("gmgn", lake, per_token={"0x01": _row("0x01", holders=900)})
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(), "run-1")
+
+    assert source.chips == ["0x01"]
+    assert source.asked == ["0x01"], "the gate still reads the whole sheet"
+    assert [item.metrics.holders for item in result.survivors] == [900]
+
+
+def test_a_source_without_a_cheap_entry_is_topped_up_the_full_way():
+    """A source that offers no narrow read is asked the full way, once per pass."""
+    lake = [_row("0x01", holders=None, top10_pct=None, bundling_pct=None)]
+    source = FakeSource("gmgn", lake, per_token={"0x01": _row("0x01", holders=900)})
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(), "run-1")
+
+    assert source.asked == ["0x01", "0x01"], "the top-up, then the gate"
+    assert [item.metrics.holders for item in result.survivors] == [900]
+
+
+def test_a_row_that_already_carries_its_chip_numbers_is_not_topped_up_again():
+    """The top-up buys what the pull left blank, and only what it left blank: a row the bulk
+    sweep already answered for must not cost a second read."""
+    lake = [_row("0xok", volume_24h_usd=1_000)]
+    source = FakeSource("gmgn", lake, per_token={"0xok": _row("0xok", holders=999)})
+    engine, _reader = _engine([source])
+    engine.run(_settings(), "run-1")
+
+    assert source.asked == ["0xok"], "one gate read, no top-up read beside it"
 
 
 def test_the_rest_of_the_pool_is_left_unjudged_and_the_round_says_so():
@@ -405,7 +505,7 @@ def test_an_exit_that_lost_on_rank_says_the_place_it_took():
     previous = [{"ca": "0xlast", "symbol": "LAST", "market_cap_usd": 90_000.0}]
     # A score needs a lexicon entry (45% of the total), so the ranking exists at all.
     engine, _reader = _engine([source], previous=previous,
-                              lexicon=lambda _ca: {"narrative": 3.0, "product": 3.0})
+                              drafts=_stub_drafts)
 
     result = engine.run(_settings(), "run-1")
 
@@ -491,7 +591,7 @@ def test_the_deferred_source_is_asked_about_the_picks_and_nothing_else():
         },
     )
     engine, reader = _engine([gmgn, gecko],
-                             lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+                             drafts=_stub_drafts)
     result = engine.run(_settings(), "run-1")       # per_round 2, all five judged
 
     assert [item.ca for item in result.picked] == ["0x05", "0x04"]
@@ -512,7 +612,7 @@ def test_the_deferred_source_is_asked_about_the_picks_and_nothing_else():
 
 
 def test_a_caller_supplied_clock_is_filled_in_and_printed_by_its_owner(caplog):
-    """The commentary and the write happen after the engine returns, so the caller hands
+    """The write happens after the engine returns, so the caller hands
     its stopwatch in. The engine fills it, the owner prints it - one line per round."""
     from app.pipeline import progress
 
@@ -543,7 +643,7 @@ def test_the_enrich_only_source_is_asked_per_token_and_never_in_the_pull():
         for row in lake
     })
     engine, _reader = _engine([gmgn], extras=(links,),
-                              lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+                              drafts=_stub_drafts)
     result = engine.run(_settings(), "run-1")       # per_round 2, all five judged
 
     assert [row.source for row in result.reports] == ["gmgn"], "the pull never swept it"
@@ -559,36 +659,86 @@ def test_a_caller_that_brings_its_own_sources_brings_its_own_extras():
     assert engine.extra_sources == ()
 
 
-def test_the_drawdown_rule_buys_the_pool_read_only_for_the_tokens_it_flags():
-    """距高回撤, in one round. The free half (the highest market cap this project has seen)
-    is read for every judged token; the paid half (the pool ten-day high) only for the
-    0xflg candidate our own history put 75% below its high. 0xcalm is never flagged, so the
-    only reason it appears at all is the deferred pass that fills the picks afterwards."""
+def test_the_gate_drops_on_the_free_reading_without_buying_a_pool_read():
+    """距高回撤, in one round. The free half - the highest market cap this project has
+    seen, written back from whatever source last measured it - is enough to drop 0xflg the
+    moment the pool rules reach it. No per-token pool read is spent confirming a fall the
+    store already recorded; 0xcalm pays only for the read that draws its card."""
     prefilter = dict(_settings()["pipeline"]["prefilter"], drawdown_max_pct=-70)
     bulk = FakeSource("gmgn", [_row("0xflg", volume_24h_usd=20_000),
                                _row("0xcalm", volume_24h_usd=10_000)])
-    pool = FakeSource("geckoterminal", [], per_token={
-        "0xflg": _row("0xflg", volume_24h_usd=20_000, drawdown_pct=-80.0),
-    })
+    pool = FakeSource("geckoterminal", [])
     engine, _reader = _engine([bulk, pool], peaks={"0xflg": 400_000},
-                              lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+                              drafts=_stub_drafts)
     result = engine.run(_settings(pipeline=_pipeline(prefilter=prefilter)), "run-1")
-    # the gate buys the pool read for the flagged token alone - 0xflg never reaches
-    # the ranking; 0xcalm is only ever asked by the picks pass afterwards.
-    assert pool.asked == ["0xflg", "0xcalm"]
+    # 0xflg ($100K) is 75% under the $400K high the store holds, so the gate drops it on
+    # the free reading and never asks the pool about it; 0xcalm is asked only for its card.
+    assert pool.asked == ["0xcalm"]
     flagged = result.items["0xflg"]
     assert flagged.decision == "dropped"
     assert flagged.failed == ["market_cap_drawdown"]
 
 
-def test_a_flagged_token_the_pool_cannot_answer_keeps_its_place():
-    """Half a confirmation is not a confirmation: the token is not dropped, and the round
-    says 未判定 rather than pretending the second reading agreed."""
+def test_the_source_high_drops_a_token_the_gate_has_never_seen_fall():
+    """The high GMGN measured is enough for the gate on its own: a first-seen token whose
+    ranking row says it ran to $5M and now trades at $100K is dropped before any pool read
+    is bought. That is the ARCAT case a pool-only high kept missing - our own history had
+    never seen the run, so the free half had nothing to flag and the paid half was throttled."""
+    prefilter = dict(_settings()["pipeline"]["prefilter"], drawdown_max_pct=-70)
+    bulk = FakeSource("gmgn", [_row("0xarcat", market_cap_usd=100_000,
+                                    high_market_cap_usd=5_000_000)])
+    pool = FakeSource("geckoterminal", [])
+    engine, _reader = _engine([bulk, pool], drafts=_stub_drafts)
+    result = engine.run(_settings(pipeline=_pipeline(prefilter=prefilter)), "run-1")
+    arcat = result.items["0xarcat"]
+    assert arcat.decision == "dropped"
+    assert arcat.failed == ["market_cap_drawdown"]
+    assert pool.asked == [], "the free reading dropped it, so no pool read was bought"
+
+def test_the_pool_high_drops_a_token_our_own_history_never_flagged():
+    """ARCAT shape, end to end: our scans recorded a $266K high against a $3.06M pool high, so
+    our own reading is -54% and the pool reads -80%. Nothing about the history says this token
+    has fallen, and the pool number is the one this rule is about."""
+    prefilter = dict(_settings()["pipeline"]["prefilter"], drawdown_max_pct=-70)
+    bulk = FakeSource("gmgn", [_row("0xsink", volume_24h_usd=20_000)])
+    pool = FakeSource("geckoterminal", [], per_token={
+        "0xsink": _row("0xsink", volume_24h_usd=20_000, drawdown_pct=-80.0),
+    })
+    engine, _reader = _engine([bulk, pool], peaks={"0xsink": 266_484}, drafts=_stub_drafts)
+    result = engine.run(_settings(pipeline=_pipeline(prefilter=prefilter)), "run-1")
+    sunk = result.items["0xsink"]
+    assert sunk.decision == "dropped"
+    assert sunk.failed == ["market_cap_drawdown"]
+    # the gate never asked about it - the read that draws a card is the one that caught it
+    assert pool.asked == ["0xsink"]
+
+
+def test_a_pick_below_the_pool_high_is_replaced_by_the_next_candidate():
+    """The cards are taken in score order and 距高回撤 is judged as each one pool is read, so
+    the falling token leaves its place to the next candidate instead of shrinking the round."""
+    prefilter = dict(_settings()["pipeline"]["prefilter"], drawdown_max_pct=-70)
+    bulk = FakeSource("gmgn", [_row("0xsink", volume_24h_usd=30_000),
+                               _row("0xlive", volume_24h_usd=20_000)])
+    pool = FakeSource("geckoterminal", [], per_token={
+        "0xsink": _row("0xsink", volume_24h_usd=30_000, drawdown_pct=-80.0),
+    })
+    engine, _reader = _engine([bulk, pool], peaks={"0xsink": 266_484}, drafts=_stub_drafts)
+    result = engine.run(_settings(pipeline=_pipeline(prefilter=prefilter)), "run-1")
+    assert result.items["0xsink"].decision == "dropped"
+    assert result.items["0xlive"].decision == "selected"
+    assert result.items["0xlive"].rank == 1
+
+
+def test_a_pool_history_that_could_not_be_read_is_unknown_not_a_drop():
+    """A throttled read is a question we did not get to ask, not an answer: a token this
+    project has never seen whose pool history came back unreadable keeps its place, and the
+    round says 未判定 rather than pretending the reading agreed."""
     prefilter = dict(_settings()["pipeline"]["prefilter"], drawdown_max_pct=-70)
     bulk = FakeSource("gmgn", [_row("0xflg", volume_24h_usd=20_000)])
-    pool = FakeSource("geckoterminal", [])
-    engine, _reader = _engine([bulk, pool], peaks={"0xflg": 400_000},
-                              lexicon=lambda ca: {"narrative": 3.0, "product": 3.0})
+    pool = FakeSource("geckoterminal", [], per_token={
+        "0xflg": _row("0xflg", volume_24h_usd=20_000, drawdown_unread=True),
+    })
+    engine, _reader = _engine([bulk, pool], drafts=_stub_drafts)
     result = engine.run(_settings(pipeline=_pipeline(prefilter=prefilter)), "run-1")
     flagged = result.items["0xflg"]
     assert flagged.decision == "selected"

@@ -28,7 +28,7 @@ RUN_CHAIN = pipeline_run.run_chain
 def _settings() -> dict:
     return {
         "schedule": {},
-        "scoring": {"onchain_weight": 55, "product_weight": 45},
+        "scoring": {"onchain_weight": 55, "offchain_weight": 45},
         "report": {"per_round": 2},
         "pipeline": {
             "enrich_limit": 2,

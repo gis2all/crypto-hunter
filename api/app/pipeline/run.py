@@ -6,9 +6,9 @@ transition, so the report page's SSE stream shows the round moving instead of ju
 from `pending` to a finished page.
 
 The model is not part of the truth. When the LLM is unreachable the round still finishes:
-drafts are skipped, so those tokens stay out of the ranking - which is this chain's own
-policy for a token that has no entry - and the cards carry the round's facts with no
-commentary rather than prose nobody decided.
+the entries are skipped, so those tokens stay out of the ranking - which is this chain's
+own policy for a token that has no entry - and the round says so in its own note rather
+than shipping prose nobody decided.
 """
 
 from __future__ import annotations
@@ -18,14 +18,13 @@ import logging
 import sqlite3
 from uuid import uuid4
 
-from .. import cancel, config, llm, out
+from .. import cancel, config
 from ..core.models import RunStatus
 from ..sources import http
-from ..report import draft as report_draft
-from ..report import research
+from ..report import lexicon, research
 from ..store import db
 from . import progress, states
-from .decide import Engine, RoundResult
+from .decide import Engine
 from .write import store_funnel, store_reports, store_round, store_span
 
 log = logging.getLogger("crypto-hunter.pipeline")
@@ -136,7 +135,7 @@ def _set_status(run_id: str, status: str, error: str | None = None) -> None:
                 "UPDATE runs SET status = ?, error = ?, finished_at = ? WHERE id = ?",
                 (status, error[:1000], db.now_iso(), run_id),
             )
-        elif status in states.DELIVERED:
+        elif status in states.TERMINAL:
             conn.execute(
                 "UPDATE runs SET status = ?, finished_at = ? WHERE id = ?",
                 (status, db.now_iso(), run_id),
@@ -145,21 +144,6 @@ def _set_status(run_id: str, status: str, error: str | None = None) -> None:
             conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
     finally:
         conn.close()
-
-
-def lexicon_map(chain_id: str) -> dict[str, dict]:
-    """Every entry this chain has, read once per round.
-
-    Read once on purpose: an entry edited while a round is running must not change what
-    that round scored. An entry drafted by this round reaches the engine through `drafts`,
-    not through here.
-    """
-    conn = db.connect()
-    try:
-        rows = conn.execute("SELECT * FROM lexicon WHERE chain_id = ?", (chain_id,)).fetchall()
-    finally:
-        conn.close()
-    return {str(row["ca"]).lower(): dict(row) for row in rows}
 
 
 def _roster_symbols(conn, cas: list[str]) -> dict[str, str]:
@@ -233,81 +217,18 @@ def previous_picks(chain_id: str, run_id: str) -> list[dict]:
         conn.close()
 
 
-#: How many beaten candidates the writer sees beside the winners.
-NEAR_MISS = 6
-
-
-def near_misses(result: RoundResult, limit: int = NEAR_MISS) -> list:
-    """The scored candidates that did not make the report, best first.
-
-    The cut is the same one the page makes for its own 落选 table, so the written words and
-    the table argue over one list instead of two.
-    """
-    picked = {item.ca.lower() for item in result.picked}
-    rest = [item for item in result.scored if item.ca.lower() not in picked]
-    rest.sort(key=lambda item: (item.score is not None, item.score), reverse=True)
-    return rest[:limit]
-
-
-def commentary(chain: dict, result: RoundResult, run_id: str) -> dict[str, str]:
-    """The 本期点评 for the picks, or {} with the reason recorded on the round."""
-    try:
-        return report_draft.write_commentary(
-            chain, result.picked, result.changes, result.notes, run_id,
-            near_miss=near_misses(result),
-        )
-    except llm.LLMUnavailable as exc:
-        result.notes.append(f"本期点评未生成：{exc}")
-        return {}
-
-
 def _finish(run_id: str) -> None:
     """The last two steps of a round, in one place so the rule can be read at once.
 
-    `written` is not the end of anything: the state machine puts `sent` after it, and a
-    round that stops at `written` reads as still running. With no outlet configured there
-    is no push to wait for - the delivery is the stored report - so the round goes to `sent`,
-    which is also the state that writes `finished_at` and gives the page a stopwatch to stop.
-    Without this the run panel would show 正在运行 and a growing 已用 on every round forever.
+    `written` is not the end of anything: it says the rows are in, and a round that stops
+    there reads as still running. There is no outlet to wait for - the delivery is the
+    stored report, and whatever reads it does so from the rows - so the round goes straight
+    to `researched`, which is also the state that writes `finished_at` and gives the page a
+    stopwatch to stop. Without this the run panel would show 正在运行 and a growing 已用 on
+    every round forever.
     """
     _set_status(run_id, RunStatus.WRITTEN.value)
-    if not out.configured():
-        _set_status(run_id, RunStatus.SENT.value)
-
-
-def mark_researched(run_id: str) -> None:
-    """The last transition in the machine: the deep pass over this round is finished.
-
-    Not a human step and not a delivery: it means every card the round published has an
-    entry whose research state is terminal. Whoever drives the research worker owns saying
-    so, because the round thread that published is long gone by then.
-    """
     _set_status(run_id, RunStatus.RESEARCHED.value)
-
-
-def researched_runs(chain_id: str) -> list[str]:
-    """The `sent` rounds of one chain whose published cards have all been researched.
-
-    Derived from the rows rather than counted in memory: a round is settled when each of its
-    reports points at an entry in a terminal research state, which is still the right answer
-    after a restart that forgot everything. `failed` counts as settled - a page that will not
-    load must not hold a round open forever.
-    """
-    conn = db.connect()
-    try:
-        rows = conn.execute(
-            "SELECT r.id AS id, COUNT(*) AS total,"
-            " SUM(CASE WHEN COALESCE(l.research_state, 'none') IN ('done', 'failed')"
-            "     THEN 1 ELSE 0 END) AS settled"
-            " FROM runs r JOIN reports p ON p.run_id = r.id"
-            " LEFT JOIN lexicon l ON l.ca = p.ca"
-            " WHERE r.status = ? AND r.chain_id = ?"
-            " GROUP BY r.id",
-            (RunStatus.SENT.value, chain_id),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [str(row["id"]) for row in rows if row["settled"] == row["total"]]
 
 
 def stop_run(run_id: str) -> dict:
@@ -337,31 +258,16 @@ def run_chain(chain_id: str, run_id: str) -> dict:
     """Drive one round to `written`. Synchronous: the caller owns the thread."""
     reasons: list[str] = []
 
-    def refresh(targets: list[dict], tell) -> dict[str, dict]:
-        """Rewrite the entries whose refresh condition fired this round.
+    def entries(targets: list[dict], tell) -> dict[str, dict]:
+        """This round's off-chain entry for every token it has to judge.
 
-        A failure here costs no token its place: the old entry still scores and still prints,
-        and the card says the words are older than the numbers instead. That is why this
-        returns `{}` rather than raising - a model outage must not change the ranking.
+        The reading pass, and it is where the words come from: each token gets one model
+        call against the pages the search could find for it. A token that cannot be read
+        or cannot be written about is not a failed round - it has no entry, and without an
+        entry it has no score, so it stays out of the ranking and the note says why.
         """
-        try:
-            return report_draft.refresh_lexicon(chain, targets, run_id, notes=reasons,
-                                               on_batch=tell)
-        except llm.LLMUnavailable as exc:
-            reasons.append(f"词条重写未生成：{exc}")
-            return {}
-
-    def drafts(gaps: list[dict], tell) -> dict[str, dict]:
-        """A first entry for every shortlisted token that has none.
-
-        A model that refuses is not a failed round: the token simply has no entry, which
-        is the same state it was in before, and the round's own note says why.
-        """
-        try:
-            return report_draft.draft_lexicon(chain, gaps, run_id, notes=reasons, on_batch=tell)
-        except llm.LLMUnavailable as exc:
-            reasons.append(f"词条草稿未生成：{exc}")
-            return {}
+        return research.research_entries(chain, targets, run_id, notes=reasons,
+                                        on_done=tell)
 
     try:
         # The tallies are per round, so the log line at the end describes this round and
@@ -386,15 +292,13 @@ def run_chain(chain_id: str, run_id: str) -> dict:
         settings = config.settings_payload(chain_id, row.get("settings_version_id"))
         engine = Engine(
             chain,
-            lexicon=lexicon_map(chain_id).get,
-            drafts=drafts,
-            refresh=refresh,
+            drafts=entries,
             previous=previous_picks(chain_id, run_id),
             peaks=peak_market_caps(chain_id),
         )
-        # The stopwatch spans the whole round, not just the engine: the commentary and the
-        # write happen out here, and a phase list that stopped at `selected` is why the log
-        # line and the wall clock used to disagree by the better part of a minute.
+        # The stopwatch spans the whole round, not just the engine: the write happens out here,
+        # and a phase list that stopped at `selected` is why the log line and the wall clock
+        # used to disagree by the better part of a minute.
         clock = progress.Timer(
             run_id,
             # The stopwatch already knows each phase's wall clock; this is what puts it on
@@ -410,30 +314,22 @@ def run_chain(chain_id: str, run_id: str) -> dict:
             on_funnel=lambda **fields: store_funnel(run_id, **fields),
         )
         result.notes.extend(reasons)
-        _set_progress(run_id, progress.pct("commentary", 0, 1), progress.label("commentary"))
-        written = commentary(chain, result, run_id)
-        clock.mark("commentary")
-        _set_progress(run_id, progress.pct("commentary", 1, 1), progress.label("commentary"))
 
-        # 词条库有进有出. The draft stage writes an entry for every judged token because the
-        # product block needs one before a token can be ranked; this is the other half of
-        # that rule. It runs before the round is stored, so the round's own picks are kept
-        # by `keep` rather than by the `selected` rows this round has not written yet. A
-        # prune that throws is a round that still published: logged, never raised.
+        # The lexicon holds one round and only one: the entries this round wrote. Last
+        # round's rows go now, so nothing can be read as if it were this round's opinion.
+        # A cleanup that throws is a round that still published: logged, never raised.
         try:
-            pruned = report_draft.prune_lexicon(
-                chain_id, keep=[item.ca for item in result.scored],
-            )
-            if pruned:
-                result.notes.append("词条库清理：删除 %d 条从未入选的档案" % pruned)
+            for_removal = lexicon.forget_other_rounds(run_id)
+            if for_removal:
+                result.notes.append("词条清理：移除上一轮 %d 条" % for_removal)
         except Exception:
-            log.exception("round %s could not prune its lexicon", run_id)
+            log.exception("round %s could not clear the previous lexicon", run_id)
 
         conn = db.connect()
         try:
             conn.execute("BEGIN")
             store_round(conn, result)
-            store_reports(conn, result, written)
+            store_reports(conn, result)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -466,13 +362,4 @@ def run_chain(chain_id: str, run_id: str) -> dict:
     for line in http.stats_lines():
         log.info("round %s host %s", run_id, line)
     _finish(run_id)
-    # After `sent`, and only after: the queue is a row write, so the round is over before the
-    # first page is fetched. The reading itself is somebody else thread. A queue that throws
-    # is a round that still published, so it is logged, not raised.
-    try:
-        lined = research.queue(chain, result)
-        if lined:
-            log.info("round %s queued %d entries for research", run_id, len(lined))
-    except Exception:
-        log.exception("round %s could not queue its research", run_id)
     return _row(run_id)

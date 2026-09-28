@@ -1,8 +1,9 @@
 """Quality-score composition. Pure functions.
 
-The 55% on-chain block is five factor percentiles; the 45% product block is the lexicon's
-own judgement. Both weights, and the split between the five factors, are settings the
-operator can move - nothing here is a constant.
+The 55% on-chain block is five factor percentiles; the 45% off-chain block is this
+round's five 0-5 judgements about the project itself. Both weights, and the split
+inside each of the two blocks, are settings the operator can move - nothing here is a
+constant.
 
 待定口径 #1 is settled here, by the frozen settings page rather than by taste. Those rows
 are labelled 池深分位 / 成交额分位 / 地址数分位 / Top10 反向分位 / 捆绑率反向分位, so the
@@ -35,11 +36,24 @@ FACTOR_FIELDS: dict[str, str] = {
     "bundling": "bundling_pct",
 }
 
+#: The off-chain half: what the research pass judged about the project, each 0-5, keyed
+#: exactly as the prompt asks for them. 产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 /
+#: 叙事与官方关系 / 社区活跃度. Weights ship even and live in
+#: `scoring.offchain_factor_weights`, and there is no "undetermined": 0 is the judgement
+#: that the search came back empty, which is itself a finding.
+OFFCHAIN_FIELDS: tuple[str, ...] = (
+    "f_completeness",
+    "f_substance",
+    "f_team",
+    "f_narrative",
+    "f_community",
+)
+
 #: Two of the five are "less is better". Their percentile is inverted so that every factor
 #: reads the same way - one scale, higher is better - which is what makes them summable.
 REVERSE_FACTORS = frozenset({"top10_concentration", "bundling"})
 
-#: UI default: the 55% on-chain block is split evenly across its five factors.
+#: UI default: each block's five factors split evenly until the operator moves them.
 DEFAULT_FACTOR_WEIGHT = 20.0
 
 
@@ -112,6 +126,21 @@ def score_onchain(
     return sum(f.score for f in factors) / known * full, factors
 
 
+def offchain_weights(scoring: dict) -> dict[str, float]:
+    """The five off-chain weights, defaulting to the even split the block shipped with.
+
+    A snapshot saved before this knob existed carries no weights at all, and a saved
+    round could in principle hold five zeroes; both fall back to the even split, so a
+    missing knob can never turn the normaliser into a zero divisor.
+    """
+    weights = scoring.get("offchain_factor_weights") or {}
+    spread = {name: float(weights.get(name, DEFAULT_FACTOR_WEIGHT) or 0.0)
+              for name in OFFCHAIN_FIELDS}
+    if sum(spread.values()) <= 0:
+        return {name: DEFAULT_FACTOR_WEIGHT for name in OFFCHAIN_FIELDS}
+    return spread
+
+
 def score_token(
     metrics: TokenMetrics,
     facts: SafetyFacts,
@@ -119,45 +148,47 @@ def score_token(
     percentiles: PercentileProvider,
     lexicon_entry: dict | None = None,
 ) -> ScoreBreakdown:
-    """Compose the on-chain block (55%) with the product block (45%).
+    """Compose the on-chain block (55%) with the off-chain block (45%).
 
-    The unlisted-token rule is a setting, not a default: `pending_review` leaves the token
-    out of the ranking rather than showing it a 0, because a 0 would read as "was judged
-    and failed". `zero` is the other honest option and the operator can pick it.
+    The off-chain block is five 0-5 judgements this round made about the token, weighted
+    by `scoring.offchain_factor_weights` (an even split by default). A token with no entry
+    was not judged at all and stays out of the ranking: a 0
+    would read as "judged and found worthless", which is a different claim from "not
+    judged". Once an entry exists the prompt requires all five; one that arrives empty is
+    read as 0 and noted, because the round does have a judgement to record.
     """
     del facts  # the safety verdict is a gate, it does not enter the score
     scoring = settings.get("scoring") or {}
     weights = scoring.get("onchain_factor_weights") or None
     onchain, factors = score_onchain(metrics, percentiles, weights)
     notes: list[str] = []
-    product: float | None = None
+    offchain: float | None = None
     pending = False
 
-    narrative = (lexicon_entry or {}).get("narrative")
-    completeness = (lexicon_entry or {}).get("product")
-    if lexicon_entry is None or narrative is None or completeness is None:
-        if lexicon_entry is not None:
-            notes.append("lexicon judgement incomplete")
-        if str(scoring.get("unlisted_policy") or "pending_review") == "zero":
-            if lexicon_entry is None:
-                notes.append("no lexicon entry: scored 0 by this chain's 未入库标的 policy")
-            product = 0.0
-        else:
-            pending = True
-            if lexicon_entry is None:
-                notes.append("no lexicon entry: pending review, excluded from the ranking")
+    if lexicon_entry is None:
+        pending = True
+        notes.append("no off-chain entry: pending review, excluded from the ranking")
     else:
-        product = (float(narrative) + float(completeness)) / 10.0 * 100.0
+        missing = [name for name in OFFCHAIN_FIELDS if lexicon_entry.get(name) is None]
+        if missing:
+            notes.append("off-chain judgement incomplete (%s), read as 0"
+                         % ", ".join(missing))
+        spread = offchain_weights(scoring)
+        offchain = (
+            sum(spread[name] * float(lexicon_entry.get(name) or 0.0)
+                for name in OFFCHAIN_FIELDS)
+            / (sum(spread.values()) * 5.0) * 100.0
+        )
 
     total: float | None = None
-    if not pending and onchain is not None and product is not None:
+    if not pending and onchain is not None and offchain is not None:
         w_on = float(scoring.get("onchain_weight", 55))
-        w_prod = float(scoring.get("product_weight", 45))
-        total = onchain * w_on / 100.0 + product * w_prod / 100.0
+        w_off = float(scoring.get("offchain_weight", 45))
+        total = onchain * w_on / 100.0 + offchain * w_off / 100.0
 
     return ScoreBreakdown(
         onchain=onchain,
-        product=product,
+        product=offchain,
         total=total,
         factors=factors,
         pending_review=pending,

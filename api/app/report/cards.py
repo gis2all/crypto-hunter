@@ -3,7 +3,7 @@
 The card is an assembler of three inputs that are each already frozen elsewhere:
 
 * `TokenMetrics` + `SafetyFacts` - the run's snapshot (immutable),
-* the written report payload - verdict, commentary, detail sections (immutable once sent),
+* the written report payload - verdict, detail sections (immutable once written),
 * the scoring breakdown - on-chain quality / track fit and their weights.
 
 Everything here is formatting and threshold colour. Nothing re-fetches and nothing
@@ -217,7 +217,7 @@ def safety_block(
 ) -> dict:
     """The safety rows as the round wrote them, falling back to the facts.
 
-    The recorded text is what the round actually sent - it carries things the spread
+    The recorded text is what the round actually wrote - it carries things the spread
     facts cannot ("源码已验证（match: UERC20）", a sniper share the raw feed reports in
     its own unit). Re-deriving would show different words, or a different number.
     """
@@ -500,21 +500,34 @@ def spark(metrics: Mapping[str, Any]) -> dict:
 #: fallback for a kind it did not recognise, so a new kind shows up as itself, not as blank.
 
 
+#: The footer order: where to trade, then where the project lives. The three trackers come
+#: off the snapshot; the three after them are the project's own pages, which the 社区活跃度
+#: block no longer repeats - a block that argues about 互动率 and 持续性 is not where a reader
+#: looks for a URL.
+TRACKER_LINKS = (("gmgn_url", "GMGN"), ("debot_url", "Debot"),
+                 ("dexscreener_url", "DexScreener"))
+SOCIAL_LINKS = (("twitter", "X"), ("telegram", "TG"), ("github", "GitHub"))
+
+
 def links(metrics: Mapping[str, Any]) -> list[dict]:
-    """The trade pages, and nothing else.
+    """Every page the card links to: where to trade, then where the project lives.
 
     The deep pass's filed evidence used to be appended here too, which printed the same
     three labels (官网 / X / GitHub) a second time, on every card, as text a reader cannot
-    use. The pages a claim was read off belong with the claim - in the 社媒 block - and the
-    footer is a place to trade, so it holds the trackers.
+    use. Now the footer is the only place a card prints an entry point, so the links the
+    社区活跃度 block used to carry live here instead - and the card prints them as plain
+    underlined text, because a row of seven external-link icons is mostly icon.
     """
     out = []
-    if metrics.get("gmgn_url"):
-        out.append({"label": "GMGN", "url": metrics["gmgn_url"]})
-    if metrics.get("debot_url"):
-        out.append({"label": "Debot", "url": metrics["debot_url"]})
-    if metrics.get("dexscreener_url"):
-        out.append({"label": "DexScreener", "url": metrics["dexscreener_url"]})
+    for key, label in TRACKER_LINKS:
+        if metrics.get(key):
+            out.append({"label": label, "url": metrics[key]})
+    socials = dict(metrics.get("socials") or {})
+    for kind, label in SOCIAL_LINKS:
+        if socials.get(kind):
+            out.append({"label": label, "url": socials[kind]})
+    for url in list(metrics.get("websites") or [])[:1]:
+        out.append({"label": "官网", "url": url})
     return out
 
 
@@ -526,27 +539,26 @@ def card(
     breakdown: Mapping[str, Any],
     is_new: bool = False,
     onchain_weight: float = 55,
-    product_weight: float = 45,
+    offchain_weight: float = 45,
 ) -> dict:
     """One card. `written` is the frozen report payload; `breakdown` is the scored run_item."""
-    details = []
-    for title, body in (written.get("sections") or {}).items():
-        if body:
-            details.append({"title": title, "variant": "plain", "body": segments(body)})
-    if written.get("note"):
-        details.append({"title": "本期点评", "variant": "note", "body": segments(written["note"])})
+    badges = dict(written.get("badges") or {})
+    details = [
+        {"title": title, "body": segments(body), "badge": badges.get(title, "")}
+        for title, body in (written.get("sections") or {}).items()
+        if body
+    ]
     return {
         "rank": rank,
         "ca": metrics.get("ca"),
         "sym": metrics.get("symbol") or NA,
         "tag": written.get("tag") or "",
-        "fit_label": written.get("fit_label") or "",
         "is_new": is_new,
         "score": _round(breakdown.get("total")),
         "onchain": _round(breakdown.get("onchain")),
         "product": _round(breakdown.get("product")),
         "onchain_weight": onchain_weight,
-        "product_weight": product_weight,
+        "offchain_weight": offchain_weight,
         "ranks": {
             "liquidity": metrics.get("liquidity_rank"),
             "volume": metrics.get("volume_rank"),
@@ -554,7 +566,6 @@ def card(
         },
         "spark": spark(metrics),
         "verdict": segments(written.get("verdict")),
-        "entry_note": written.get("entry_note") or "",
         "metrics": metric_rows(metrics, written.get("rows")),
         "deltas": [{"key": d.get("key"), "value": d.get("value")} for d in (written.get("deltas") or [])],
         "safety": safety_block(metrics, safety, written.get("safety")),

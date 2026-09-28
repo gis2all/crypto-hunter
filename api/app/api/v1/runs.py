@@ -22,19 +22,14 @@ from pydantic import BaseModel
 from ... import cancel, config
 from ...core.models import RunStatus
 from ...pipeline import run as pipeline_run
-from ...pipeline import schedule
+from ...pipeline import schedule, states
 from ...report import assemble as report_assemble
 from ...store import db
 from .schemas import BatchOut, CardOut, RunOut
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
-TERMINAL = {
-    RunStatus.SENT.value,
-    RunStatus.RESEARCHED.value,
-    RunStatus.CANCELLED.value,
-    RunStatus.FAILED.value,
-}
+TERMINAL = states.TERMINAL
 
 
 class RunCreate(BaseModel):
@@ -73,7 +68,7 @@ def list_runs(chain_id: str | None = None, limit: int = Query(default=20, ge=1, 
 @router.post("", response_model=RunOut, status_code=201)
 def create_run(body: RunCreate) -> dict:
     if body.chain_id not in config.load_chains():
-        raise HTTPException(status_code=404, detail=f"unknown chain: {body.chain_id}")
+        raise HTTPException(status_code=404, detail=f"没有这条链：{body.chain_id}")
     row = pipeline_run.create_run(body.chain_id, trigger=body.trigger)
     # The round runs on the scheduler's own thread: a real one takes minutes, and the
     # request that starts it must not be held open for them.
@@ -96,7 +91,7 @@ def cancel_run(run_id: str) -> dict:
     """
     row = _fetch(run_id)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+        raise HTTPException(status_code=404, detail=f"没有这一轮：{run_id}")
     if row["status"] in TERMINAL:
         return dict(row)
     cancel.request(run_id)
@@ -109,7 +104,7 @@ def cancel_run(run_id: str) -> dict:
 def get_run(run_id: str) -> dict:
     row = _fetch(run_id)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+        raise HTTPException(status_code=404, detail=f"没有这一轮：{run_id}")
     return dict(row)
 
 
@@ -117,14 +112,14 @@ def get_run(run_id: str) -> dict:
 def get_batch(run_id: str, per_round: int = Query(default=5, ge=1, le=50)) -> dict:
     """Everything the report page draws: batch strip, funnel, changes, cards,落选表."""
     if _fetch(run_id) is None:
-        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+        raise HTTPException(status_code=404, detail=f"没有这一轮：{run_id}")
     return report_assemble.batch(run_id, per_round=per_round)
 
 
 @router.get("/{run_id}/reports", response_model=list[CardOut])
 def get_reports(run_id: str) -> list[dict]:
     if _fetch(run_id) is None:
-        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+        raise HTTPException(status_code=404, detail=f"没有这一轮：{run_id}")
     return report_assemble.cards(run_id)
 
 
@@ -140,7 +135,7 @@ async def stream_run(
     """SSE. Events: `status` on every transition, then `done`, `timeout` or `error`."""
     row = _fetch(run_id)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+        raise HTTPException(status_code=404, detail=f"没有这一轮：{run_id}")
 
     async def events():
         yield _sse({"type": "status", "run_id": run_id, "status": row["status"]})

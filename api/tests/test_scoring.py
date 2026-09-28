@@ -5,12 +5,14 @@ import pytest
 
 from app.core.models import SafetyFacts, TokenMetrics
 from app.core.scoring import (
+    OFFCHAIN_FIELDS,
     CandidateSetPercentile,
+    offchain_weights,
     score_onchain,
     score_token,
 )
 
-SETTINGS = {"scoring": {"onchain_weight": 55, "product_weight": 45}}
+SETTINGS = {"scoring": {"onchain_weight": 55, "offchain_weight": 45}}
 
 
 class Fixed:
@@ -54,21 +56,37 @@ def test_without_lexicon_entry_the_token_is_not_ranked():
     assert breakdown.onchain == 100
 
 
+def _offchain(**over):
+    """The five 0-5 judgements, all present, so a test can move one at a time."""
+    base = {"f_completeness": 3.0, "f_substance": 3.0, "f_team": 3.0,
+            "f_narrative": 3.0, "f_community": 3.0}
+    base.update(over)
+    return base
+
+
 def test_total_uses_both_blocks():
     strong = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0),
-                         lexicon_entry={"narrative": 5.0, "product": 5.0})
+                         lexicon_entry=_offchain(f_completeness=5.0, f_substance=5.0,
+                                                 f_team=5.0, f_narrative=5.0,
+                                                 f_community=5.0))
     assert strong.product == 100
     assert strong.total == 100
 
-    weak_product = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0),
-                               lexicon_entry={"narrative": 0.0, "product": 0.0})
-    assert weak_product.total == 55
+    weak_offchain = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0),
+                                lexicon_entry=_offchain(f_completeness=0.0, f_substance=0.0,
+                                                        f_team=0.0, f_narrative=0.0,
+                                                        f_community=0.0))
+    assert weak_offchain.total == 55
 
 
-def test_incomplete_lexicon_judgement_is_pending():
+def test_a_blank_judgement_is_read_as_zero_not_pending():
+    """The research pass ran and came back empty: 0 is the finding, not a missing row."""
     breakdown = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0),
-                            lexicon_entry={"narrative": 3.0, "product": None})
-    assert breakdown.pending_review is True and breakdown.total is None
+                            lexicon_entry={"f_narrative": 3.0})
+    assert breakdown.pending_review is False
+    assert breakdown.total is not None
+    assert breakdown.product == pytest.approx(3.0 / 25.0 * 100.0)
+    assert any("incomplete" in note for note in breakdown.notes)
 
 
 # --------------------------------------------------------------------- 分位口径
@@ -125,25 +143,46 @@ def test_the_denominator_is_the_set_it_was_built_from():
     assert strong.percentile("liquidity", 100) == pytest.approx(0.125)
 
 
-# --------------------------------------------------------------- 赛道产品分（45%）
+# --------------------------------------------------------------- 链下调研（45%）
 
-def test_an_entry_without_the_two_judgements_is_pending_not_zero():
-    breakdown = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0), {"tag": "x"})
-    assert breakdown.pending_review
-    assert breakdown.total is None
-    assert breakdown.product is None
-
-
-def test_the_unlisted_policy_zero_scores_it_instead():
-    settings = {"scoring": {"onchain_weight": 55, "product_weight": 45, "unlisted_policy": "zero"}}
-    breakdown = score_token(_full(), SafetyFacts(), settings, Fixed(1.0), None)
+def test_a_blank_dict_is_a_judgement_of_zero_not_a_missing_one():
+    breakdown = score_token(_full(), SafetyFacts(), SETTINGS, Fixed(1.0), {})
+    assert breakdown.pending_review is False
     assert breakdown.product == 0.0
-    assert breakdown.total is not None
+    assert breakdown.total == pytest.approx(55.0)
 
 
-def test_the_product_block_is_the_two_judgements_out_of_ten():
+def test_the_offchain_block_is_five_judgements_out_of_twenty_five():
     breakdown = score_token(
-        _full(), SafetyFacts(), SETTINGS, Fixed(1.0), {"narrative": 2.5, "product": 2.0}
+        _full(), SafetyFacts(), SETTINGS, Fixed(1.0), _offchain(f_completeness=2.5,
+                                                               f_substance=2.5,
+                                                               f_team=2.5,
+                                                               f_narrative=2.5,
+                                                               f_community=2.5)
     )
-    assert breakdown.product == pytest.approx(45.0)
-    assert breakdown.total == pytest.approx(0.55 * 100 + 0.45 * 45.0)
+    assert breakdown.product == pytest.approx(50.0)
+    assert breakdown.total == pytest.approx(0.55 * 100 + 0.45 * 50.0)
+
+
+def test_the_offchain_block_reads_its_weights():
+    """The split inside the 45% block is a setting, not a constant: 60% on one judgement
+    and 10 on the rest turns a single 5.0 into a 60, not a 20."""
+    settings = {"scoring": {"onchain_weight": 55, "offchain_weight": 45,
+                            "offchain_factor_weights": {"f_completeness": 60, "f_substance": 10,
+                                                        "f_team": 10, "f_narrative": 10,
+                                                        "f_community": 10}}}
+    entry = _offchain(f_completeness=5.0, f_substance=0.0, f_team=0.0, f_narrative=0.0,
+                      f_community=0.0)
+    breakdown = score_token(_full(), SafetyFacts(), settings, Fixed(1.0), entry)
+    assert breakdown.product == pytest.approx(60.0)
+    assert breakdown.total == pytest.approx(0.55 * 100 + 0.45 * 60.0)
+
+
+def test_a_round_without_offchain_weights_keeps_the_even_split():
+    """Snapshots saved before the knob existed carry no weights, and a saved round could
+    hold five zeroes; both read as the even split the block shipped with, never as a
+    division by zero."""
+    even = {name: 20.0 for name in OFFCHAIN_FIELDS}
+    assert offchain_weights({}) == even
+    assert offchain_weights({"offchain_factor_weights": {name: 0 for name in OFFCHAIN_FIELDS}}) == even
+
