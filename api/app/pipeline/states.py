@@ -1,7 +1,8 @@
 """Run state machine.
 
-`sent` is a hard boundary: after it, only the lexicon may change. That is how
-"send first, research later" is enforced - by the state, not by a prompt rule.
+Every round ends the same way: `written` records the rows and `researched` closes it.
+There is no publish-then-read split left - the reading happens before the score, inside
+the round (see `report/research.py`), so nothing can rewrite a card after it is stored.
 
 `cancelled` is the operator's own exit. It is reachable from every state a round can be
 working in - a stop can land during the pull, during the gate, or while the model is
@@ -18,20 +19,13 @@ ALLOWED: dict[str, set[str]] = {
     S.COLLECTED.value: {S.SCORED.value, S.CANCELLED.value, S.FAILED.value},
     S.SCORED.value: {S.SELECTED.value, S.CANCELLED.value, S.FAILED.value},
     S.SELECTED.value: {S.WRITTEN.value, S.CANCELLED.value, S.FAILED.value},
-    S.WRITTEN.value: {S.SENT.value, S.CANCELLED.value, S.FAILED.value},
-    S.SENT.value: {S.RESEARCHED.value, S.CANCELLED.value, S.FAILED.value},
+    S.WRITTEN.value: {S.RESEARCHED.value, S.CANCELLED.value, S.FAILED.value},
     S.RESEARCHED.value: set(),
     S.CANCELLED.value: set(),
     S.FAILED.value: set(),
 }
 
 TERMINAL = {S.RESEARCHED.value, S.CANCELLED.value, S.FAILED.value}
-
-#: The states after which the automated part of a round is over: the page shows 用时 and stops
-#: the clock. `sent` is here even though it is not terminal, because what follows it is the
-#: lexicon being confirmed - a human reading entries, not the round doing work. Leaving it out
-#: is why every round read as still running with a stopwatch that never stopped.
-DELIVERED = {S.SENT.value, *TERMINAL}
 
 
 def can(current: str, target: str) -> bool:

@@ -22,10 +22,14 @@ log = logging.getLogger("crypto-hunter.pipeline")
 #: phase -> (low, high) percent, and the words the run panel already uses for that row.
 PHASES: dict[str, tuple[int, int, str]] = {
     "pull": (0, 8, "拉取扫描源"),
-    "gate": (8, 82, "安全判定"),
+    # Between the two halves of the hard filter: the per-token reads that fill the chip
+    # numbers the bulk pull left blank. A real phase on this chain - minutes of network
+    # wait that used to be absorbed into the gate - so it gets its own band rather than
+    # letting the bar sit still and then jump.
+    "topup": (8, 14, "补齐链上数据"),
+    "gate": (14, 82, "安全判定"),
     "score": (82, 86, "打分排序"),
-    "draft": (86, 96, "生成报告"),
-    "commentary": (96, 100, "生成报告"),
+    "draft": (86, 100, "生成报告")
 }
 
 
