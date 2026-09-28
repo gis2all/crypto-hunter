@@ -2,6 +2,7 @@ import { ChevronRight, Download, FileText, FoldVertical, LayoutGrid, Play, Save,
 
 import type { Batch } from "../../api/client";
 import { Icon } from "../../components/Icon";
+import { whole } from "../../format";
 import type { SettingsState } from "../settings/useSettingsState";
 
 export type View = "report" | "params";
@@ -125,7 +126,7 @@ export function batchToMarkdown(batch: Batch): string {
     lines.push("");
   }
   for (const card of batch.cards) {
-    lines.push(`## ${String(card.rank).padStart(2, "0")} ${card.sym} · 综合分 ${card.score ?? "—"}`);
+    lines.push(`## ${String(card.rank).padStart(2, "0")} ${card.sym} · 综合分 ${whole(card.score)}`);
     lines.push("");
     lines.push(`\`${card.ca}\``);
     lines.push("");

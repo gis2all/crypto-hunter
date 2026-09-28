@@ -5,10 +5,7 @@ import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
 import { Icon } from "../../components/Icon";
 import { Rich } from "../../components/Rich";
-
-function one(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : value.toFixed(1);
-}
+import { whole } from "../../format";
 
 /** The 结论, five lines of it, with the rest one hover away.
  *
@@ -106,7 +103,7 @@ export function Card({
           </span>
         </div>
         <div className="head-r">
-          <span className="score">{one(card.score)}</span>
+          <span className="score">{whole(card.score)}</span>
           <span className="score-label">综合分</span>
         </div>
       </header>
@@ -124,12 +121,12 @@ export function Card({
           <span>
             <Icon as={ShieldCheck} />
             <b>链上质量</b>
-            <i>{one(card.onchain)}</i>
+            <i>{whole(card.onchain)}</i>
           </span>
           <span className="r">
             <Icon as={Boxes} />
             <b>链下调研</b>
-            <i>{one(card.product)}</i>
+            <i>{whole(card.product)}</i>
           </span>
         </div>
       </div>

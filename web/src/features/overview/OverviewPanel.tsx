@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import type { Batch } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
 import { Icon } from "../../components/Icon";
+import { whole } from "../../format";
 
 /** 本轮总览: the round's口径, its changes, who missed the cut and why, and push state. */
 export function OverviewPanel({
@@ -88,7 +89,7 @@ export function OverviewPanel({
                   <td>{row.liquidity}</td>
                   <td>{row.holders}</td>
                   <td>{row.entrapment}</td>
-                  <td>{row.score === null || row.score === undefined ? "—" : row.score.toFixed(1)}</td>
+                  <td>{whole(row.score)}</td>
                   <td>{row.reason}</td>
                 </tr>
               ))}
