@@ -1,14 +1,12 @@
-"""Re-read the cards parked in 其他, once, after the category vocabulary grew.
+"""Re-read stored cards and say what each one is - kind and category.
 
-`其他` was a gap, not a category: the extraction pass had no word for 节点 / 治理 / 交互, so a
-node sale, a governance vote and a plain protocol swap all landed there. This module asks the
-model one question about the rows already stored - which closed category fits - and writes only
-`category`. It never creates cards and never rewrites the title or summary. `其他` is no longer
-an answer (2026-10-27, user): a row the model cannot place is reported back as
-`not_opportunity` so the caller can retire it, and an unreadable answer leaves it alone.
+Started as a repair of the rows parked in `其他`; it now also answers the other question the
+old pipeline got wrong (2026-10-27, user): a 候补名单 is a 白名单, staking is 挖矿, a 提案 is
+治理, and a card filed as an activity that is really a project has to move kind as well as
+category. It never creates cards and never rewrites the title or summary.
 
-Deliberately not part of a scan: this is a one-off repair of rows written under the old
-vocabulary. Re-running it is safe (it only reads rows still in 其他).
+`其他` is not an answer: a card the model cannot place comes back as `not_opportunity` so the
+caller can retire it, and an unreadable answer leaves the row alone. Re-running is safe.
 """
 
 from __future__ import annotations
@@ -19,16 +17,23 @@ from ..llm import client as llm
 from ..store import db
 from . import model, schema
 
-RECATEGORIZE_VERSION = "recategorize.md@2"
+RECATEGORIZE_VERSION = "recategorize.md@3"
 #: One call carries every row; the model answers slug -> category for each. 400 rows of title +
 #: truncated summary is still a small prompt, and splitting it would cost more than it saves.
 BATCH = 400
 
 
-def run(limit: int = BATCH, tell=None) -> dict:
-    """Ask once, write the valid answers, leave the rest alone."""
-    rows = [row for row in db.opportunity_items(limit=limit)
-            if str(row.get("category") or "") == "其他"]
+def run(limit: int = BATCH, tell=None, every: bool = False) -> dict:
+    """Ask once, write the valid answers, leave the rest alone.
+
+    `every=True` re-reads every active card instead of only the ones parked in 其他; that is
+    the one-off pass that fixed kind and category for the whole shelf.
+    """
+    rows = db.opportunity_items(limit=limit)
+    if every:
+        rows = [row for row in rows if row.get("user_state") == "active"]
+    else:
+        rows = [row for row in rows if str(row.get("category") or "") == "其他"]
     if not rows:
         return {"checked": 0, "updated": 0, "left": 0, "unknown": []}
     if tell:
@@ -48,6 +53,7 @@ def run(limit: int = BATCH, tell=None) -> dict:
     for item in (raw or {}).get("items") or []:
         slug = str((item or {}).get("slug") or "")
         category = str((item or {}).get("category") or "").strip()
+        kind = str((item or {}).get("kind") or "").strip()
         row = by_slug.pop(slug, None)
         if row is None:
             unknown.append(slug)
@@ -55,11 +61,13 @@ def run(limit: int = BATCH, tell=None) -> dict:
         if not category:
             not_opportunity.append(slug)
             continue
-        allowed = (schema.ACTIVITY_CATEGORIES if row["kind"] == "activity"
+        if not kind:
+            kind = ("activity" if category in schema.ACTIVITY_CATEGORIES else "project")
+        allowed = (schema.ACTIVITY_CATEGORIES if kind == "activity"
                    else schema.PROJECT_CATEGORIES)
         if category not in allowed or category == "其他":
             continue
-        if db.opportunity_set_category(slug, category):
+        if db.opportunity_set_category(slug, category, kind):
             updated += 1
     return {"checked": len(rows), "updated": updated,
             "left": len(rows) - updated - len(not_opportunity), "unknown": unknown,

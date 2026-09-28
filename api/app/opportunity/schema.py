@@ -27,7 +27,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: The version each answer was written by. Stored on the entry, because a rule change is
 #: otherwise indistinguishable from a judgement the model made under the old rules.
 CLASSIFY_VERSION = "classify.md@3"
-EXTRACT_VERSION = "extract.md@7"
+EXTRACT_VERSION = "extract.md@8"
 
 #: What a material can be. The first two are the ones that become entries; the rest are
 #: recorded so a scan can say what it read and did not use, which is what makes the funnel
@@ -47,26 +47,28 @@ NOVELTIES = ("protocol", "gameplay", "mechanism", "standard", "asset", "chain",
 #: the card. Derived from `category` at read time - no column, no migration.
 #: Not to be confused with `opportunity_sources.family` (the 1–5 gate families): that one is
 #: how a query was collected, this one is how a card reads.
-CATEGORY_GROUPS = ("invest", "node", "qualify", "engage", "protocol", "tooling", "other")
+CATEGORY_GROUPS = ("spend", "yield", "qualify", "engage", "protocol", "tooling", "other")
 CATEGORY_GROUP_LABELS = {
-    "invest": "Mint / 挖矿 / 打新（投入型）",
-    "node": "节点 / 验证（投入型）",
-    "qualify": "空投 / 白名单（资格型）",
-    "engage": "测试网 / 做任务 / 交互 / 治理（参与型）",
-    "protocol": "新协议 / 新实验（观察型）",
-    "tooling": "新工具 / 基础设施 / 新标准（观察型）",
+    "spend": "一次性投入（打新 / Mint）",
+    "yield": "生息（挖矿 / 质押 / 节点）",
+    "qualify": "资格（白名单 / 候补 / 空投）",
+    "engage": "参与（测试网 / 做任务 / 交互 / 治理）",
+    "protocol": "观察 · 协议（新协议 / 新实验）",
+    "tooling": "观察 · 工具（新工具 / 基础设施 / 新标准）",
     "other": "其他",
 }
 
 #: One category belongs to exactly one group, grouped by what the reader has to put in:
-#: 投入型 (mint / mine / subscribe), 节点 (VPS / uptime / stake), 资格型 (claim / allowlist),
-#: 参与型 (testnet / quest / interaction / governance), then the two observation groups.
-#: 治理 sits in 参与型 because only one card carried the leaf after the backfill - give it its
-#: own row when it grows. `挖矿` still covers both liquidity and hardware mining; it stays in
-#: 投入型 until the extraction splits them. `其他` - and anything the vocabulary does not know -
-#: is its own group.
+#: 一次性投入 (打新 / Mint: money leaves), 生息 (挖矿 / 质押 / LP / 节点: money stays and earns),
+#: 资格 (候补 / 白名单 / 空投: occupy a slot first), 参与 (testnet / quest / interaction /
+#: governance: time), then the two observation groups. `挖矿` covers staking, LP and vaults;
+#: `节点` covers running a node and delegating to one - both are the same 生息 reading
+#: (2026-10-27, user: 投入型 mixed one-off spending with yield, which is not one question).
+#: 治理 sits in 参与 because it is time, not capital. `其他` - and anything the vocabulary does
+#: not know - is its own group.
 CATEGORY_GROUP = {
-    "mint": "invest", "挖矿": "invest", "打新": "invest", "节点": "node",
+    "mint": "spend", "打新": "spend",
+    "挖矿": "yield", "节点": "yield",
     "空投": "qualify", "白名单": "qualify",
     "测试网": "engage", "做任务": "engage", "交互": "engage", "治理": "engage",
     "新协议": "protocol", "新实验": "protocol",

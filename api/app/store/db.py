@@ -1544,13 +1544,22 @@ def opportunity_user_state(slug: str, state: str) -> bool:
         conn.close()
 
 
-def opportunity_set_category(slug: str, category: str) -> bool:
-    """Rewrite one card's category. Used by the one-off 其他 re-reader only."""
+def opportunity_set_category(slug: str, category: str, kind: str | None = None) -> bool:
+    """Rewrite one card's category - and its kind, when the re-read moved it.
+
+    Used by the one-off re-reader only: a card filed as an activity that is really a project
+    (or the other way round) cannot be fixed by the category alone.
+    """
     conn = connect()
     try:
-        cursor = conn.execute(
-            "UPDATE opportunities SET category = ?, updated_at = ? WHERE slug = ?",
-            (category, now_iso(), slug))
+        if kind in ("activity", "project"):
+            cursor = conn.execute(
+                "UPDATE opportunities SET category = ?, kind = ?, updated_at = ? WHERE slug = ?",
+                (category, kind, now_iso(), slug))
+        else:
+            cursor = conn.execute(
+                "UPDATE opportunities SET category = ?, updated_at = ? WHERE slug = ?",
+                (category, now_iso(), slug))
         return bool(cursor.rowcount)
     finally:
         conn.close()
