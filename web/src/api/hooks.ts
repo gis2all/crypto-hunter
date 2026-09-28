@@ -24,16 +24,14 @@ export function useBatch(runId: string | undefined) {
   });
 }
 
-/** How often the open round is asked again. `settling` is slower on purpose: the round has
- *  published and nothing is being computed - an entry is being read - and the page only has
- *  to notice the moment the researched words land on the cards. */
-export type RunPhase = "off" | "running" | "settling";
+/** How often the open round is asked again while it is still moving. A round that has
+ *  reached a terminal state is never polled: nothing will change on it again. */
+export type RunPhase = "off" | "running";
 
 const RUNNING_MS = 1500;
-const SETTLING_MS = 5000;
 
 export function useLiveRun(runId: string | undefined, phase: RunPhase) {
-  const interval = phase === "running" ? RUNNING_MS : phase === "settling" ? SETTLING_MS : false;
+  const interval = phase === "running" ? RUNNING_MS : false;
   return useQuery({
     queryKey: ["run", runId],
     queryFn: () => api.getRun(runId as string),

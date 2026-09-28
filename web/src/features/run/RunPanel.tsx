@@ -11,16 +11,17 @@ import { Icon } from "../../components/Icon";
  * checkpoints (sources pulled, candidates judged, draft batches written), and the phase
  * name next to it is the phase that percent belongs to.
  *
- * The stage markers follow the frozen stylesheet: a step is `done / run / pending`
- * on the <li>, and a round that finished carries `runpanel done`, which collapses the
- * list to the header and the footer summary. A round that *failed* is deliberately
- * not `done`, so the step it stopped on stays on screen, and a round that is queued
- * but not started yet keeps the bare `rst` markers and the `本轮 · 待运行`
- * header of the prototype's pre-run state.
+ * The stage markers follow the frozen stylesheet: a step is `done / run / pending` on the
+ * <li>. Every state keeps its step list on screen - finished, failed and cancelled alike -
+ * because the right column is where the round own timings are read, and folding it away the
+ * moment the last stage ended is how the answer to "what took the time" got written and then
+ * hidden. A round that is queued but not started yet keeps the bare `rst` markers and the
+ * `本轮 · 待运行` header of the prototype pre-run state, and 收起 is the way out of any of
+ * them.
  *
- * A round the operator stopped (`cancelled`) is folded like a finished one and keeps its
- * place like a failed one: 已中止 is the answer to the button that was just pressed, and it
- * is one line tall because a stopped round has no numbers to read - only an end.
+ * A round the operator stopped (`cancelled`) says 已中止 in the header - the answer to the
+ * button that was just pressed - and lists the phases that had already ended, so a round
+ * stopped during the model pass still shows how far it got.
  *
  * The prototype also prints an estimated duration there ("预计 4:12"). That number was a
  * hand-written demo constant, not a measurement, so there is no forecast here: each row's
@@ -46,23 +47,23 @@ const ACTIVE_STAGE: Record<string, number> = {
   scored: 4,
   selected: 5,
   written: 6,
-  sent: 7,
   researched: 7,
 };
 
 /** Which stopwatch phases each row is made of.
  *
  * 拉取 and 去重 are one network stretch, split where the last source has answered, so each
- * owns its own seconds. 生成报告 collects the three phases that are all the model writing:
- * the lexicon drafts, the 本期点评, and the final write.
+ * owns its own seconds. 生成报告 is the model writing: the reading pass that produces each
+ * entry, and the write that stores the round. 硬过滤 carries the chip reads it needs to
+ * judge a row (`topup`): they are part of that filter, not a stage of their own.
  */
 const STAGE_PHASES: Record<string, string[]> = {
   collect: ["pull"],
   dedupe: ["dedupe"],
-  prefilter: ["prefilter"],
+  prefilter: ["prefilter", "topup"],
   safety: ["gate"],
   score: ["score", "sharpen"],
-  report: ["draft", "commentary", "write"],
+  report: ["draft", "write"],
   push: [],
 };
 
@@ -255,7 +256,7 @@ export function RunPanel({
 
   return (
     <div
-      className={`runpanel${!running && !failed && !queued ? " done" : ""}`}
+      className="runpanel"
       id="runpanel"
       hidden={!open}
     >

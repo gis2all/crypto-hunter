@@ -73,6 +73,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Stop a round that is still going. Idempotent, and never waits for the round.
+         *
+         *     A round is minutes of network on a worker thread, and an HTTP handler cannot reach into
+         *     that thread. So the request leaves a flag for the round to find at its next checkpoint,
+         *     and returns at once: what comes back is the row as it stands, which is `running` for
+         *     another second or two and then `cancelled` - the page already polls the row.
+         *
+         *     The one exception is a round nobody has started: nothing will ever read the flag, and the
+         *     scheduler starts every round it finds at `pending` again, so that one is settled here
+         *     instead of made to look like it is still waiting.
+         */
+        post: operations["cancel_run_api_v1_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -249,40 +278,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lexicon/pending": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Pending */
-        get: operations["pending_api_v1_lexicon_pending_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/lexicon/{ca}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Upsert */
-        put: operations["upsert_api_v1_lexicon__ca__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -352,11 +347,6 @@ export interface components {
              */
             tag: string;
             /**
-             * Fit Label
-             * @default
-             */
-            fit_label: string;
-            /**
              * Is New
              * @default false
              */
@@ -373,19 +363,14 @@ export interface components {
              */
             onchain_weight: number;
             /**
-             * Product Weight
+             * Offchain Weight
              * @default 45
              */
-            product_weight: number;
+            offchain_weight: number;
             ranks: components["schemas"]["RanksOut"];
             spark: components["schemas"]["SparkOut"];
             /** Verdict */
             verdict: components["schemas"]["SegmentOut"][];
-            /**
-             * Entry Note
-             * @default
-             */
-            entry_note: string;
             /** Metrics */
             metrics: components["schemas"]["MetricOut"][];
             /** Deltas */
@@ -475,10 +460,10 @@ export interface components {
             /** Title */
             title: string;
             /**
-             * Variant
-             * @default plain
+             * Badge
+             * @default
              */
-            variant: string;
+            badge: string;
             /** Body */
             body: components["schemas"]["SegmentOut"][];
         };
@@ -587,25 +572,6 @@ export interface components {
             product_avg?: number | null;
             /** Total Avg */
             total_avg?: number | null;
-            /**
-             * Lexicon Size
-             * @default 0
-             */
-            lexicon_size: number;
-            /**
-             * Lexicon Hit
-             * @default 0
-             */
-            lexicon_hit: number;
-            /** Lexicon Updated */
-            lexicon_updated?: string | null;
-            /**
-             * Lexicon Stale
-             * @default 0
-             */
-            lexicon_stale: number;
-            /** Lexicon Research */
-            lexicon_research?: string | null;
             /** Run Seconds */
             run_seconds?: number | null;
             /** Last Batch */
@@ -735,42 +701,6 @@ export interface components {
              */
             note: string;
         };
-        /** LexiconIn */
-        LexiconIn: {
-            /** Symbol */
-            symbol?: string | null;
-            /** Tag */
-            tag?: string | null;
-            /** Narrative */
-            narrative?: number | null;
-            /** Product */
-            product?: number | null;
-            /** Social */
-            social?: string | null;
-            /** Concl */
-            concl?: string | null;
-            /** Narr Text */
-            narr_text?: string | null;
-            /** Prod Text */
-            prod_text?: string | null;
-            /** Mech Text */
-            mech_text?: string | null;
-            /** Pros */
-            pros?: string | null;
-            /** Cons */
-            cons?: string | null;
-            /** Watch */
-            watch?: string | null;
-            /** Scenario */
-            scenario?: string | null;
-            /**
-             * Review State
-             * @default pending
-             */
-            review_state: string;
-            /** Evidence Json */
-            evidence_json?: string | null;
-        };
         /** LexiconOut */
         LexiconOut: {
             /** Ca */
@@ -780,14 +710,22 @@ export interface components {
              * @default arc
              */
             chain_id: string;
+            /** Run Id */
+            run_id?: string | null;
             /** Symbol */
             symbol?: string | null;
             /** Tag */
             tag?: string | null;
-            /** Narrative */
-            narrative?: number | null;
-            /** Product */
-            product?: number | null;
+            /** F Completeness */
+            f_completeness?: number | null;
+            /** F Substance */
+            f_substance?: number | null;
+            /** F Team */
+            f_team?: number | null;
+            /** F Narrative */
+            f_narrative?: number | null;
+            /** F Community */
+            f_community?: number | null;
             /** Social */
             social?: string | null;
             /** Concl */
@@ -796,93 +734,18 @@ export interface components {
             narr_text?: string | null;
             /** Prod Text */
             prod_text?: string | null;
-            /** Mech Text */
-            mech_text?: string | null;
-            /** Pros */
-            pros?: string | null;
-            /** Cons */
-            cons?: string | null;
+            /** Substance Text */
+            substance_text?: string | null;
+            /** Team Text */
+            team_text?: string | null;
             /** Watch */
             watch?: string | null;
             /** Scenario */
             scenario?: string | null;
-            /** Review State */
-            review_state: string;
             /** Evidence Json */
             evidence_json?: string | null;
             /** Updated At */
             updated_at: string;
-            /** Refresh Reason */
-            refresh_reason?: string | null;
-            /** Baseline Mcap */
-            baseline_mcap?: number | null;
-            /** Baseline At */
-            baseline_at?: string | null;
-            /** Age Hours */
-            age_hours?: number | null;
-            /**
-             * Stale
-             * @default false
-             */
-            stale: boolean;
-            /**
-             * Research State
-             * @default none
-             */
-            research_state: string;
-            /** Research Note */
-            research_note?: string | null;
-            /**
-             * Sources
-             * @default []
-             */
-            sources: components["schemas"]["LinkOut"][];
-        };
-        /** LexiconRowOut */
-        LexiconRowOut: {
-            /** Ca */
-            ca: string;
-            /** Symbol */
-            symbol?: string | null;
-            /** Tag */
-            tag?: string | null;
-            /** Narrative */
-            narrative?: number | null;
-            /** Product */
-            product?: number | null;
-            /**
-             * Mcap
-             * @default —
-             */
-            mcap: string;
-            /** Social */
-            social?: string | null;
-            /** Concl */
-            concl?: string | null;
-            /** Review State */
-            review_state: string;
-            /** Updated At */
-            updated_at: string;
-            /** Current */
-            current: boolean;
-            /** Refresh Reason */
-            refresh_reason?: string | null;
-            /** Baseline At */
-            baseline_at?: string | null;
-            /** Age Hours */
-            age_hours?: number | null;
-            /**
-             * Stale
-             * @default false
-             */
-            stale: boolean;
-            /**
-             * Research State
-             * @default none
-             */
-            research_state: string;
-            /** Research Note */
-            research_note?: string | null;
             /**
              * Sources
              * @default []
@@ -1094,18 +957,11 @@ export interface components {
              * @default
              */
             note_detail: string;
-            /**
-             * Lexicon Note
-             * @default
-             */
-            lexicon_note: string;
             /** Dirty Hint */
             dirty_hint: string;
             /** Blocks */
             blocks: components["schemas"]["BlockOut"][];
             totals: components["schemas"]["FormTotalsOut"];
-            /** Lexicon */
-            lexicon: components["schemas"]["LexiconRowOut"][];
             /** Blocked */
             blocked: string[];
         };
@@ -1302,6 +1158,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1614,7 +1501,6 @@ export interface operations {
     list_lexicon_api_v1_lexicon_get: {
         parameters: {
             query?: {
-                review_state?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -1630,61 +1516,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LexiconOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pending_api_v1_lexicon_pending_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LexiconOut"][];
-                };
-            };
-        };
-    };
-    upsert_api_v1_lexicon__ca__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                ca: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LexiconIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LexiconOut"];
                 };
             };
             /** @description Validation Error */

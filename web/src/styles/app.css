@@ -91,10 +91,9 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
 .rp-h .btn.arm:hover{border-color:var(--danger);background:var(--danger-bg);color:var(--danger-fg)}
 
 
-/* An external link says so with a glyph rather than a second colour - and with no underline:
-   the rule that used to sit under the word ran under the glyph as well, so every link ended
-   in a stray 14px of line past the end of its label. The colour and the glyph carry it. */
-.card-foot a{display:inline-flex;align-items:center;gap:4px;border-bottom:0}
+/* The card footer is a row of plain underlined words (2026-09-27): the opening glyph went
+   away to save width, so each word carries its own underline and wraps like running text. */
+.card-foot a{display:inline;border-bottom:1px solid var(--accent-tint)}
 
 /* The run panel was the one box on the screen drawn in ink - `1px solid var(--fg)`, picked by
    eye when the prototype had a dark theme only. Under the light one that is a black frame
@@ -117,50 +116,11 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
 }
 
 
-/* The lexicon table keeps the CA the reader copies and the size of the token, and both
-   are new columns rather than new cells in old ones. That is what forces the restatement:
-   proto.css writes its pixel widths as th:nth-child(3), so one inserted column slides
-   词条's 320px onto 市值 and both of its text-align exceptions onto the wrong cells. Every
-   width and both exceptions are therefore repeated here in the frozen order - CA 280 ->
-   316 to pay for the button, 词条 320 -> 300, and 词条 ellipsizes anyway. */
-.lex-tbl th:nth-child(1),.lex-tbl td:nth-child(1){width:316px}
-.lex-tbl th:nth-child(2),.lex-tbl td:nth-child(2){width:100px}
-/* 市值 sits between 标的 and 词条 and has to read as its own thing, not as the front of
-   the narrative. Right-aligned money inside that gap hugs 词条 whatever the padding says,
-   because the gutter only ever opens on the 标的 side; centred money puts an equal gutter
-   on both sides, so the column reads as the middle of two neighbours rather than as an
-   appendix to the one on its right. */
-.lex-tbl th:nth-child(3),.lex-tbl td:nth-child(3){width:104px;text-align:center}
-.lex-tbl th:nth-child(4),.lex-tbl td:nth-child(4){width:300px;overflow:hidden;
-  text-overflow:ellipsis;text-align:left}
-.lex-tbl th:nth-child(5),.lex-tbl td:nth-child(5){width:186px;text-align:left}
-.lex-tbl th:nth-child(6),.lex-tbl td:nth-child(6){width:186px;text-align:left}
-.lex-tbl th:nth-child(7),.lex-tbl td:nth-child(7){width:64px;text-align:right}
-
-/* Below the width the design was approved at, the columns become proportional and the CA
-   wraps; at 1440 and up none of this applies. */
-@media (max-width:1439px){
-  .lex-tbl th:nth-child(1),.lex-tbl td:nth-child(1){width:25%}
-  .lex-tbl th:nth-child(2),.lex-tbl td:nth-child(2){width:8%}
-  .lex-tbl th:nth-child(3),.lex-tbl td:nth-child(3){width:7%}
-  .lex-tbl th:nth-child(4),.lex-tbl td:nth-child(4){width:28%}
-  .lex-tbl th:nth-child(5),.lex-tbl td:nth-child(5){width:13%}
-  .lex-tbl th:nth-child(6),.lex-tbl td:nth-child(6){width:13%}
-  .lex-tbl th:nth-child(7),.lex-tbl td:nth-child(7){width:6%}
-  .lex-tbl td.ca-cell{white-space:normal;word-break:break-all}
-}
-
-/* The copy button (components/CopyCa.tsx) is one component for two places - the lexicon
+/* The copy button (components/CopyCa.tsx) is one component for two places - the overview
    table and the report card - so it is one style as well: a 14px box whose glyph becomes
    已复制 for a moment. The two states are the whole confirmation; this layout has no
    toast, and a second announcement of the same act would be noise. */
 
-/* The address and its button share one cell: flex so the button follows the text instead
-   of dropping under it, and `min-width:0` so the 42-character address wraps in a narrow
-   column rather than pushing the track wide. The card has no such wrapper - its address
-   is already shortened, so the button simply follows it in the row. */
-.lex-tbl td.ca-cell .ca-wrap{display:flex;align-items:center;gap:6px}
-.lex-tbl td.ca-cell .ca-v{min-width:0}
 .ca-copy{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
   height:14px;padding:0 3px;border:1px solid var(--border);background:var(--surface);
   color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:9.5px;
@@ -180,27 +140,13 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
 .ca-copy:hover{border-color:var(--fg);color:var(--fg)}
 .ca-copy.done{border-color:var(--ok-border);color:var(--ok-fg)}
 
-/* The freshness badge on a verdict. The words on a card and the numbers beside them are
-   written at different moments, and this is the mark that says so: mono and muted, never a
-   colour a reader might mistake for a risk finding. */
-.sec-h .age-mark{font-family:var(--mono);font-size:9.5px;font-style:normal;font-weight:400;
-  letter-spacing:.04em;color:var(--muted);padding-left:8px;border-left:1px solid var(--border)}
-
-/* The archive line under an entry: how old it is, whether today rules would rewrite it, and
-   where the deep pass stands. Same mono register as the rest of the table annotations. */
-.lex-badge{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;
-  color:var(--muted)}
-.lex-badge.stale{color:var(--warn-fg)}
-.lex-src{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em}
-.lex-src a{margin-right:6px}
-
 /* The round strip, approved 2026-09-26. One line instead of two.
 
    1. 本期变化 joined the row it describes. It used to be a second full-width bar under
       this one - 40px of stripe carrying eight chips that are a reading of the same
       round, so one sentence sat in two places. The chips clip rather than widen the row
-      (`.changes` is the flexible child and it is `min-width:0`), the bargain the old
-      `.changebar` made with `overflow:hidden`.
+      (`.changes` is the flexible child and it is `min-width:0`), the same bargain the strip
+      itself makes with `overflow:hidden`.
    2. The row is 41px -> 30px, measured. The step buttons were the tallest thing in it -
       26px controls in a 40px band - so they come down to 20px and both regions give up
       the padding that existed to hold them.
@@ -244,7 +190,7 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
       lets every card end where its own content ends.
    2. The heights that only existed to line same-named blocks up across cards are
       released, so short content no longer pads itself out. deltas was a min-height and
-      card-sub was a fixed two-line height. (`verdict` came back on 2026-09-26 - see the
+      the summary line (`card-sub`, since removed) was a fixed two-line height. (`verdict` came back on 2026-09-26 - see the
       equal-height block below.)
    3. Ranks 1-3 carry a gold / silver / bronze strip on the head. Only the head band is
       tinted, so the card body keeps --surface and the internal blocks keep their
@@ -270,8 +216,7 @@ html{scrollbar-gutter:stable}
 .grid{grid-template-columns:repeat(auto-fill,minmax(345px,1fr))}
 .grid{align-items:start}
 .card-foot{margin-top:0}
-.card-sub{height:auto}
-.deltas,.sec-quality .kv-grid,.sec-quality .safety,.sec-product{min-height:auto}
+.deltas,.sec-quality .kv-grid,.sec-quality .safety{min-height:auto}
 
 /* Equal cards, approved 2026-09-26 - the 结论 box, and it now says when it is cut.
 
@@ -331,13 +276,13 @@ html{scrollbar-gutter:stable}
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all
    (`.pgroup:not(:has(.drop-n)):not(:has(.drop-x)) .prow .field`), so 硬过滤 / 安全门槛 /
-   质量分构成 / 评分口径 already read label-left, value-right - while 词条库状态 / 产出与节奏
-   / 提醒 / 推送与依赖, four groups whose rows carry a drop hint (超期即重写, 较建档基准,
-   先发后研, 直接复用), left their readings against the label and the rest of the row empty.
-   Measured at 1726: 入库条目's reading at x=797 in a column running to 1129, 每轮报告数's at
-   449 in a row running to 869, 数据源凭据's at 1486 in a row running to 1682. The hint is a
-   note about the value, not a second value, so it did not earn the exception - which is the
-   shape 硬过滤 already has when it carries 淘汰数 (value at the track's right edge, count
+   质量分构成 / 评分口径 already read label-left, value-right - while 产出与节奏 / 提醒 /
+   推送与依赖, three groups whose rows carry a drop hint (先发后研, 直接复用), left their
+   readings against the label and the rest of the row empty. Measured at 1726: a reading at
+   x=797 in a column running to 1129, 每轮报告数's at 449 in a row running to 869, 数据源凭据's
+   at 1486 in a row running to 1682. The hint is a note about the value, not a second value,
+   so it did not earn the exception - which is the shape 硬过滤 already has when it carries
+   淘汰数 (value at the track's right edge, count after it).
    after it).
 
    Written here rather than in proto.css because the guard is the prototype's rule and this
@@ -355,9 +300,9 @@ html{scrollbar-gutter:stable}
    `.drop:empty{display:none}` (proto.css) was written for the rows that have nothing to put
    in it - but that selector never matches the `<em class="drop">` cell those groups render: the
    cell has a child, and the child is `display:none` until the row is dirty. So every clean row
-   in 词条库状态 / 产出与节奏 / 提醒 / 推送与依赖 held 54px for a hint that was not on screen,
+   in 产出与节奏 / 提醒 / 推送与依赖 held 54px for a hint that was not on screen,
    and the readings stopped 62px short of the edge the rule above right-aligns them to.
-   Measured at 1726 before: 入库条目's reading ended at 1129 in a column running to 1191,
+   Measured at 1726 before: one reading ended at 1129 in a column running to 1191,
    每轮报告数's at 869 in a row running to 931.
 
    It is not only air. 提醒's `X 改名次数` row is 389px of content in a 342px row (label 120
@@ -492,10 +437,8 @@ html{scrollbar-gutter:stable}
    out of that alignment and centres it on the row - measured, 说明 vs 本轮淘汰: -2.7 -> +0.2px.
 
    The group header comes down 2px with it (36.8 -> 34.8), because the control had been
-   setting the height of a line it does not fill. `.lex-help` is the same case one wrapper
-   further out: the lex table's header is a <summary>, so the icon's wrapper is the flex item
-   there, not the button. */
-.pgroup-h .note-help,.lex-help{align-self:center}
+   setting the height of a line it does not fill. */
+.pgroup-h .note-help{align-self:center}
 
 .note-help-btn{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 5px;
   border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;
@@ -531,8 +474,7 @@ html{scrollbar-gutter:stable}
       min-width 0, inputs 80 -> 56, drop 54 -> 40 - which brings that floor down to ~230.
    3. The two split groups are cut, not halved: `rows.slice(0, cut)` / `rows.slice(cut)`
       in reading order. Below the gate the `.pcol` divs stack back into one column in that
-      same order and the frozen `auto-fit` widths come back - the fallback shape `.lex-tbl`
-      already uses above.
+      same order and the frozen `auto-fit` widths come back.
 
    1620px is measured, not picked: 运行's ratios give 提醒 (the 1fr column) 1/4.05 of the
    content, and 提醒 needs 330px before `X 改名次数` runs out of room. At 1620 the content
@@ -546,15 +488,6 @@ div.pgroup{display:flex;flex-direction:column}
 div.pgroup>.pset,div.pgroup>.note-inline{margin-top:auto}
 .pcol{min-width:0}
 
-/* The lexicon table's own reading rules. Its header is a `<summary>`, so the icon lives
-   inside a click target that means something else: the wrapper declines the summary's
-   default action, or opening the rules would fold the table shut, and the popover with
-   it. The icon is the header's last child, so the shared `.pgroup-h .note-help` rule
-   (order:1 plus margin-left:auto) would park it on the far right, but that rule reads the
-   icon itself and the icon is not the flex item here - the wrapper is, so the wrapper
-   carries the auto margin. It used to carry it on `.lex-count`, which sat on this line
-   until its reading moved into the popover. */
-.lex-help{display:inline-flex;min-width:0;margin-left:auto}
 
 /* The brand line carries the mark now (2026-09-26): icon plus wordmark on one line,
    chosen from a sheet of five directions - reticle / radar / funnel / bars / monogram -
@@ -597,7 +530,7 @@ div.pgroup>.pset,div.pgroup>.note-inline{margin-top:auto}
 
   /* The label is a column, not a prefix. `min-width:0` above let every label shrink to
      its own text, so no two rows started their value at the same x: 硬过滤's inputs sat at
-     303 / 316 / 316 / 351 / 316 and 词条库状态's readings ran 794 / 806 / ... / 1329 - each
+      303 / 316 / 316 / 351 / 316 and another group's readings ran 794 / 806 / ... / 1329 - each
      row as wide as the label it happened to carry, which reads as a ragged list, not a
      table.
 

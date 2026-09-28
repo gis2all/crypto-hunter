@@ -20,8 +20,6 @@ export type SettingsForm = components["schemas"]["SettingsFormOut"];
 export type SettingsBlock = components["schemas"]["BlockOut"];
 export type SettingsGroup = components["schemas"]["GroupOut"];
 export type SettingsField = components["schemas"]["FieldOut"];
-export type LexiconRow = components["schemas"]["LexiconRowOut"];
-export type LexiconEntry = components["schemas"]["LexiconOut"];
 export type Segment = components["schemas"]["SegmentOut"];
 export type ChangeOut = components["schemas"]["ChangeOut"];
 export type RuleCount = components["schemas"]["RuleCountOut"];
@@ -94,10 +92,3 @@ export const putSettings = (chainId: string, patch: Record<string, unknown>, not
 export const runNow = (chainId: string) =>
   request<Run>(`/chains/${encodeURIComponent(chainId)}/settings/run`, { method: "POST" });
 
-export const listLexicon = (chainId: string, reviewState?: string) =>
-  request<LexiconEntry[]>(
-    `/lexicon?chain_id=${encodeURIComponent(chainId)}` +
-      (reviewState ? `&review_state=${encodeURIComponent(reviewState)}` : ""),
-  );
-
-export const listPendingLexicon = () => request<LexiconEntry[]>("/lexicon/pending");

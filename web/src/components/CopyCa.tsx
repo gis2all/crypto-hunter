@@ -14,7 +14,7 @@ import { Icon } from "./Icon";
  *  size the icon set draws, and the button is one width in both states; `title` and
  *  `aria-label` carry the word for a reader who needs it spoken.
  *
- *  One button for both places on purpose: the lexicon table and the report card say the same
+ *  One button for both places on purpose: the overview table and the report card say the same
  *  thing, so they should look the same and fail the same way. The two sizes it is drawn at
  *  (12 in the table, 14 beside the card's CA box) are a rule in app.css rather than a prop,
  *  because it is the same button either way. */

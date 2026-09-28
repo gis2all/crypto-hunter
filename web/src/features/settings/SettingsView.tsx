@@ -4,7 +4,6 @@ import { Fragment } from "react";
 
 import type { SettingsBlock, SettingsField, SettingsForm } from "../../api/client";
 import { Icon } from "../../components/Icon";
-import { LexiconTable } from "./LexiconTable";
 import { NoteHelp } from "./NoteHelp";
 import { type SettingsState } from "./useSettingsState";
 import { Widget, stringValue } from "./Widget";
@@ -14,13 +13,12 @@ import { Widget, stringValue } from "./Widget";
 /** Groups read as two columns, and where the left column ends.
  *
  * 左栏读完再读右栏, so the cut is a row index and it has to land on a semantic
- * boundary: 硬过滤 cuts after the five threshold rows (`捆绑率`), 词条库状态 after
- * `市值波动重写`, which is the furthest the refresh-condition trio can be kept apart.
+ * boundary: 硬过滤 cuts after the five threshold rows (`捆绑率`).
  *
  * Everywhere else the rows stay in one column - not because they are short, but
  * because nothing in them has to wrap. `判定候选数` (运行) is 45px at 470 wide, 104px
  * at 400, 266px at 370: splitting a group like that only makes it taller. */
-const SPLIT_AT: Record<string, number> = { hard: 5, lexicon: 6 };
+const SPLIT_AT: Record<string, number> = { hard: 5 };
 
 /** One glyph per block, so the three readings this page is built on are told apart before
  *  the words are read. The first two are the marks the cards already draw for the same two
@@ -28,7 +26,7 @@ const SPLIT_AT: Record<string, number> = { hard: 5, lexicon: 6 };
  *  same mark here. 运行 has no card twin: Activity is the run itself. */
 const BLOCK_ICON: Record<string, LucideIcon> = {
   onchain: ShieldCheck,
-  product: Boxes,
+  offchain: Boxes,
   run: Activity,
 };
 
@@ -183,7 +181,6 @@ export function SettingsView({ state }: { state: SettingsState }) {
       <div className={`blk-cols cols${block.columns}`} data-blk={block.key}>
         {block.groups.map(renderGroup)}
       </div>
-      {block.key === "product" ? <LexiconTable rows={data.lexicon} note={data.lexicon_note} /> : null}
     </div>
   );
 
