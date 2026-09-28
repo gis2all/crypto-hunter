@@ -197,6 +197,49 @@
     }
    }
   },
+  "/api/v1/runs/{run_id}/cancel": {
+   "post": {
+    "tags": [
+     "runs"
+    ],
+    "summary": "Cancel Run",
+    "description": "Stop a round that is still going. Idempotent, and never waits for the round.\n\nA round is minutes of network on a worker thread, and an HTTP handler cannot reach into\nthat thread. So the request leaves a flag for the round to find at its next checkpoint,\nand returns at once: what comes back is the row as it stands, which is `running` for\nanother second or two and then `cancelled` - the page already polls the row.\n\nThe one exception is a round nobody has started: nothing will ever read the flag, and the\nscheduler starts every round it finds at `pending` again, so that one is settled here\ninstead of made to look like it is still waiting.",
+    "operationId": "cancel_run_api_v1_runs__run_id__cancel_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/runs/{run_id}": {
    "get": {
     "tags": [
@@ -628,22 +671,6 @@
     "operationId": "list_lexicon_api_v1_lexicon_get",
     "parameters": [
      {
-      "name": "review_state",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Review State"
-      }
-     },
-     {
       "name": "limit",
       "in": "query",
       "required": false,
@@ -667,83 +694,6 @@
           "$ref": "#/components/schemas/LexiconOut"
          },
          "title": "Response List Lexicon Api V1 Lexicon Get"
-        }
-       }
-      }
-     },
-     "422": {
-      "description": "Validation Error",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/api/v1/lexicon/pending": {
-   "get": {
-    "tags": [
-     "lexicon"
-    ],
-    "summary": "Pending",
-    "operationId": "pending_api_v1_lexicon_pending_get",
-    "responses": {
-     "200": {
-      "description": "Successful Response",
-      "content": {
-       "application/json": {
-        "schema": {
-         "items": {
-          "$ref": "#/components/schemas/LexiconOut"
-         },
-         "type": "array",
-         "title": "Response Pending Api V1 Lexicon Pending Get"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/api/v1/lexicon/{ca}": {
-   "put": {
-    "tags": [
-     "lexicon"
-    ],
-    "summary": "Upsert",
-    "operationId": "upsert_api_v1_lexicon__ca__put",
-    "parameters": [
-     {
-      "name": "ca",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string",
-       "title": "Ca"
-      }
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/LexiconIn"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "description": "Successful Response",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/LexiconOut"
         }
        }
       }
@@ -918,11 +868,6 @@
       "title": "Tag",
       "default": ""
      },
-     "fit_label": {
-      "type": "string",
-      "title": "Fit Label",
-      "default": ""
-     },
      "is_new": {
       "type": "boolean",
       "title": "Is New",
@@ -966,9 +911,9 @@
       "title": "Onchain Weight",
       "default": 55
      },
-     "product_weight": {
+     "offchain_weight": {
       "type": "number",
-      "title": "Product Weight",
+      "title": "Offchain Weight",
       "default": 45
      },
      "ranks": {
@@ -983,11 +928,6 @@
       },
       "type": "array",
       "title": "Verdict"
-     },
-     "entry_note": {
-      "type": "string",
-      "title": "Entry Note",
-      "default": ""
      },
      "metrics": {
       "items": {
@@ -1254,10 +1194,10 @@
       "type": "string",
       "title": "Title"
      },
-     "variant": {
+     "badge": {
       "type": "string",
-      "title": "Variant",
-      "default": "plain"
+      "title": "Badge",
+      "default": ""
      },
      "body": {
       "items": {
@@ -1557,43 +1497,6 @@
       ],
       "title": "Total Avg"
      },
-     "lexicon_size": {
-      "type": "integer",
-      "title": "Lexicon Size",
-      "default": 0
-     },
-     "lexicon_hit": {
-      "type": "integer",
-      "title": "Lexicon Hit",
-      "default": 0
-     },
-     "lexicon_updated": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Lexicon Updated"
-     },
-     "lexicon_stale": {
-      "type": "integer",
-      "title": "Lexicon Stale",
-      "default": 0
-     },
-     "lexicon_research": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Lexicon Research"
-     },
      "run_seconds": {
       "anyOf": [
        {
@@ -1853,171 +1756,6 @@
     "type": "object",
     "title": "HoldersOut"
    },
-   "LexiconIn": {
-    "properties": {
-     "symbol": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Symbol"
-     },
-     "tag": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Tag"
-     },
-     "narrative": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Narrative"
-     },
-     "product": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Product"
-     },
-     "social": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Social"
-     },
-     "concl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Concl"
-     },
-     "narr_text": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Narr Text"
-     },
-     "prod_text": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Prod Text"
-     },
-     "mech_text": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Mech Text"
-     },
-     "pros": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Pros"
-     },
-     "cons": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Cons"
-     },
-     "watch": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Watch"
-     },
-     "scenario": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Scenario"
-     },
-     "review_state": {
-      "type": "string",
-      "title": "Review State",
-      "default": "pending"
-     },
-     "evidence_json": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Evidence Json"
-     }
-    },
-    "type": "object",
-    "title": "LexiconIn"
-   },
    "LexiconOut": {
     "properties": {
      "ca": {
@@ -2029,6 +1767,17 @@
       "title": "Chain Id",
       "default": "arc"
      },
+     "run_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run Id"
+     },
      "symbol": {
       "anyOf": [
        {
@@ -2051,7 +1800,7 @@
       ],
       "title": "Tag"
      },
-     "narrative": {
+     "f_completeness": {
       "anyOf": [
        {
         "type": "number"
@@ -2060,9 +1809,9 @@
         "type": "null"
        }
       ],
-      "title": "Narrative"
+      "title": "F Completeness"
      },
-     "product": {
+     "f_substance": {
       "anyOf": [
        {
         "type": "number"
@@ -2071,7 +1820,40 @@
         "type": "null"
        }
       ],
-      "title": "Product"
+      "title": "F Substance"
+     },
+     "f_team": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "F Team"
+     },
+     "f_narrative": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "F Narrative"
+     },
+     "f_community": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "F Community"
      },
      "social": {
       "anyOf": [
@@ -2117,7 +1899,7 @@
       ],
       "title": "Prod Text"
      },
-     "mech_text": {
+     "substance_text": {
       "anyOf": [
        {
         "type": "string"
@@ -2126,9 +1908,9 @@
         "type": "null"
        }
       ],
-      "title": "Mech Text"
+      "title": "Substance Text"
      },
-     "pros": {
+     "team_text": {
       "anyOf": [
        {
         "type": "string"
@@ -2137,18 +1919,7 @@
         "type": "null"
        }
       ],
-      "title": "Pros"
-     },
-     "cons": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Cons"
+      "title": "Team Text"
      },
      "watch": {
       "anyOf": [
@@ -2172,10 +1943,6 @@
       ],
       "title": "Scenario"
      },
-     "review_state": {
-      "type": "string",
-      "title": "Review State"
-     },
      "evidence_json": {
       "anyOf": [
        {
@@ -2191,71 +1958,6 @@
       "type": "string",
       "title": "Updated At"
      },
-     "refresh_reason": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Refresh Reason"
-     },
-     "baseline_mcap": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Baseline Mcap"
-     },
-     "baseline_at": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Baseline At"
-     },
-     "age_hours": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Age Hours"
-     },
-     "stale": {
-      "type": "boolean",
-      "title": "Stale",
-      "default": false
-     },
-     "research_state": {
-      "type": "string",
-      "title": "Research State",
-      "default": "none"
-     },
-     "research_note": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Research Note"
-     },
      "sources": {
       "items": {
        "$ref": "#/components/schemas/LinkOut"
@@ -2268,171 +1970,9 @@
     "type": "object",
     "required": [
      "ca",
-     "review_state",
      "updated_at"
     ],
     "title": "LexiconOut"
-   },
-   "LexiconRowOut": {
-    "properties": {
-     "ca": {
-      "type": "string",
-      "title": "Ca"
-     },
-     "symbol": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Symbol"
-     },
-     "tag": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Tag"
-     },
-     "narrative": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Narrative"
-     },
-     "product": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Product"
-     },
-     "mcap": {
-      "type": "string",
-      "title": "Mcap",
-      "default": "—"
-     },
-     "social": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Social"
-     },
-     "concl": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Concl"
-     },
-     "review_state": {
-      "type": "string",
-      "title": "Review State"
-     },
-     "updated_at": {
-      "type": "string",
-      "title": "Updated At"
-     },
-     "current": {
-      "type": "boolean",
-      "title": "Current"
-     },
-     "refresh_reason": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Refresh Reason"
-     },
-     "baseline_at": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Baseline At"
-     },
-     "age_hours": {
-      "anyOf": [
-       {
-        "type": "number"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Age Hours"
-     },
-     "stale": {
-      "type": "boolean",
-      "title": "Stale",
-      "default": false
-     },
-     "research_state": {
-      "type": "string",
-      "title": "Research State",
-      "default": "none"
-     },
-     "research_note": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Research Note"
-     },
-     "sources": {
-      "items": {
-       "$ref": "#/components/schemas/LinkOut"
-      },
-      "type": "array",
-      "title": "Sources",
-      "default": []
-     }
-    },
-    "type": "object",
-    "required": [
-     "ca",
-     "review_state",
-     "updated_at",
-     "current"
-    ],
-    "title": "LexiconRowOut"
    },
    "LinkOut": {
     "properties": {
@@ -2892,11 +2432,6 @@
       "title": "Note Detail",
       "default": ""
      },
-     "lexicon_note": {
-      "type": "string",
-      "title": "Lexicon Note",
-      "default": ""
-     },
      "dirty_hint": {
       "type": "string",
       "title": "Dirty Hint"
@@ -2910,13 +2445,6 @@
      },
      "totals": {
       "$ref": "#/components/schemas/FormTotalsOut"
-     },
-     "lexicon": {
-      "items": {
-       "$ref": "#/components/schemas/LexiconRowOut"
-      },
-      "type": "array",
-      "title": "Lexicon"
      },
      "blocked": {
       "items": {
@@ -2935,7 +2463,6 @@
      "dirty_hint",
      "blocks",
      "totals",
-     "lexicon",
      "blocked"
     ],
     "title": "SettingsFormOut"

@@ -55,13 +55,17 @@ PUSH_CONTENT = {
     "cards": "报告卡",
     "table": "对比表",
     "links": "原链接",
-    "lexicon": "词条判决书",
 }
 PUSH_TARGETS = {"telegram": "Telegram", "discord": "Discord", "none": "仅落库不推"}
 INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
-UNLISTED_LABELS = {
-    "pending_review": "待建档，本轮不参与排名",
-    "zero": "按 0 计",
+#: The five 0-5 judgements the off-chain block is computed from, with the anchor each
+#: one is scored against. Read-only rows: nothing here is a knob.
+OFFCHAIN_LABELS = {
+    "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
+    "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
+    "f_team": ("团队与 dev 可信度", "0–5 · 只奖可追溯；批量建币一票降档"),
+    "f_narrative": ("叙事与官方关系", "0–5 · 离开 Arc 跑不起来 = 5"),
+    "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
 }
 ALERT_LABELS = {
     "rename_count": "X 改名次数",
@@ -98,7 +102,6 @@ def build(
     prefilter = pipeline.get("prefilter") or {}
     safety = pipeline.get("safety") or {}
     scoring = pipeline.get("scoring") or {}
-    lexicon_cfg = pipeline.get("lexicon") or {}
     schedule = chain.get("schedule") or {}
     report = chain.get("report") or {}
     alerts = chain.get("alerts") or {}
@@ -160,7 +163,7 @@ def build(
         _field(
             "pipeline.prefilter.drawdown_max_pct", "距高回撤", "num",
             str(prefilter.get("drawdown_max_pct", "")), op="≤", unit="%",
-            check_label="历史最高市值 · 主池近 10 日最高价 双确认",
+            check_label="源高点 / 库记录高点 / 池面全历史，任一跌够即淘汰",
             drop_count=drops("market_cap_drawdown"),
         ),
     ]
@@ -183,8 +186,13 @@ def build(
             "pipeline.safety.forbid_dangerous_perms", "无危险权限", "checks",
             list(safety.get("forbid_dangerous_perms") or []),
             checks=_checks(
-                ["mintable", "blacklist", "pausable", "hidden_owner"], {}
+                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"],
+                {"hidden_owner": "隐藏所有者",
+                 "owner_change_balance": "可改持有人余额",
+                 "can_take_back_ownership": "可夺回所有权"},
             ),
+            # 提示项照常读、卡片上照常显示，只是不淘汰 —— 门槛只留真能卷走资产的三条。
+            warn="提示不淘汰：mintable、blacklist、pausable、is_proxy",
             drop_count=drops("dangerous_perm"),
         ),
         _field(
@@ -211,45 +219,14 @@ def build(
         )
     quality_fields.append(_field("pipeline.scoring.factor_sum", "合计", "sum", "100", unit="%"))
 
-    product_fields = [
-        _field("pipeline.scoring.product_weight", "赛道产品权重", "num",
-               str(scoring.get("product_weight", 45)), unit="%", dim="占综合分",
+    offchain_fields = [
+        _field("pipeline.scoring.offchain_weight", "链下调研权重", "num",
+               str(scoring.get("offchain_weight", 45)), unit="%", dim="占综合分",
                dim_in="label"),
-        _field("pipeline.scoring.source", "数据来源", "ro", "词条库"),
-        _field("pipeline.scoring.narrative_scale", "叙事贴合", "ro", "0–5 · 判定项"),
-        _field("pipeline.scoring.product_scale", "产品完成", "ro", "0–5 · 判定项"),
-        _field("pipeline.scoring.unlisted_policy", "未入库标的", "ro",
-               UNLISTED_LABELS.get(scoring.get("unlisted_policy", "zero"), "按 0 计")),
-    ]
-
-    lexicon_fields = [
-        _field("pipeline.scoring.lexicon_size", "入库条目", "ro", str(totals.get("lexicon_size", 0))),
-        _field("pipeline.scoring.lexicon_hit", "本轮命中", "ro",
-               "%s / %s" % (totals.get("lexicon_hit", 0), totals.get("selected", 0))),
-        _field("pipeline.scoring.lexicon_updated", "最近更新", "ro",
-               _stamp(totals.get("lexicon_updated"))),
-        _field("pipeline.scoring.lexicon_flow", "维护方式", "ro", "LLM 补写 → 人工确认"),
-        # The four knobs behind `core.lexicon.due`. They are settings rather than constants
-        # because how long a verdict stays good is a judgement about this chain, not about the
-        # code - and because a wrong value here is paid for in rewrites nobody wanted.
-        _field("pipeline.lexicon.expire_days", "档案有效期", "num",
-               str(lexicon_cfg.get("expire_days", 2)), op=">", unit="天",
-               dim="超期即重写", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.mcap_move_pct", "市值波动重写", "num",
-               str(lexicon_cfg.get("mcap_move_pct", 40)), op="≥", unit="%",
-               dim="较建档基准", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.holders_gain_pct", "持有人增长重写", "num",
-               str(lexicon_cfg.get("holders_gain_pct", 40)), op="≥", unit="%",
-               dim="较建档基准", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.lexicon.rewrite_skip_hours", "重写跳过窗口", "num",
-               str(lexicon_cfg.get("rewrite_skip_hours", 6)), op="<", unit="小时",
-               dim="短于此且未触发刷新条件 = 直接复用", dim_in="field", drop_x="下轮生效"),
-        _field("pipeline.scoring.lexicon_stale", "库内待重写", "ro",
-               "%s 条" % totals.get("lexicon_stale", 0)),
-        _field("pipeline.scoring.lexicon_research", "重档调研", "ro",
-               totals.get("lexicon_research") or "—"),
-        _field("pipeline.scoring.lexicon_unlisted", "未入库标的", "ro",
-               UNLISTED_LABELS.get(scoring.get("unlisted_policy", "zero"), "按 0 计")),
+        _field("pipeline.scoring.source", "数据来源", "ro", "每轮全新调研"),
+    ] + [
+        _field("pipeline.scoring.%s" % key, label, "ro", anchor)
+        for key, (label, anchor) in OFFCHAIN_LABELS.items()
     ]
 
     interval = int(schedule.get("interval_hours") or 3)
@@ -259,7 +236,7 @@ def build(
                drop_x="下轮生效"),
         _field("pipeline.gate_limit", "判定候选数", "num",
                str(pipeline.get("gate_limit", 20)), op="≤", unit="个",
-               dim="按 24h 成交额取前 N；0 = 判完整个幸存者池", dim_in="field",
+               dim="按流动性取前 N；0 = 判完整个幸存者池", dim_in="field",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
                options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
@@ -268,13 +245,7 @@ def build(
                dim="由间隔生成", dim_in="field"),
         _field("schedule.push_delay_minutes", "推送延迟", "num",
                str(schedule.get("push_delay_minutes", 6)), op="+", unit="分钟",
-               dim="先发后研", dim_in="field", drop_x="下轮生效"),
-        # The one switch on this page whose work happens entirely after the round is over,
-        # so it can default to on without costing a round a single second.
-        _field("report.research_enabled", "重档调研", "bool",
-               bool(report.get("research_enabled", True)),
-               check_label="发布后异步读官网 / X / GitHub，用外部证据重写词条档案",
-               drop_x="下轮生效"),
+               dim="发布后等待", dim_in="field", drop_x="下轮生效"),
         _field("pipeline.scan_sources", "扫描源", "checks",
                list(pipeline.get("scan_sources") or []),
                checks=_source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or []),
@@ -304,7 +275,7 @@ def build(
         _field("report.push_content", "推送内容", "checks",
                list(report.get("push_content") or []),
                checks=_checks(
-                   ["cards", "table", "links", "lexicon"],
+                   ["cards", "table", "links"],
                    {**PUSH_CONTENT, "cards": f"{totals.get('selected') or 0} 张报告卡"},
                ),
                drop_x="下轮生效"),
@@ -373,44 +344,28 @@ def build(
                     "detail": (
                         "5 项各自归一后加权求和 = 质量分，"
                         "权重合计必须等于 100%。\n"
-                        "质量分权重与赛道产品权重互补，"
+                        "质量分权重与链下调研权重互补，"
                         "合计 100%；改一边另一边跟着走。"
                     ),
                 },
             ],
         },
         {
-            "key": "product",
-            "title": "赛道产品",
-            "weight": "占 %s%%" % scoring.get("product_weight", 45),
+            "key": "offchain",
+            "title": "链下调研",
+            "weight": "占 %s%%" % scoring.get("offchain_weight", 45),
             "columns": 2,
             "groups": [
                 {
                     "key": "scoring", "title": "评分口径", "hint": "",
-                    "fields": product_fields,
+                    "fields": offchain_fields,
                     "note": "",
                     "detail": (
                         "和链上那 %s%% 的根本区别：这一项"
                         "抓不到，只能读官网／X／GitHub 之后下判断。 "
-                        "判断结果写进词条库，一份判断可被"
-                        "多轮复用，也可以随时改——改了"
-                        "下一轮就按新分算。"
+                        "每轮都是一次全新的调研，不沿用上一轮的结论——"
+                        "判断和它依据的事实永远是同一份。"
                     ) % scoring.get("onchain_weight", 55),
-                },
-                {
-                    "key": "lexicon", "title": "词条库状态", "hint": "",
-                    "fields": lexicon_fields,
-                    # This group is read as two columns, so it has to be short: the reading
-                    # that used to sit at its foot opens from the 说明 icon instead.
-                    "note": "",
-                    "detail": (
-                        "库越大，这 45% 的判断越稳、越省事。"
-                        "长期看它是这个系统里唯一会越用越值钱的资产。\n"
-                        "「库内待重写」是整库口径（按上面四条规则在今天算），一轮只重写"
-                        "进入本轮判定候选的那些——判定候选上限见「运行」里的「判定候选数」。\n"
-                        "「重档调研」是发布之后的异步那一遍：读官网／X／GitHub，"
-                        "用外部证据重写档案，每个标的一次，失败会写明原因，不阻塞任何一轮。"
-                    ),
                 },
             ],
         },
@@ -533,7 +488,7 @@ def caliber_text(chain: dict) -> list[str]:
         "貔貅 = 0" if prefilter.get("forbid_honeypot") else "貔貅 不设门槛",
         "24h 成交 ≥ %s" % _usd(prefilter.get("volume_24h_min_usd")),
         "零数据淘汰 ≥ %s 项可打分字段" % _num(prefilter.get("min_scored_fields")),
-        ("距高回撤 ≥ %s%% 双确认" % _num(abs(prefilter["drawdown_max_pct"]))
+        ("距高回撤 ≥ %s%%（源高点 / 库记录高点 / 池面全历史，任一跌够）" % _num(abs(prefilter["drawdown_max_pct"]))
          if prefilter.get("drawdown_max_pct") is not None else "距高回撤 不设门槛"),
     ]
     verified = ("双源：GoPlus + Sourcify"
@@ -550,10 +505,10 @@ def caliber_text(chain: dict) -> list[str]:
     return [
         "硬过滤：" + " ｜ ".join(hard),
         "安全门槛：" + " ｜ ".join(guard),
-        "评分 = 质量分 %s%%（%s）+ 赛道产品分 %s%%（词条库）" % (
+        "评分 = 质量分 %s%%（%s）+ 链下调研分 %s%%（每轮全新调研）" % (
             _num(scoring.get("onchain_weight", 55)),
             "/".join(FACTOR_SHORT.get(f, f) for f in factors),
-            _num(scoring.get("product_weight", 45)),
+            _num(scoring.get("offchain_weight", 45)),
         ),
     ]
 

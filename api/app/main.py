@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__, config
 from .api.v1.router import api_router
 from .pipeline import schedule
+from .sources import browser
 from .store import db
 
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         schedule.stop()
+        browser.shutdown()
 
 
 def create_app() -> FastAPI:

@@ -10,7 +10,11 @@ from .main import app
 
 def main() -> Path:
     out = Path(__file__).resolve().parents[1] / "openapi.json"
-    out.write_text(json.dumps(app.openapi(), ensure_ascii=False, indent=1), encoding="utf-8")
+    out.write_text(
+        json.dumps(app.openapi(), ensure_ascii=False, indent=1),
+        encoding="utf-8",
+        newline="\n",
+    )
     print("wrote", out)
     return out
 

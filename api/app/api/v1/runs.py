@@ -22,19 +22,14 @@ from pydantic import BaseModel
 from ... import cancel, config
 from ...core.models import RunStatus
 from ...pipeline import run as pipeline_run
-from ...pipeline import schedule
+from ...pipeline import schedule, states
 from ...report import assemble as report_assemble
 from ...store import db
 from .schemas import BatchOut, CardOut, RunOut
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
-TERMINAL = {
-    RunStatus.SENT.value,
-    RunStatus.RESEARCHED.value,
-    RunStatus.CANCELLED.value,
-    RunStatus.FAILED.value,
-}
+TERMINAL = states.TERMINAL
 
 
 class RunCreate(BaseModel):
