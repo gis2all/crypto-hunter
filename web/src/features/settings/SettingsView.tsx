@@ -2,6 +2,7 @@ import { Activity, Boxes, ShieldCheck, SlidersHorizontal, TriangleAlert } from "
 import type { LucideIcon } from "lucide-react";
 import { Fragment } from "react";
 
+import { errorText } from "../../api/client";
 import type { SettingsBlock, SettingsField, SettingsForm } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { NoteHelp } from "./NoteHelp";
@@ -51,7 +52,7 @@ export function SettingsView({ state }: { state: SettingsState }) {
         </div>
         <div className={query.isError ? "note-bar bad" : "note-bar"}>
           {query.isError ? <Icon as={TriangleAlert} size={14} /> : null}
-          {query.isError ? `设定读取失败：${String(query.error)}` : "读取中…"}
+          {query.isError ? `设定读取失败：${errorText(query.error)}` : "读取中…"}
         </div>
       </section>
     );
@@ -195,13 +196,13 @@ export function SettingsView({ state }: { state: SettingsState }) {
       {save.isError ? (
         <div className="note-bar bad">
           <Icon as={TriangleAlert} size={14} />
-          <span>保存失败：{String(save.error)}</span>
+          <span>保存失败：{errorText(save.error)}</span>
         </div>
       ) : null}
       {runNow.isError ? (
         <div className="note-bar bad">
           <Icon as={TriangleAlert} size={14} />
-          <span>运行失败：{String(runNow.error)}</span>
+          <span>运行失败：{errorText(runNow.error)}</span>
         </div>
       ) : null}
       {data.blocks.map(renderBlock)}

@@ -1,5 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 
+import { errorText } from "../../api/client";
 import type { Batch } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { BatchHead } from "./BatchHead";
@@ -33,7 +34,7 @@ export function ReportView({
       <div id="view-report">
         <div className="note-bar bad">
           <Icon as={TriangleAlert} size={14} />
-          <span>报告读取失败：{String(error)}</span>
+          <span>报告读取失败：{errorText(error)}</span>
         </div>
       </div>
     );

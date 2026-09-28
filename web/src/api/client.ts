@@ -33,6 +33,19 @@ export class ApiError extends Error {
   }
 }
 
+/** What to put on the screen when a request failed.
+ *
+ * The backend writes the detail of a 4xx for the operator (C-003), so that sentence is
+ * the message and the status line in front of it is noise. A 5xx detail is written for
+ * nobody - "500 Internal Server Error" is a report, not advice - so it keeps its code.
+ */
+export function errorText(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.status >= 500 ? `HTTP ${error.status} ${error.detail}` : error.detail;
+  }
+  return String(error);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`/api/v1${path}`, {
     headers: { "Content-Type": "application/json" },
