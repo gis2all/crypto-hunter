@@ -23,19 +23,37 @@ from ..sources.http import archive
 #: authority on the numbers people trade against; GeckoTerminal is the only source that
 #: can enumerate the chain; RadarDEX fills the rest and is the only one that ships a
 #: deployer address at scale.
+#:
+#: `dexscreener` leads the four market numbers although it is a per-token read, because
+#: it is the caliber every market rule is supposed to run on. Its liquidity sums every
+#: pool the token holds on this chain, where the launchpad feeds run 5.52x high (measured
+#: 2026-09-29 on Tolly rows: 54,783.59 against a real 9,930.26); its h24 volume is a
+#: 24-hour figure, where GMGN's rank row answers in the window it happened to rank in. It
+#: has no bulk sweep (`fetch_universe` returns nothing), so it can only ever win the
+#: enrich merge - the pull never has an opinion for it to override.
 FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
-    "market_cap_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
+    "market_cap_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
+                       "blockscout"),
     # The token own high. Only GMGN reports one (its `history_highest_market_cap`), and it
     # is not interchangeable with the pool history below it: GeckoTerminal answers the same
     # question in a price, and no merge can convert one into the other. Listed explicitly so
     # a future source cannot quietly outrank the one that measured it.
     "high_market_cap_usd": ("gmgn",),
-    "liquidity_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
-    "volume_24h_usd": ("gmgn", "geckoterminal", "radardex", "tolly", "blockscout"),
-    "price_usd": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout"),
+    "liquidity_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
+                      "blockscout"),
+    "volume_24h_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
+                       "blockscout"),
+    "price_usd": ("dexscreener", "gmgn", "radardex", "tolly", "geckoterminal",
+                  "blockscout"),
+    # GMGN answers this with the *ranking window's* change, not the 24-hour one:
+    # `price_change_percent` read -0.22% on the 5m board and +0.35% on the 24h board for
+    # the same token (measured 2026-09-29). The adapter gates it on the window, and the
+    # two sources that ship a real `change24h` sit behind it. Listed explicitly so the
+    # default order cannot let a wrong-window reading win by accident.
+    "price_change_24h_pct": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout"),
     "holders": ("gmgn", "radardex", "blockscout", "goplus"),
     "top10_pct": ("gmgn", "radardex", "goplus"),
     "bundling_pct": ("gmgn", "radardex"),
