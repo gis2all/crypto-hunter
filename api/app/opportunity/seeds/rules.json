@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "kind": "opportunity_rules",
   "meta": {
     "name": "新机会的免费闸",
@@ -216,6 +216,113 @@
             "交互",
             "治理",
             "投票"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-funding-news",
+      "name": "排除融资通告",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "完成融资",
+            "战略投资",
+            "领投",
+            "种子轮",
+            "种子轮融资",
+            "Pre-Seed",
+            "Series A",
+            "raised $",
+            "seed round",
+            "series a",
+            "pre-seed"
+          ]
+        },
+        {
+          "type": "text_not_contains_any",
+          "values": [
+            "quest", "points", "airdrop", "claim", "whitelist", "allowlist", "mint",
+            "testnet", "deposit", "stake", "task", "tasks", "join", "complete",
+            "任务", "积分", "空投", "领取", "白名单", "铸造", "测试网", "存入", "质押",
+            "挖矿", "节点", "交互", "治理", "投票"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-ended-window",
+      "name": "排除已经结束的窗口",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "已结束",
+            "已发放",
+            "已截止",
+            "领取结束",
+            "已售罄",
+            "mint ended",
+            "sold out",
+            "has ended"
+          ]
+        },
+        {
+          "type": "text_not_contains_any",
+          "values": [
+            "quest", "whitelist", "allowlist", "mint", "testnet", "deposit", "stake",
+            "task", "tasks", "join", "complete",
+            "任务", "白名单", "铸造", "测试网", "存入", "质押", "挖矿", "节点", "交互",
+            "治理", "投票"
+          ]
+        }
+      ],
+      "effect": {
+        "action": "exclude",
+        "score": 0,
+        "level": ""
+      }
+    },
+    {
+      "id": "exclude-preview-only",
+      "name": "排除只有预告没有细节",
+      "enabled": true,
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "text_word_any",
+          "values": [
+            "待公布",
+            "即将公布",
+            "预告",
+            "敬请期待",
+            "coming soon",
+            "尚未公布",
+            "细节稍后"
+          ]
+        },
+        {
+          "type": "text_not_contains_any",
+          "values": [
+            "quest", "points", "airdrop", "claim", "whitelist", "allowlist", "mint",
+            "testnet", "deposit", "stake", "task", "tasks", "join", "complete",
+            "任务", "积分", "空投", "领取", "白名单", "铸造", "测试网", "存入", "质押",
+            "挖矿", "节点", "交互", "治理", "投票"
           ]
         }
       ],
