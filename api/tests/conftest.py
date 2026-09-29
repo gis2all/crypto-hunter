@@ -41,9 +41,10 @@ def no_live_rounds(monkeypatch):
     the real one, minus the thread: what a request starts is worth asserting on."""
     queued.clear()
 
-    def record(chain_id: str, run_id: str) -> dict:
+    def record(chain_id: str, run_id: str, config_id: str | None = None) -> dict:
         queued.append((chain_id, run_id))
-        return {"id": run_id, "chain_id": chain_id, "status": "pending"}
+        return {"id": run_id, "chain_id": chain_id, "config_id": config_id,
+                "status": "pending"}
 
     monkeypatch.setattr(schedule.pipeline_run, "run_chain", record)
     monkeypatch.setattr(schedule, "executor", lambda: InlineExecutor())

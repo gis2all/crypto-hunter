@@ -34,6 +34,9 @@ TERMINAL = states.TERMINAL
 
 class RunCreate(BaseModel):
     chain_id: str
+    #: Which of the chain's sets of settings to run. Blank means the default one, which
+    #: is what a client that never learned about the switcher sends.
+    config_id: str | None = None
     trigger: str = "manual"
 
 
@@ -46,20 +49,27 @@ def _fetch(run_id: str) -> sqlite3.Row | None:
 
 
 @router.get("", response_model=list[RunOut])
-def list_runs(chain_id: str | None = None, limit: int = Query(default=20, ge=1, le=200)) -> list[dict]:
+def list_runs(chain_id: str | None = None, config_id: str | None = None,
+              limit: int = Query(default=20, ge=1, le=200)) -> list[dict]:
     conn = db.connect()
     try:
+        # Read through the set of settings as well as the chain: two sets on one chain are
+        # two report libraries, and a list that mixed them would read as one chain having
+        # run twice as often.
+        where: list[str] = []
+        args: list[object] = []
         if chain_id:
-            rows = conn.execute(
-                "SELECT * FROM runs WHERE chain_id = ?"
-                " ORDER BY COALESCE(scheduled_at, started_at) DESC LIMIT ?",
-                (chain_id, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM runs ORDER BY COALESCE(scheduled_at, started_at) DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            where.append("chain_id = ?")
+            args.append(chain_id)
+        if config_id:
+            where.append("config_id = ?")
+            args.append(config_id)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        rows = conn.execute(
+            "SELECT * FROM runs%s"
+            " ORDER BY COALESCE(scheduled_at, started_at) DESC LIMIT ?" % clause,
+            (*args, limit),
+        ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -69,10 +79,11 @@ def list_runs(chain_id: str | None = None, limit: int = Query(default=20, ge=1, 
 def create_run(body: RunCreate) -> dict:
     if body.chain_id not in config.load_chains():
         raise HTTPException(status_code=404, detail=f"没有这条链：{body.chain_id}")
-    row = pipeline_run.create_run(body.chain_id, trigger=body.trigger)
+    row = pipeline_run.create_run(body.chain_id, trigger=body.trigger,
+                                  config_id=body.config_id)
     # The round runs on the scheduler's own thread: a real one takes minutes, and the
     # request that starts it must not be held open for them.
-    schedule.submit(body.chain_id, row["id"])
+    schedule.submit(body.chain_id, row["id"], row.get("config_id"))
     return row
 
 

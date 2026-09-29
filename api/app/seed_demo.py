@@ -268,7 +268,7 @@ def write_round(run_dir: Path, registry_path: Path) -> dict:
     conn = db.connect()
     try:
         _write_chains(conn, chain_cfgs, now)
-        version_id = _write_settings(conn, chain_cfgs["arc"], now)
+        version_id = _write_settings(conn, config.chain("arc"), now)
         run_id = "demo-20260923-2000"
         _write_run(conn, run_id, version_id, universe, candidates, selected, sent, data, now)
         _write_tokens(conn, scanned, now)
@@ -337,9 +337,10 @@ SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts")
 def _write_settings(conn: sqlite3.Connection, cfg: dict, now: str) -> int:
     payload = {k: cfg.get(k) for k in SETTINGS_SECTIONS}
     cur = conn.execute(
-        "INSERT INTO settings_versions (chain_id, version, payload_json, note, created_at)"
-        " VALUES (?, ?, ?, ?, ?)",
-        ("arc", 1, json.dumps(payload, ensure_ascii=False), "from config/chains.yaml", now),
+        "INSERT INTO settings_versions (chain_id, config_id, version, payload_json, note,"
+        " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        ("arc", "default", 1, json.dumps(payload, ensure_ascii=False),
+         "from " + config.chain_entry("arc")["path"], now),
     )
     return int(cur.lastrowid)
 
