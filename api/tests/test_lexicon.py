@@ -126,7 +126,7 @@ def test_the_previous_rounds_entries_are_dropped(isolated_db):
     lexicon.store_entries("arc", "run1", {CA: _payload()})
     other = "0x" + "b" * 40
     lexicon.store_entries("arc", "run2", {other: _payload()})
-    assert lexicon.forget_other_rounds("run2") == 1
+    assert lexicon.forget_other_rounds("arc", "default", "run2") == 1
     conn = db.connect()
     try:
         left = [row["ca"] for row in conn.execute("SELECT ca FROM lexicon")]
@@ -152,7 +152,7 @@ def test_forgetting_takes_the_evidence_links_with_it(isolated_db):
     finally:
         conn.close()
 
-    assert lexicon.forget_other_rounds("new") == 1
+    assert lexicon.forget_other_rounds("arc", "default", "new") == 1
 
     conn = db.connect()
     try:
@@ -172,7 +172,7 @@ def test_forgetting_a_store_that_is_already_one_round_is_a_no_op(isolated_db):
     finally:
         conn.close()
 
-    assert lexicon.forget_other_rounds("r1") == 0
+    assert lexicon.forget_other_rounds("arc", "default", "r1") == 0
 
 
 def test_an_old_lexicon_loses_the_research_columns_and_their_index(tmp_path):

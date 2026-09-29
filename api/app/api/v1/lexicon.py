@@ -28,7 +28,8 @@ def _rows(sql: str, args: tuple = ()) -> list[dict]:
 def _decorate(rows: list[dict]) -> list[dict]:
     """Add what a row cannot say about itself: the pages the reading pass kept, so an
     entry can show the evidence its words were written from."""
-    return [{**row, "sources": research.sources_for(str(row["ca"]))} for row in rows]
+    return [{**row, "sources": research.sources_for(
+        str(row["ca"]), row["chain_id"], row["config_id"])} for row in rows]
 
 
 @router.get("", response_model=list[LexiconOut])
