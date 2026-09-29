@@ -128,10 +128,23 @@ class GmGn:
         return (data or {}).get("rank") or []
 
     def rank_rows(self, chain_id: str) -> dict[str, dict]:
-        """Every token the rank showed in any window, keyed by CA. The 24h row wins.
+        """Every token the rank showed in any window, keyed by CA, with the window that
+        answered for it under `_window` - the 24h row winning whenever the token is on
+        that board.
 
         Asking five windows is not redundant: a token that spiked an hour ago and died
         back has no 24h presence, and those are exactly the ones a radar is for.
+
+        The window travels with the row because two of its fields are scoped to it.
+        `volume` and `price_change_percent` are the *window's* totals, not the day's: for
+        one Arc token on 2026-09-29 the boards read 47.58 (5m), 59.56 (1h) and 9,386.81
+        (6h) where the real 24h figure was 14,549 (two independent feeds agreed). Those
+        readings are not smaller 24-hour numbers, they are different measurements wearing
+        the day's name - and a wrong number is worse than a blank here, because 未判定
+        never rejects. `_metrics` reads either field off a 24h row only.
+
+        The window rides *inside* the row rather than beside it because this answer is
+        cached through JSON, which hands a `(period, row)` pair back as a list.
         """
 
         def produce():
@@ -144,19 +157,24 @@ class GmGn:
                     if not ca:
                         continue
                     if ca not in merged or period == "24h":
-                        merged[ca] = row
+                        merged[ca] = {**row, "_window": period}
             return merged or None
 
-        return cached("gmgn:rank:%s" % chain_id, RANK_TTL, produce) or {}
+        # The key carries a shape version. A row cached before `_window` existed has no
+        # marker, and `fetch_universe` reads one - a stale entry would raise a KeyError in
+        # the middle of a round instead of degrading, so the bump retires those rows.
+        return cached("gmgn:rank:v2:%s" % chain_id, RANK_TTL, produce) or {}
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         out = []
         for ca, row in self.rank_rows(chain_id).items():
-            out.append(self._metrics(ca, row))
+            out.append(self._metrics(ca, row, row["_window"]))
         return out
 
-    def _metrics(self, ca: str, row: dict) -> TokenMetrics:
-        return TokenMetrics(
+    def _metrics(self, ca: str, row: dict, period: str) -> TokenMetrics:
+        # Only the 24h board answers a 24-hour question; see `rank_rows`.
+        daily = period == "24h"
+        metrics = TokenMetrics(
             ca=ca,
             symbol=_symbol(row.get("symbol")),
             market_cap_usd=_positive(row.get("market_cap")),
@@ -165,7 +183,7 @@ class GmGn:
             # source measured, not what one of our rounds happened to sample.
             high_market_cap_usd=_positive(row.get("history_highest_market_cap")),
             liquidity_usd=_positive(row.get("liquidity")),
-            volume_24h_usd=_positive(row.get("volume")),
+            volume_24h_usd=_positive(row.get("volume")) if daily else None,
             holders=int(row["holder_count"]) if _positive(row.get("holder_count")) else None,
             top10_pct=_fraction_to_pct(row.get("top_10_holder_rate")),
             bundling_pct=_fraction_to_pct(row.get("bundler_rate")),
@@ -177,7 +195,7 @@ class GmGn:
             # number `_security` returns is the one GMGN's own page prints.
             launchpad=row.get("launchpad") or None,
             price_usd=_positive(row.get("price")),
-            price_change_24h_pct=_num(row.get("price_change_percent")),
+            price_change_24h_pct=_num(row.get("price_change_percent")) if daily else None,
             creator=row.get("creator") or None,
             bot_degen_pct=_fraction_to_pct(row.get("bot_degen_rate")),
             bluechip_holder_pct=_fraction_to_pct(row.get("bluechip_owner_percentage")),
@@ -193,6 +211,11 @@ class GmGn:
                 "bot_degen_pct": "gmgn", "total_supply": "gmgn", "open_at": "gmgn",
             },
         )
+        if not daily:
+            # This row answered in another window, so it has no 24-hour volume to
+            # attribute. Claiming one here would credit a blank reading to GMGN.
+            metrics.provenance.pop("volume_24h_usd", None)
+        return metrics
 
     # ------------------------------------------------------------- per token
 
