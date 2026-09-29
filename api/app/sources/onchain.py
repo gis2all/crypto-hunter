@@ -1,6 +1,6 @@
 """The chain itself as a source: Arc RPC plus Blockscout.
 
-This is deliberately not listed under `sources:` in config/chains.yaml. That list is
+This is deliberately not listed under `sources:` in the chain's config file. That list is
 the set of third-party credentials the operator sees on the settings page; a chain's
 own node and explorer are not something anyone authorises, and the chain a radar
 watches is already its id.

@@ -72,7 +72,6 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
    on it rather than baseline-aligned inside it. */
 .blk-t>.ico{align-self:center}
 .blk-t{gap:6px;border-bottom:0}
-.params-head h2{display:inline-flex;align-items:center;gap:6px}
 
 /* The stage marker used to be a 7px square whose fill answered the state. The glyph answers
    it with its own colour off the same tokens, and the row's class already carries the state,
@@ -418,15 +417,16 @@ html{scrollbar-gutter:stable}
    In the note bar it floats rather than sits in the flow: the bar is a single wrapping
    sentence, and a float lets the text wrap under the icon instead of being pushed below
    it or run under it.
+   The icon and its label carry no box of their own (user, 2026-09-29): a 1px rectangle
+   drawn around two words that already sit alone at the end of the header, and the open
+   state's fill drew a second box. Hover and open now say themselves in ink, the way the
+   rest of the header does.
+
 
    proto.css is the frozen baseline, so none of this is written there. */
 
 .note-help{position:relative;display:inline-flex;align-items:center;font-family:var(--sans);letter-spacing:normal}
 .pgroup-h .note-help{margin-left:auto}
-/* The page header puts its icon near the left edge, so the popover opens rightwards:
-   anchored right, a 440px panel starting at x=260 hangs 34px off the screen and eats its
-   own first line. */
-.params-head .note-help .note-help-pop{left:0;right:auto}
 
 /* The 说明 button is a 16px control sitting in a row that is aligned on the text baseline,
    and a 16px box has no baseline of its own: a flex container with `align-items:center`
@@ -439,10 +439,9 @@ html{scrollbar-gutter:stable}
 .pgroup-h .note-help{align-self:center}
 
 .note-help-btn{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 5px;
-  border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;
+  border:0;background:none;color:var(--muted);cursor:pointer;
   font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;line-height:1;white-space:nowrap}
-.note-help-btn:hover{border-color:var(--fg-2);color:var(--fg)}
-.note-help.open .note-help-btn{border-color:var(--fg-2);background:var(--surface-warm);color:var(--fg)}
+.note-help-btn:hover,.note-help.open .note-help-btn{color:var(--fg)}
 .note-help .note-help-pop{display:none;position:absolute;top:calc(100% + 7px);right:0;z-index:40;
   width:min(440px,58vw);padding:9px 11px;border:1px solid var(--border);background:var(--surface-warm);
   box-shadow:var(--shadow);font-family:var(--mono);font-size:10.5px;line-height:1.8;
@@ -564,3 +563,67 @@ div.pgroup>.pset{margin-top:auto}
      block's height. */
   #card-push .ro-v{white-space:normal}
 }
+
+
+/* ---------- sets of settings: the topbar's picker, and 配置管理 (2026-09-29) ---------- */
+
+/* The dot that says which set is the chain's live one. The config list is the one place a
+   set is written down now - the rail's sub-rows were taken out the same day - so this mark
+   lives in that list: hollow for the others, so the column keeps a column, and --ok is the
+   token the rest of the app already reads as "this is the one that is running". */
+.cfg-dot{flex:0 0 auto;width:6px;height:6px;border:1px solid var(--border);border-radius:50%!important}
+.cfg-dot.live{border-color:var(--ok);background:var(--ok)}
+
+/* The list a `.pick-wrap` opens, drawn by this stylesheet rather than by the platform (user,
+   2026-09-29): a native <select> hands its popup to the OS, and a dark page got a white menu
+   with a blue bar in it that no rule in here could reach. One control for every place the app
+   offers a choice - the topbar's config picker and the settings rows wear this same list, so
+   the two cannot drift apart. Pick.tsx owns the behaviour; these are its lines. */
+.pick-wrap{position:relative;display:inline-flex}
+.pick-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:40;min-width:100%;padding:4px;
+  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow)}
+.pick-item{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border:0;
+  background:none;color:var(--fg);font:inherit;font-size:11.5px;white-space:nowrap;
+  text-align:left;cursor:pointer}
+.pick-item:hover{background:var(--surface-warm)}
+.pick-item.on{color:var(--accent-fg)}
+.pick-item .cfg-tag{margin-left:auto}
+.pick-wrap .ico:last-child{color:var(--muted)}
+
+/* The settings row's picker (user, 2026-09-29): the same box and the same list as the
+   topbar's, but its ink follows the row - everything right of the label reads in one
+   register there. */
+.prow .pick-wrap .btn{color:var(--muted)}
+
+/* Which set of settings the 设定 page is editing, as one control standing among the buttons
+   rather than a label with a select beside it (user, 2026-09-29). It wears `.btn.sec`, so it
+   is literally the same box as 保存并生效 on one side and 配置管理 on the other and the row
+   reads as three of a kind; the chevron is the only thing that says "this one opens".
+   `max-width` is the backend's label ceiling, 20. */
+.cfg-pick{max-width:190px}
+.cfg-cur{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 配置管理's rows are the panel's own .frow - label and value already laid out - plus the
+   two things a list of sets needs: the live marker and the row's own buttons. */
+.cfg-tag{font-style:normal;font-size:9.5px;padding:1px 5px;border:1px solid var(--border);color:var(--muted)}
+.cfg-tag.on{border-color:var(--ok-border);color:var(--ok-fg)}
+.cfg-acts{display:inline-flex;align-items:center;gap:4px;margin-left:auto}
+.cfg-tip{display:inline-flex}
+.btn.cfg-btn{height:var(--ctrl-h-sm);padding:0 7px;font-size:10.5px;gap:4px}
+.btn.cfg-add{gap:6px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover{background:var(--surface);border-color:var(--border)}
+
+/* The one button in the app that destroys something. 中止 arms the same danger pair on its
+   first click; here the arm is the name typed back, so this button wears the pair from the
+   start and is simply off until the name matches. */
+.btn.danger,.btn.danger:hover{border-color:var(--danger-border);background:var(--danger-bg);color:var(--danger-fg)}
+
+/* .frow gives its own inputs a 118px box and a right-aligned value - right for a reading,
+   wrong for a name somebody is typing - so this class is prefixed to outrank that rule. */
+.frow .cfg-input{display:block;margin-left:0;width:100%;border:1px solid var(--border);height:var(--ctrl-h);
+  padding:0 7px;font-size:11.5px;text-align:left;background:var(--surface);color:var(--fg)}
+.frow .cfg-input:focus{outline:none;border-color:var(--accent)}
+.cfg-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.cfg-danger{border-color:var(--danger-border)}
+.cfg-danger .grp-h{border-bottom-color:var(--danger-border);color:var(--danger-fg)}

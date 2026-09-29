@@ -8,6 +8,7 @@ import { Rail } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
 import { batchToMarkdown, TopBar, type View } from "./features/report/TopBar";
 import { RunPanel } from "./features/run/RunPanel";
+import { ConfigManager } from "./features/settings/ConfigManager";
 import { SettingsView } from "./features/settings/SettingsView";
 import { useSettingsState } from "./features/settings/useSettingsState";
 import { applyTheme, readTheme, saveTheme, type Theme } from "./theme";
@@ -31,6 +32,11 @@ export default function App() {
   const queryClient = useQueryClient();
   const chains = useChains();
   const [chainId, setChainId] = useState("arc");
+  // Which set of settings the page is reading. Empty until the chain list answers: the id
+  // is the backend's and the list is the only place it is written, so the page never
+  // invents one. Everything below the chain list is scoped by this as well as by the chain.
+  const [configId, setConfigId] = useState("");
+  const [configMgrOpen, setConfigMgrOpen] = useState(false);
   const [view, setView] = useState<View>("report");
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
@@ -41,15 +47,30 @@ export default function App() {
   const [bulk, setBulk] = useState({ open: false, tick: 0 });
   const [theme, setTheme] = useState<Theme>(readTheme);
 
-  const runs = useRuns(chainId);
+  const chain = chains.data?.find((item) => item.id === chainId);
+  const configs = useMemo(() => chain?.configs ?? [], [chain]);
+
+  // Which set of settings the page opens on, answered per chain by the list. The reader's
+  // own pick wins while it is still there - a poll, a rename or a reload must not move them
+  // off it - and the chain's live set is the fallback: a set that was just deleted, or a
+  // chain nobody has been in yet. Reading one set while another is live is allowed on
+  // purpose, so this only ever corrects a scope that cannot be read at all.
+  useEffect(() => {
+    if (configs.length === 0 || configs.some((item) => item.id === configId)) {
+      return;
+    }
+    setConfigId((configs.find((item) => item.enabled) ?? configs[0]).id);
+  }, [configs, configId]);
+
+  const runs = useRuns(chainId, configId);
   const list = useMemo(() => runs.data ?? [], [runs.data]);
   const run = list[batchIndex];
   const live = Boolean(run && !TERMINAL.has(run.status));
   const liveRun = useLiveRun(run?.id, live ? "running" : "off");
   const batch = useBatch(run?.id);
   // Held here, not in the page: the two buttons that act on it stand in the topbar.
-  const settings = useSettingsState(chainId);
-  const cancel = useCancelRun(chainId);
+  const settings = useSettingsState(chainId, configId);
+  const cancel = useCancelRun(chainId, configId);
 
   // Which round the page opens on, answered once per chain by the first list that arrives.
   // A round the operator stopped - or one that died - has no cards in it, so the page opens
@@ -59,15 +80,18 @@ export default function App() {
   // list, moves a reader who has stepped off it.
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (list.length === 0 || opened.current === chainId) {
+    // The answer is per set of settings, not per chain: each one keeps its own report
+    // library, so each one opens on its own newest readable round.
+    const scope = `${chainId}/${configId}`;
+    if (list.length === 0 || !configId || opened.current === scope) {
       return;
     }
-    opened.current = chainId;
+    opened.current = scope;
     const readable = list.findIndex(
       (item) => (item.selected ?? 0) > 0 || !TERMINAL.has(item.status),
     );
     setBatchIndex(readable > 0 ? readable : 0);
-  }, [list, chainId]);
+  }, [list, chainId, configId]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -88,10 +112,10 @@ export default function App() {
   useEffect(() => {
     const fresh = liveRun.data;
     if (fresh && run && fresh.status !== run.status) {
-      void queryClient.invalidateQueries({ queryKey: ["runs", chainId] });
+      void queryClient.invalidateQueries({ queryKey: ["runs", chainId, configId] });
       void queryClient.invalidateQueries({ queryKey: ["batch", run.id] });
     }
-  }, [liveRun.data, run, chainId, queryClient]);
+  }, [liveRun.data, run, chainId, configId, queryClient]);
 
   // 收起 hands the page back, and a round the operator stopped has nothing to hand it: it
   // produced no cards. Sending the reader to the newest round that did publish is where they
@@ -127,6 +151,10 @@ export default function App() {
           onOverview={() => setOverviewOpen((open) => !open)}
           onExport={() => batch.data && download(batch.data)}
           settings={settings}
+          chain={chain}
+          configId={configId}
+          onSelectConfig={setConfigId}
+          onManage={() => setConfigMgrOpen(true)}
           openAll={bulk.open}
           onToggleCards={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}
         />
@@ -155,10 +183,16 @@ export default function App() {
           />
         </div>
         <div hidden={view !== "params"}>
-          <SettingsView state={settings} />
+          <SettingsView state={settings} chain={chain} configId={configId} />
         </div>
       </main>
       <OverviewPanel batch={batch.data} open={overviewOpen} onClose={() => setOverviewOpen(false)} />
+      <ConfigManager
+        chain={chain}
+        open={configMgrOpen}
+        onClose={() => setConfigMgrOpen(false)}
+        onSelect={setConfigId}
+      />
     </div>
   );
 }

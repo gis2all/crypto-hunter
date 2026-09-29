@@ -101,7 +101,7 @@ def test_a_database_from_before_the_bar_gains_the_columns(tmp_path, monkeypatch)
     assert {"progress", "progress_label"} <= columns
 
 
-def test_the_bar_never_walks_backwards(monkeypatch):
+def test_the_bar_never_walks_backwards(isolated_db):
     """The bands are not in wall-clock order - the research band (86-100) fills before the
     score band (82-86) - so a round that researched its entries used to knock the bar back."""
     chain_id = "arc"

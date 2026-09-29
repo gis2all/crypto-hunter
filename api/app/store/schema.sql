@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS chains (
 CREATE TABLE IF NOT EXISTS settings_versions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   chain_id    TEXT NOT NULL,
+  --: Which of the chain's sets of settings this version belongs to. Versions are numbered
+  --: per chain, so two sets on one chain share the counter and never a row.
+  config_id   TEXT NOT NULL DEFAULT 'default',
   version     INTEGER NOT NULL,
   payload_json TEXT NOT NULL,
   note        TEXT,
@@ -41,6 +44,9 @@ CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
   run_key       TEXT NOT NULL UNIQUE,
   chain_id      TEXT NOT NULL,
+  --: Which of the chain's sets of settings this round ran under. The report library is
+  --: read through it: two sets on one chain keep two libraries and never compare across.
+  config_id     TEXT NOT NULL DEFAULT 'default',
   trigger       TEXT NOT NULL,
   scheduled_at  TEXT,
   status        TEXT NOT NULL,
@@ -93,8 +99,12 @@ CREATE TABLE IF NOT EXISTS run_summary (
 -- compare against, no expiry to check, and no text to reuse. `run_id` is what enforces
 -- that: last round's rows are deleted before this round's are written.
 CREATE TABLE IF NOT EXISTS lexicon (
-  ca           TEXT PRIMARY KEY,
+  ca           TEXT NOT NULL,
   chain_id     TEXT NOT NULL DEFAULT 'arc',
+  --: Which of the chain's sets of settings judged it. The same CA can be screened by two
+  --: sets on one chain, and each keeps its own entry - keyed by CA alone, the second set's
+  --: round would overwrite a judgement the first set's card was already written from.
+  config_id    TEXT NOT NULL DEFAULT 'default',
   run_id       TEXT,                -- the round this entry belongs to, and only that one
   symbol       TEXT,
   tag          TEXT,
@@ -119,7 +129,9 @@ CREATE TABLE IF NOT EXISTS lexicon (
   watch        TEXT,
   scenario     TEXT,
   evidence_json TEXT,
-  updated_at   TEXT NOT NULL
+  updated_at   TEXT NOT NULL,
+  -- One entry per CA per set of settings: the second set's judgement is its own row.
+  PRIMARY KEY (chain_id, config_id, ca)
 );
 
 -- One report card per selected token per run. Immutable once written.
@@ -155,11 +167,12 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 CREATE TABLE IF NOT EXISTS lexicon_sources (
   ca         TEXT NOT NULL,
   chain_id   TEXT NOT NULL,
+  config_id  TEXT NOT NULL DEFAULT 'default',
   kind       TEXT NOT NULL,   -- website | x | github | docs | other
   url        TEXT NOT NULL,
   fetched_at TEXT NOT NULL,
   note       TEXT,
-  PRIMARY KEY (ca, url)
+  PRIMARY KEY (chain_id, config_id, ca, url)
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_items_run ON run_items(run_id, decision);

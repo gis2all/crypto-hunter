@@ -21,6 +21,7 @@ cd web; npm install; npm run dev
 - 生产：`cd web; npm run build`（内部是 `tsc -b` + `vite build`），再起上面那条后端命令。前端改完要重新 build 并强刷浏览器。
 - 改过 `.py` 之后要重启后端才生效（常驻进程，不重启跑的还是旧代码）。
 - 接口类型：`cd api; uv run python -m app.export_openapi` → `cd web; npm run types`。**Pydantic 是唯一真源，不许手写 DTO。**
+- 一条链不止一套设定：设置页顶栏最左的两个控件管这件事 —— 配置下拉选**读**哪一套，`配置管理` 负责新建 / 复制 / 改名 / 删除；它们右边的 `保存并生效` 才会把它变成该链**真正在跑**的那套（同一条链同一时刻只有一套生效）。删一套会连它的报告库一起删掉，默认那套删不掉。
 
 ### 写手与搜索（可选）
 
@@ -48,14 +49,14 @@ CH_LLM_REASONING=none     # 思考预算，省时省钱的大头；不填=端点
 | --- | --- |
 | `api/` | FastAPI + SQLite(WAL)，uv 管理。`app/` 下：`api/v1`（HTTP）/ `core`（纯逻辑，**不许有 IO**）/ `pipeline`（一轮的编排）/ `report`（报告与 prompt）/ `search`（挖链：X 搜索与判别）/ `sources`（一个源一个适配器）/ `store`（schema） |
 | `web/` | React 19 + TS(strict) + Vite + TanStack Query，无 UI 组件库。`src/styles/` 是视觉的唯一真相（tokens → proto → app） |
-| `config/` | `chains.yaml` 出厂默认设定（每条链一套，保存后以 `settings_versions` 表为准）；`llm.env` / `search.env` 本机私密配置（各有 `.example` 模板） |
+| `config/` | `chains/*.yaml` 出厂默认设定（一条链一个文件，文件里的 `configs` 是一套套设定，各有一套报告库，保存后以 `settings_versions` 表为准；页面上可增删改名，只有一套生效）；`llm.env` / `search.env` 本机私密配置（各有 `.example` 模板） |
 | `data/` | `crypto-hunter.db` + `raw/`（每轮原始响应与 HTTP 缓存）。不入库 |
 | `api/app/sources/SOURCES.md` | 逐源端点、传输方式、实测结论（数据源口径），含 X 搜索挖链层 |
 
 ## 测试
 
 ```powershell
-cd api; uv run python -m pytest     # 基线 479 绿
+cd api; uv run python -m pytest     # 基线 528 绿
 cd web; npm run build               # 类型不过就构建不过
 ```
 
@@ -71,7 +72,7 @@ cd web; npm run build               # 类型不过就构建不过
 
 ## 现状与限制
 
-- 只接了 **Arc**：左栏只渲染 `config/chains.yaml` 里启用的链。
+- 只接了 **Arc**：左栏只渲染 `config/chains/*.yaml` 里启用的链。
 - **导出与 TG 推送都按不动**：两个按钮都带 `disabled`（`web/src/features/report/TopBar.tsx`）。导出已经把下载接上了（`web/src/App.tsx` 的 `onExport`），只是按钮还锁着；TG 推送完全没接，一轮跑到那步会写「未配置（跳过推送，报告已落库）」并正常收尾，不阻塞。
 - 一键重算返回 501（一轮的 universe 没落库）。
 - 每轮默认 5 张卡，设定页可改；「距高回撤」读三个高点估计（源高点 / 库记录高点 / 池面全历史），任一跌够 70% 就不再上榜。

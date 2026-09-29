@@ -44,12 +44,12 @@ def executor() -> ThreadPoolExecutor:
     return _executor
 
 
-def submit(chain_id: str, run_id: str) -> Future:
+def submit(chain_id: str, run_id: str, config_id: str | None = None) -> Future:
     """Queue one round. Returns the future so a caller can wait on it."""
-    return executor().submit(_work, chain_id, run_id)
+    return executor().submit(_work, chain_id, run_id, config_id)
 
 
-def _work(chain_id: str, run_id: str) -> dict:
+def _work(chain_id: str, run_id: str, config_id: str | None = None) -> dict:
     """Run one round, and make a failure the caller cannot see visible.
 
     A future nobody inspects swallows its own exception, so a round that broke before its
@@ -57,7 +57,7 @@ def _work(chain_id: str, run_id: str) -> dict:
     The round's own state is where that has to show up.
     """
     try:
-        return pipeline_run.run_chain(chain_id, run_id)
+        return pipeline_run.run_chain(chain_id, run_id, config_id)
     except Exception as exc:
         log.exception("round %s on %s failed to start", run_id, chain_id)
         try:
@@ -127,18 +127,30 @@ def due_slot(chain: dict, now: datetime | None = None) -> str | None:
 
 
 def tick(now: datetime | None = None) -> list[str]:
-    """Start the rounds that are due. Returns the run ids it started."""
+    """Start the rounds that are due. Returns the run ids it started.
+
+    One round per set of settings per slot, and at most one set of settings per chain:
+    `enabled_configs` hands back one per chain, and the `busy` set below is the second
+    line - a chain already reading waits for the next tick instead of being started twice.
+    They pull from the same sources at the same rate limits off the same node, so two at
+    once would only make the first one slower.
+    """
     started: list[str] = []
-    for chain in config.enabled_chains():
+    busy = set(pipeline_run.busy_chains())
+    for chain in config.enabled_configs():
+        if chain["id"] in busy:
+            continue
         slot = due_slot(chain, now)
         if slot is None:
             continue
-        row = pipeline_run.scheduled_run(chain["id"], slot)
+        row = pipeline_run.scheduled_run(chain["id"], chain["config_id"], slot)
         if row is None:
             continue
-        submit(chain["id"], row["id"])
+        submit(chain["id"], row["id"], chain["config_id"])
+        busy.add(chain["id"])
         started.append(row["id"])
-        log.info("round %s due for %s at %s", row["id"], chain["id"], slot)
+        log.info("round %s due for %s:%s at %s", row["id"], chain["id"],
+                 chain["config_id"], slot)
     return started
 
 
@@ -157,7 +169,7 @@ def recover() -> list[str]:
     """
     taken: list[str] = []
     for row in pipeline_run.pending_runs():
-        submit(row["chain_id"], row["id"])
+        submit(row["chain_id"], row["id"], row["config_id"])
         taken.append(row["id"])
         log.warning("round %s on %s was left pending by a previous process: started again",
                     row["id"], row["chain_id"])

@@ -9,10 +9,12 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 def _chain(cron="0 2,5,8 * * *"):
+    """One chain under one set of settings, in the shape the ticker walks."""
     return {
         "id": "arc",
         "label": "Arc",
         "enabled": True,
+        "config_id": "default",
         "schedule": {"cron": cron, "timezone": "Asia/Shanghai", "interval_hours": 3},
     }
 
@@ -49,8 +51,9 @@ def test_a_cron_this_code_does_not_understand_schedules_nothing():
 
 def test_a_slot_runs_once_however_often_the_ticker_looks(isolated_db, monkeypatch):
     started = []
-    monkeypatch.setattr(schedule, "submit", lambda chain_id, run_id: started.append(run_id))
-    monkeypatch.setattr(schedule.config, "enabled_chains", lambda: [_chain()])
+    monkeypatch.setattr(schedule, "submit",
+                        lambda chain_id, run_id, config_id=None: started.append(run_id))
+    monkeypatch.setattr(schedule.config, "enabled_configs", lambda: [_chain()])
     now = datetime(2026, 9, 24, 5, 0, 10, tzinfo=SHANGHAI)
     assert len(schedule.tick(now)) == 1
     assert schedule.tick(now + timedelta(seconds=30)) == []
@@ -66,7 +69,8 @@ def test_the_worker_runs_what_is_submitted_on_its_own_thread(isolated_db, monkey
     calls = []
     monkeypatch.setattr(
         schedule.pipeline_run, "run_chain",
-        lambda chain_id, run_id: calls.append((chain_id, run_id, threading.current_thread().name)),
+        lambda chain_id, run_id, config_id=None:
+        calls.append((chain_id, run_id, threading.current_thread().name)),
     )
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="round")
     monkeypatch.setattr(schedule, "executor", lambda: pool)
@@ -86,7 +90,7 @@ def test_a_round_that_cannot_start_is_marked_failed_not_left_pending(isolated_db
 
     created = pipeline_run.create_run("arc")
 
-    def boom(chain_id, run_id):
+    def boom(chain_id, run_id, config_id=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(schedule.pipeline_run, "run_chain", boom)
@@ -112,7 +116,8 @@ def test_a_round_a_restart_left_pending_is_taken_on_again(isolated_db, monkeypat
     done = pipeline_run.create_run("arc")
     pipeline_run._set_status(done["id"], "collected")
     taken = []
-    monkeypatch.setattr(schedule, "submit", lambda chain_id, run_id: taken.append(run_id))
+    monkeypatch.setattr(schedule, "submit",
+                        lambda chain_id, run_id, config_id=None: taken.append(run_id))
 
     assert schedule.recover() == [left["id"]]
     assert taken == [left["id"]], "only the round nothing has touched"

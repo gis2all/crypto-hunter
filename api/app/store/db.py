@@ -28,7 +28,10 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 6 collapsed the research pass into the round: research now runs before anything is
 #: written, so the queue-and-restate bookkeeping (`research_state`, `research_note`) is
 #: gone and the lexicon row is written once, already final.
-SCHEMA_VERSION = 6
+#: 7 gave a chain more than one set of settings: runs and settings versions carry a
+#: config_id, and the two lexicon tables are keyed by it so one CA can hold one entry per
+#: set of settings instead of one entry for the chain.
+SCHEMA_VERSION = 7
 
 
 def now_iso() -> str:
@@ -50,7 +53,11 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 #: table that already exists, and the database on this machine is the one that proved it.
 _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("runs", "progress_label", "TEXT"),
+                  ("runs", "config_id", "TEXT NOT NULL DEFAULT 'default'"),
+                  ("settings_versions", "config_id", "TEXT NOT NULL DEFAULT 'default'"),
                   ("lexicon", "run_id", "TEXT"),
+                  ("lexicon", "config_id", "TEXT NOT NULL DEFAULT 'default'"),
+                  ("lexicon_sources", "config_id", "TEXT NOT NULL DEFAULT 'default'"),
                   ("lexicon", "f_completeness", "REAL"),
                   ("lexicon", "f_substance", "REAL"),
                   ("lexicon", "f_team", "REAL"),
@@ -102,6 +109,10 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
             fresh.add((table, column))
     for name in _DROPPED_INDEXES:
         conn.execute("DROP INDEX IF EXISTS %s" % name)
+    # After the column adds and before anything reads a lexicon: a table keyed by CA alone
+    # cannot hold two sets of settings' judgements about the same token.
+    _rekey_lexicon_for_configs(conn)
+    _rekey_lexicon_sources_for_configs(conn)
     for table, column in _DROPPED_COLUMNS:
         have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
         if column in have:
@@ -119,6 +130,102 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     if own:
         conn.close()
     return conn
+
+
+def _rekey_lexicon_for_configs(conn: sqlite3.Connection) -> int:
+    """Rewrite the lexicon so one CA can carry one entry per set of settings.
+
+    The table was keyed by CA, which is the right key for a chain with one set of settings
+    and the wrong one the moment a chain has two: the second set's round writes the same
+    CA the first set's card was written from, and the row it lands on is the first set's.
+    SQLite cannot move a primary key, so the table is rebuilt and the existing rows are
+    carried over under `default` - the one set of settings every row on disk belongs to.
+
+    Idempotent by reading the key back: a table that already carries `config_id` inside its
+    primary key is left alone, which is also what makes a fresh database a no-op here.
+    """
+    info = {row["name"]: row["pk"] for row in conn.execute("PRAGMA table_info(lexicon)")}
+    if not info.get("ca"):
+        return 0          # no such table yet: `schema.sql` just made the right one
+    if info.get("config_id"):
+        return 0          # already keyed by it, so the rows are already told apart
+    before = conn.execute("SELECT COUNT(*) AS n FROM lexicon").fetchone()["n"]
+    conn.executescript("""
+        DROP TABLE IF EXISTS lexicon_rekeyed;
+        CREATE TABLE lexicon_rekeyed (
+          ca             TEXT NOT NULL,
+          chain_id       TEXT NOT NULL DEFAULT 'arc',
+          config_id      TEXT NOT NULL DEFAULT 'default',
+          run_id         TEXT,
+          symbol         TEXT,
+          tag            TEXT,
+          f_completeness REAL,
+          f_substance    REAL,
+          f_team         REAL,
+          f_narrative    REAL,
+          f_community    REAL,
+          social         TEXT,
+          concl          TEXT,
+          narr_text      TEXT,
+          prod_text      TEXT,
+          substance_text TEXT,
+          team_text      TEXT,
+          watch          TEXT,
+          scenario       TEXT,
+          evidence_json  TEXT,
+          updated_at     TEXT NOT NULL,
+          PRIMARY KEY (chain_id, config_id, ca)
+        );
+        INSERT OR REPLACE INTO lexicon_rekeyed
+          (ca, chain_id, config_id, run_id, symbol, tag, f_completeness, f_substance,
+           f_team, f_narrative, f_community, social, concl, narr_text, prod_text,
+           substance_text, team_text, watch, scenario, evidence_json, updated_at)
+        SELECT ca, chain_id, COALESCE(config_id, 'default'), run_id, symbol, tag,
+               f_completeness, f_substance, f_team, f_narrative, f_community, social,
+               concl, narr_text, prod_text, substance_text, team_text, watch, scenario,
+               evidence_json, updated_at
+          FROM lexicon;
+        DROP TABLE lexicon;
+        ALTER TABLE lexicon_rekeyed RENAME TO lexicon;
+        CREATE INDEX IF NOT EXISTS idx_lexicon_chain ON lexicon(chain_id, symbol);
+    """)
+    return before
+
+
+def _rekey_lexicon_sources_for_configs(conn: sqlite3.Connection) -> int:
+    """The same rekey for the pages behind a card: (chain, set of settings, CA, url).
+
+    A card's claim points at the page it was read from, and the second set of settings on
+    a chain reads the same pages about the same token. Keyed without the set of settings,
+    the first set's cleanup pass would delete a row the second set's card still links to.
+    """
+    info = {row["name"]: row["pk"]
+            for row in conn.execute("PRAGMA table_info(lexicon_sources)")}
+    if not info.get("ca"):
+        return 0          # no such table yet: `schema.sql` just made the right one
+    if info.get("config_id"):
+        return 0          # already keyed by it, so the rows are already told apart
+    before = conn.execute("SELECT COUNT(*) AS n FROM lexicon_sources").fetchone()["n"]
+    conn.executescript("""
+        DROP TABLE IF EXISTS lexicon_sources_rekeyed;
+        CREATE TABLE lexicon_sources_rekeyed (
+          ca         TEXT NOT NULL,
+          chain_id   TEXT NOT NULL,
+          config_id  TEXT NOT NULL DEFAULT 'default',
+          kind       TEXT NOT NULL,
+          url        TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          note       TEXT,
+          PRIMARY KEY (chain_id, config_id, ca, url)
+        );
+        INSERT OR REPLACE INTO lexicon_sources_rekeyed
+          (ca, chain_id, config_id, kind, url, fetched_at, note)
+        SELECT ca, chain_id, COALESCE(config_id, 'default'), kind, url, fetched_at, note
+          FROM lexicon_sources;
+        DROP TABLE lexicon_sources;
+        ALTER TABLE lexicon_sources_rekeyed RENAME TO lexicon_sources;
+    """)
+    return before
 
 
 def _backfill_token_peaks(conn: sqlite3.Connection) -> int:
@@ -163,3 +270,90 @@ def _backfill_dex_url(conn: sqlite3.Connection) -> int:
         " AND json_extract(snapshots.metrics_json, '$.dexscreener_url') IS NULL"
     )
     return cursor.rowcount or 0
+
+
+def library_run_ids(chain_id: str, config_id: str) -> list[str]:
+    """The rounds one set of settings has run, newest first.
+
+    The id of a round is also the name of its raw responses under `data/raw/`, which is why
+    dropping a report library reads them here rather than counting rows and guessing.
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM runs WHERE chain_id = ? AND config_id = ?"
+            " ORDER BY scheduled_at DESC, id DESC",
+            (chain_id, config_id),
+        ).fetchall()
+        return [row["id"] for row in rows]
+    finally:
+        conn.close()
+
+
+def _library_size(conn: sqlite3.Connection, chain_id: str, config_id: str) -> dict[str, int]:
+    """The four counts, on a connection the caller already holds."""
+
+    def one(sql: str, *args: object) -> int:
+        return int(conn.execute(sql, args).fetchone()[0])
+
+    return {
+        "runs": one("SELECT COUNT(*) FROM runs WHERE chain_id = ? AND config_id = ?",
+                    chain_id, config_id),
+        "reports": one("SELECT COUNT(*) FROM reports r JOIN runs u ON u.id = r.run_id"
+                       " WHERE u.chain_id = ? AND u.config_id = ?", chain_id, config_id),
+        "entries": one("SELECT COUNT(*) FROM lexicon WHERE chain_id = ? AND config_id = ?",
+                       chain_id, config_id),
+        "versions": one("SELECT COUNT(*) FROM settings_versions"
+                        " WHERE chain_id = ? AND config_id = ?", chain_id, config_id),
+    }
+
+
+def library_size(chain_id: str, config_id: str) -> dict[str, int]:
+    """What one set of settings holds: rounds, cards, entries and saved versions.
+
+    Read before the delete, by the page that asks a human to confirm one: "3 轮 / 24 张卡 /
+    18 条词条" is the difference between a dialog someone reads and a dialog someone clicks
+    through.
+    """
+    conn = connect()
+    try:
+        return _library_size(conn, chain_id, config_id)
+    finally:
+        conn.close()
+
+
+def forget_config(chain_id: str, config_id: str) -> dict[str, int]:
+    """Drop one set of settings' rows. Returns the same counts `library_size` reports.
+
+    Everything that hangs off a round goes with it - `run_items`, `snapshots`, `run_summary`
+    and `reports` all cascade from `runs` - plus the two lexicon tables and the saved
+    settings versions, which belong to a set of settings rather than to a round.
+
+    Two tables are left alone on purpose. `tokens` is keyed by CA and holds chain-level
+    facts - the highest market cap any source has reported - and that is the same fact
+    whichever set of settings is looking at it. `llm_calls` is the ledger of what a round
+    spent; it is the one record that should outlive the thing it paid for.
+
+    One transaction, because half a report library is not a state anything can read: the
+    runs gone and the entries still there is a page that lists verdicts for rounds it can no
+    longer show.
+    """
+    conn = connect()
+    try:
+        sizes = _library_size(conn, chain_id, config_id)
+        conn.execute("BEGIN")
+        conn.execute("DELETE FROM runs WHERE chain_id = ? AND config_id = ?",
+                     (chain_id, config_id))
+        conn.execute("DELETE FROM lexicon_sources WHERE chain_id = ? AND config_id = ?",
+                     (chain_id, config_id))
+        conn.execute("DELETE FROM lexicon WHERE chain_id = ? AND config_id = ?",
+                     (chain_id, config_id))
+        conn.execute("DELETE FROM settings_versions WHERE chain_id = ? AND config_id = ?",
+                     (chain_id, config_id))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return sizes

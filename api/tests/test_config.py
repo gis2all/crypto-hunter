@@ -82,3 +82,15 @@ def test_scoring_weights_sum_to_100():
             "f_completeness": 20, "f_substance": 20, "f_team": 20,
             "f_narrative": 20, "f_community": 20,
         }
+
+
+def test_prune_unknown_keeps_the_yaml_shape_and_nothing_else():
+    '''A saved version may only carry paths the YAML still has. A key it dropped - a
+    rename, or a rule that is now fixed in code - is not a setting any more, and a merge
+    would otherwise copy it into every version after it.'''
+    base = {"pipeline": {"scoring": {"offchain_weight": 45}, "gate_limit": 20}}
+    payload = {"pipeline": {"scoring": {"offchain_weight": 45, "product_weight": 45},
+                            "gate_limit": 20, "gone": 1},
+               "dropped_section": {"a": 1}}
+    assert config.prune_unknown(base, payload) == {
+        "pipeline": {"scoring": {"offchain_weight": 45}, "gate_limit": 20}}

@@ -15,6 +15,9 @@ web/dist/
 web/.vite/
 *.tsbuildinfo
 
+# code-review-graph (generated graph database; local only)
+.code-review-graph/
+
 # app data
 data/*.db
 data/*.db-*

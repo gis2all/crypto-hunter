@@ -8,6 +8,7 @@ from app import config
 from app.api.v1 import forms
 from app.pipeline import schedule
 from app.report import assemble
+from app.store import db
 
 ARC = "arc"
 
@@ -68,7 +69,7 @@ def test_run_stream_emits_current_status_then_done(client, monkeypatch):
 
 def test_settings_default_to_yaml_then_version_up(client):
     default = client.get(f"/api/v1/chains/{ARC}/settings").json()
-    assert default["version"] == 0 and default["source"] == "config/chains.yaml"
+    assert default["version"] == 0 and default["source"] == "config/chains/arc.yaml"
     assert default["payload"]["report"]["per_round"] == 5
 
     payload = {"pipeline.scoring.onchain_weight": 55, "pipeline.scoring.offchain_weight": 45}
@@ -146,6 +147,110 @@ def test_settings_form_shows_the_saved_version_not_the_yaml(client):
     fields = {f["key"]: f for b in form["blocks"] for g in b["groups"] for f in g["fields"]}
     assert fields["pipeline.prefilter.liquidity_min_usd"]["value"] == "31000"
     assert form["version"] == 1
+
+
+def test_a_saved_version_reaches_the_next_round(client):
+    '''Saving was only half the promise: the round has to pin it, and none did.
+
+    Every round the app created left `settings_version_id` NULL, so the round read the
+    YAML while the settings page showed the saved version - two answers to one question
+    on two halves of the same screen.
+    '''
+    run = client.post("/api/v1/runs", json={"chain_id": ARC}).json()
+    assert run["settings_version_id"] is None
+
+    client.put(f"/api/v1/chains/{ARC}/settings",
+               json={"patch": {"pipeline.prefilter.liquidity_min_usd": 31000}})
+    run = client.post("/api/v1/runs", json={"chain_id": ARC}).json()
+    assert run["settings_version_id"] is not None
+
+    settings = config.settings_payload(ARC, run["settings_version_id"])
+    assert settings["pipeline"]["prefilter"]["liquidity_min_usd"] == 31000
+
+
+def test_a_round_already_queued_keeps_the_version_it_was_created_under(client):
+    '''A save must not move a knob under a round that is already written down.'''
+    client.put(f"/api/v1/chains/{ARC}/settings",
+               json={"patch": {"pipeline.prefilter.liquidity_min_usd": 31000}})
+    queued_run = client.post("/api/v1/runs", json={"chain_id": ARC}).json()
+
+    client.put(f"/api/v1/chains/{ARC}/settings",
+               json={"patch": {"pipeline.prefilter.liquidity_min_usd": 9000}})
+
+    settings = config.settings_payload(ARC, queued_run["settings_version_id"])
+    assert settings["pipeline"]["prefilter"]["liquidity_min_usd"] == 31000
+
+
+def test_a_knob_the_yaml_dropped_is_not_carried_into_the_next_version(client):
+    '''A merge only ever adds, so an orphan rode along in every version after it.
+
+    `product_weight` was renamed to `offchain_weight` and `unlisted_policy` was dropped,
+    but each save merged the version before it forward - so both stayed in the stored
+    payload, read by nobody and read by the archive as if the round had run that way.
+    '''
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO settings_versions (chain_id, version, payload_json, note, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (ARC, 1, json.dumps({"pipeline": {"scoring": {
+                "product_weight": 45, "unlisted_policy": "pending_review",
+                "onchain_weight": 55, "offchain_weight": 45}}}), "seeded", db.now_iso()),
+        )
+    finally:
+        conn.close()
+
+    saved = client.put(f"/api/v1/chains/{ARC}/settings",
+                       json={"patch": {"pipeline.scoring.onchain_weight": 55}}).json()
+    scoring = saved["payload"]["pipeline"]["scoring"]
+    assert "product_weight" not in scoring
+    assert "unlisted_policy" not in scoring
+    assert scoring["offchain_weight"] == 45
+    assert scoring["onchain_factor_weights"]["liquidity"] == 20
+
+
+def test_a_stored_version_is_read_against_the_yaml_shape(client):
+    '''Every version already in the database carries such a key; a round reading one
+    must see the settings it actually ran with.'''
+    conn = db.connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO settings_versions (chain_id, version, payload_json, note, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (ARC, 1, json.dumps({"pipeline": {
+                "prefilter": {"liquidity_min_usd": 31000},
+                "scoring": {"unlisted_policy": "pending_review"}}}), "seeded", db.now_iso()),
+        )
+        version_id = cur.lastrowid
+    finally:
+        conn.close()
+
+    settings = config.settings_payload(ARC, version_id)
+    assert settings["pipeline"]["prefilter"]["liquidity_min_usd"] == 31000
+    assert "unlisted_policy" not in settings["pipeline"]["scoring"]
+
+
+def test_a_patch_to_a_knob_the_yaml_dropped_is_refused(client):
+    '''The guard exists so that an edit which cannot apply is refused, not stored.
+
+    An orphan in the saved version used to count as a known path, so a patch aimed at one
+    was accepted and then pruned away: the page reported a save and nothing changed.
+    '''
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO settings_versions (chain_id, version, payload_json, note, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (ARC, 1, json.dumps({"pipeline": {"scoring": {"product_weight": 45}}}),
+             "seeded", db.now_iso()),
+        )
+    finally:
+        conn.close()
+
+    resp = client.put(f"/api/v1/chains/{ARC}/settings",
+                      json={"patch": {"pipeline.scoring.product_weight": 99}})
+    assert resp.status_code == 422
+    assert "product_weight" in resp.json()["detail"]
 
 
 def test_a_blank_on_a_knob_that_has_a_number_is_refused_not_stored(client):
@@ -355,7 +460,8 @@ def test_the_settings_run_button_hands_the_round_to_the_worker(client, monkeypat
     ticker reads the clock, so a row nobody submits sits at `pending` forever."""
     started = []
     monkeypatch.setattr(schedule, "submit",
-                        lambda chain_id, run_id: started.append((chain_id, run_id)))
+                        lambda chain_id, run_id, config_id=None:
+                        started.append((chain_id, run_id)))
     body = client.post(f"/api/v1/chains/{ARC}/settings/run").json()
     assert started == [(ARC, body["id"])]
 

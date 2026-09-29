@@ -1,4 +1,4 @@
-"""Which sources a chain uses: declared in config/chains.yaml, resolved here."""
+"""Which sources a chain uses: declared in that chain's set of settings, resolved here."""
 
 from __future__ import annotations
 

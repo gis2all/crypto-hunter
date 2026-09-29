@@ -167,7 +167,7 @@ def _effective(conn, run: dict) -> dict:
     can never contradict itself.
     """
     try:
-        cfg = config.chain(run["chain_id"])
+        cfg = config.chain(run["chain_id"], run.get("config_id"))
     except KeyError:
         return {}
     payload = {key: cfg.get(key) for key in SETTINGS_SECTIONS}

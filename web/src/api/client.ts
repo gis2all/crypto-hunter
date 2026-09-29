@@ -11,6 +11,9 @@ import type { components } from "./types.gen";
 
 export type Health = components["schemas"]["HealthOut"];
 export type Chain = components["schemas"]["ChainOut"];
+export type ChainConfig = components["schemas"]["ChainConfigOut"];
+export type ChainConfigDetail = components["schemas"]["ChainConfigDetailOut"];
+export type Library = components["schemas"]["LibraryOut"];
 export type Run = components["schemas"]["RunOut"];
 export type Batch = components["schemas"]["BatchOut"];
 export type Card = components["schemas"]["CardOut"];
@@ -35,7 +38,7 @@ export class ApiError extends Error {
 
 /** What to put on the screen when a request failed.
  *
- * The backend writes the detail of a 4xx for the operator (C-003), so that sentence is
+ * The backend writes the detail of a 4xx for the operator (CLAUDE.md 2.3.3), so that sentence is
  * the message and the status line in front of it is noise. A 5xx detail is written for
  * nobody - "500 Internal Server Error" is a report, not advice - so it keeps its code.
  */
@@ -67,18 +70,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const getHealth = () => request<Health>("/health");
 export const listChains = () => request<Chain[]>("/chains");
 
-export const listRuns = (chainId: string, limit = 20) =>
-  request<Run[]>(`/runs?chain_id=${encodeURIComponent(chainId)}&limit=${limit}`);
+/** `?config_id=` for the reads and writes that belong to one set of settings. Always sent,
+ *  including for the default one: `/runs` without it answers for every set of settings on
+ *  the chain at once, which is two report libraries blended. */
+function configQuery(configId: string): string {
+  return `?config_id=${encodeURIComponent(configId)}`;
+}
+
+export const listRuns = (chainId: string, configId: string, limit = 20) =>
+  request<Run[]>(
+    `/runs?chain_id=${encodeURIComponent(chainId)}&config_id=${encodeURIComponent(configId)}`
+    + `&limit=${limit}`,
+  );
 
 export const getRun = (runId: string) => request<Run>(`/runs/${encodeURIComponent(runId)}`);
 
 export const getBatch = (runId: string) =>
   request<Batch>(`/runs/${encodeURIComponent(runId)}/batch`);
 
-export const createRun = (chainId: string, trigger = "manual") =>
+export const createRun = (chainId: string, configId: string, trigger = "manual") =>
   request<Run>("/runs", {
     method: "POST",
-    body: JSON.stringify({ chain_id: chainId, trigger }),
+    body: JSON.stringify({ chain_id: chainId, config_id: configId, trigger }),
   });
 
 /** 中止: ask a round that is still going to stop. The round answers at its own next
@@ -87,21 +100,76 @@ export const createRun = (chainId: string, trigger = "manual") =>
 export const cancelRun = (runId: string) =>
   request<Run>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
 
-export const getSettingsForm = (chainId: string) =>
-  request<SettingsForm>(`/chains/${encodeURIComponent(chainId)}/settings/form`);
+export const getSettingsForm = (chainId: string, configId: string) =>
+  request<SettingsForm>(
+    `/chains/${encodeURIComponent(chainId)}/settings/form${configQuery(configId)}`,
+  );
 
-export const getSettings = (chainId: string) =>
-  request<Settings>(`/chains/${encodeURIComponent(chainId)}/settings`);
+export const getSettings = (chainId: string, configId: string) =>
+  request<Settings>(
+    `/chains/${encodeURIComponent(chainId)}/settings${configQuery(configId)}`,
+  );
 
 /** Commit a partial patch of dotted-path leaves. The backend coerces every value
- *  against the current config type, so an <input>'s string can never change a type. */
-export const putSettings = (chainId: string, patch: Record<string, unknown>, note?: string) =>
-  request<Settings>(`/chains/${encodeURIComponent(chainId)}/settings`, {
+ *  against the current config type, so an <input>'s string can never change a type.
+ *
+ *  This is also the write that makes the set of settings it names the chain's live one:
+ *  the page shows which one is being edited, and saving is the only thing that can mean
+ *  "and use it". */
+export const putSettings = (
+  chainId: string,
+  configId: string,
+  patch: Record<string, unknown>,
+  note?: string,
+) =>
+  request<Settings>(`/chains/${encodeURIComponent(chainId)}/settings${configQuery(configId)}`, {
     method: "PUT",
     body: JSON.stringify({ patch, note }),
   });
 
-/** Run this round now with the settings in force. */
-export const runNow = (chainId: string) =>
-  request<Run>(`/chains/${encodeURIComponent(chainId)}/settings/run`, { method: "POST" });
+/** Run this round now, under the set of settings the page is looking at. */
+export const runNow = (chainId: string, configId: string) =>
+  request<Run>(
+    `/chains/${encodeURIComponent(chainId)}/settings/run${configQuery(configId)}`,
+    { method: "POST" },
+  );
+
+/** One set of settings on a chain, with the size of the report library behind it. The size
+ *  is what the delete's confirmation prints: "3 轮 / 24 张卡" is a dialog someone reads. */
+export const getChainConfig = (chainId: string, configId: string) =>
+  request<ChainConfigDetail>(
+    `/chains/${encodeURIComponent(chainId)}/configs/${encodeURIComponent(configId)}`,
+  );
+
+/** Add a set of settings, seeded from `default` (`new`) or from a named one (`copy`). A
+ *  blank label means the backend's own naming rule, which is the only place that rule is
+ *  written down - the page never computes a name. */
+export const addChainConfig = (
+  chainId: string,
+  mode: "new" | "copy",
+  fromConfigId?: string,
+  label?: string,
+) =>
+  request<ChainConfigDetail>(`/chains/${encodeURIComponent(chainId)}/configs`, {
+    method: "POST",
+    body: JSON.stringify({ mode, from_config_id: fromConfigId ?? null, label: label ?? null }),
+  });
+
+/** Rename one. The id behind it never moves, so nothing else on the page has to. */
+export const renameChainConfig = (chainId: string, configId: string, label: string) =>
+  request<ChainConfigDetail>(
+    `/chains/${encodeURIComponent(chainId)}/configs/${encodeURIComponent(configId)}`,
+    { method: "PATCH", body: JSON.stringify({ label }) },
+  );
+
+/** Delete one, and its whole report library with it. There is no undo.
+ *
+ *  `label` is the name as the operator typed it back. The backend refuses a delete whose
+ *  label does not match the entry, which is what turns the confirmation from a click into
+ *  something that has to be meant. */
+export const deleteChainConfig = (chainId: string, configId: string, label: string) =>
+  request<Library>(
+    `/chains/${encodeURIComponent(chainId)}/configs/${encodeURIComponent(configId)}`,
+    { method: "DELETE", body: JSON.stringify({ label }) },
+  );
 

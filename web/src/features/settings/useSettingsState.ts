@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { SettingsField } from "../../api/client";
 import { useRunNow, useSaveSettings, useSettingsForm } from "../../api/hooks";
@@ -45,14 +45,23 @@ function toPatch(
  *  the buttons owns the draft: a page cannot hand a button to another surface without
  *  handing over the state that makes the button mean anything, so the draft, the two
  *  mutations and the one rule that joins them (save, then run) live here, and both
- *  surfaces read the same object. */
-export function useSettingsState(chainId: string) {
-  const query = useSettingsForm(chainId);
-  const save = useSaveSettings(chainId);
-  const runNow = useRunNow(chainId);
+ *  surfaces read the same object. Both ids travel, because a report library and a round are
+ *  scoped by a chain *and* a set of settings - never by the chain alone. */
+export function useSettingsState(chainId: string, configId: string) {
+  const query = useSettingsForm(chainId, configId);
+  const save = useSaveSettings(chainId, configId);
+  const runNow = useRunNow(chainId, configId);
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
   const [enabledDraft, setEnabledDraft] = useState<Record<string, boolean>>({});
   const data = query.data;
+
+  // A draft belongs to the set of settings it was typed against. Carrying it across a move
+  // would show edits nobody made on the set now on screen - and the next save would write
+  // one library's numbers into another - so a change of scope drops it.
+  useEffect(() => {
+    setDraft({});
+    setEnabledDraft({});
+  }, [chainId, configId]);
 
   const dirtyKeys = useMemo(
     () => new Set(Object.keys(draft).concat(Object.keys(enabledDraft))),

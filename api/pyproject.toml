@@ -8,6 +8,11 @@ dependencies = [
   "uvicorn>=0.32",
   "pydantic>=2.9",
   "pyyaml>=6.0",
+  # pyyaml dumps a file and takes every comment with it. The chain files are read by
+  # humans - each knob says why it is the number it is - and the write path (adding,
+  # renaming and deleting a set of settings) has to round-trip them instead of
+  # reformatting them. ruamel.yaml is pyyaml's round-trip half.
+  "ruamel.yaml>=0.18",
   "httpx>=0.27",
   # GMGN fingerprints TLS: httpx gets 403, a Chrome-impersonating client gets 200.
   # Measured 2026-09-24, see api/app/sources/SOURCES.md.

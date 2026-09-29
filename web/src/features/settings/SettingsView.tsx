@@ -1,9 +1,9 @@
-import { Activity, Boxes, ShieldCheck, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { Activity, Boxes, Info, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Fragment } from "react";
 
 import { errorText } from "../../api/client";
-import type { SettingsBlock, SettingsField, SettingsForm } from "../../api/client";
+import type { Chain, SettingsBlock, SettingsField, SettingsForm } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { NoteHelp } from "./NoteHelp";
 import { type SettingsState } from "./useSettingsState";
@@ -35,21 +35,31 @@ function readOnly(field: SettingsField): boolean {
   return Boolean(field.ro_row || field.ro_value) || field.widget === "ro";
 }
 
-export function SettingsView({ state }: { state: SettingsState }) {
+/** 参数设置, for one set of settings on one chain.
+ *
+ *  The header carries the page's own name and nothing else. Which chain, and which set of
+ *  settings under it, are both chosen in the topbar beside the buttons that act on them
+ *  (user, 2026-09-29) - a second copy of either down here is a reading nobody can click,
+ *  and the 说明 that stood here only repeated what the blocks below already say. Reading a
+ *  set that is not the chain's live one is still allowed and still named: the bar under
+ *  the header says which one 保存并生效 would move the chain onto. */
+export function SettingsView({
+  state,
+  chain,
+  configId,
+}: {
+  state: SettingsState;
+  chain: Chain | undefined;
+  configId: string;
+}) {
   const {
     query, save, runNow, data, dirtyKeys, valueOf, enabledOf, isDirty,
-    setValue, setEnabled, groupDirty, noteText,
+    setValue, setEnabled, groupDirty,
   } = state;
 
   if (!data) {
     return (
       <section className="params" id="view-params">
-        <div className="params-head">
-          <h2>
-          <Icon as={SlidersHorizontal} size={16} />
-          参数设置
-        </h2>
-        </div>
         <div className={query.isError ? "note-bar bad" : "note-bar"}>
           {query.isError ? <Icon as={TriangleAlert} size={14} /> : null}
           {query.isError ? `设定读取失败：${errorText(query.error)}` : "读取中…"}
@@ -57,6 +67,11 @@ export function SettingsView({ state }: { state: SettingsState }) {
       </section>
     );
   }
+
+  const configs = chain?.configs ?? [];
+  const current = configs.find((item) => item.id === configId);
+  const live = configs.find((item) => item.enabled);
+  const notLive = Boolean(current && live && current.id !== live.id);
 
   const renderGroup = (group: SettingsForm["blocks"][number]["groups"][number]) => {
     const rows = group.fields;
@@ -170,21 +185,28 @@ export function SettingsView({ state }: { state: SettingsState }) {
 
   return (
     <section className="params" id="view-params">
-      <div className="params-head">
-        <h2>
-          <Icon as={SlidersHorizontal} size={16} />
-          参数设置
-        </h2>
-        <span className="chain">
-          {data.label}
-        </span>
-        {/* The composite and this round's measured averages used to sit in a bar under this
-            header, and the save rule behind an icon in that bar. Both are read once. The two
-            buttons that act on them (保存并生效 / 立即运行) stand in the topbar now, in the
-            place the round's own actions take on the report page - so the header keeps only
-            what is read, and the row of controls exists in one place at a time. */}
-        <NoteHelp text={[noteText, data.note_detail].filter(Boolean).join("\n")} />
-      </div>
+      {/* No page title. The 设定 tab already says which page this is, and the chain and its
+          sets of settings are both chosen in the topbar beside the buttons that act on them;
+          a heading here repeated the tab and then the chain name (user, 2026-09-29). The bar
+          the header used to hold - the composite, this round's averages, the save rule - was
+          read once and then in the way, and its two buttons live in the topbar now. */}
+      {/* A chain whose file names two live sets of settings is answered with a warning
+          rather than an error: the radar still runs, on one of them, and the operator is
+          the one who can say which was meant. */}
+      {chain?.warning ? (
+        <div className="note-bar bad">
+          <Icon as={TriangleAlert} size={14} />
+          <span>{chain.warning}</span>
+        </div>
+      ) : null}
+      {notLive ? (
+        <div className="note-bar">
+          <Icon as={Info} size={14} />
+          <span>
+            保存后本链将使用「{current?.label}」这套参数——现在生效的还是「{live?.label}」。
+          </span>
+        </div>
+      ) : null}
       {/* The bar lives in the DOM either way and is hidden while nothing is pending, so
           the page keeps the frozen prototype's markup and never reflows on the first edit. */}
       <div className="dirtybar" hidden={dirtyKeys.size === 0}>

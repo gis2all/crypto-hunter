@@ -37,7 +37,8 @@ def entry_payload(entry, symbol: str | None = None) -> dict:
 
 
 def store_entries(chain_id: str, run_id: str, entries: dict[str, dict],
-                  observed_at: str | None = None) -> set[str]:
+                  observed_at: str | None = None,
+                  config_id: str = "default") -> set[str]:
     """Write the round's entries - five scores and the prose beside them - and return the
     CAs that went in.
 
@@ -52,12 +53,13 @@ def store_entries(chain_id: str, run_id: str, entries: dict[str, dict],
     try:
         for ca, entry in entries.items():
             conn.execute(
-                "INSERT INTO lexicon (ca, chain_id, run_id, symbol, tag,"
+                "INSERT INTO lexicon (ca, chain_id, config_id, run_id, symbol, tag,"
                 " f_completeness, f_substance, f_team, f_narrative, f_community,"
                 " social, concl, narr_text, prod_text, substance_text, team_text,"
                 " updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(ca) DO UPDATE SET chain_id=excluded.chain_id,"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(chain_id, config_id, ca) DO UPDATE SET"
+                " chain_id=excluded.chain_id, config_id=excluded.config_id,"
                 " run_id=excluded.run_id, symbol=COALESCE(excluded.symbol, lexicon.symbol),"
                 " tag=excluded.tag,"
                 " f_completeness=excluded.f_completeness,"
@@ -67,7 +69,7 @@ def store_entries(chain_id: str, run_id: str, entries: dict[str, dict],
                 " narr_text=excluded.narr_text, prod_text=excluded.prod_text,"
                 " substance_text=excluded.substance_text, team_text=excluded.team_text,"
                 " updated_at=excluded.updated_at",
-                (ca, chain_id, run_id, entry.get("symbol"), entry.get("tag"),
+                (ca, chain_id, config_id, run_id, entry.get("symbol"), entry.get("tag"),
                  entry.get("f_completeness"), entry.get("f_substance"), entry.get("f_team"),
                  entry.get("f_narrative"), entry.get("f_community"),
                  entry.get("social"), entry.get("concl"), entry.get("narr_text"),
@@ -80,24 +82,34 @@ def store_entries(chain_id: str, run_id: str, entries: dict[str, dict],
     return written
 
 
-def forget_other_rounds(run_id: str) -> int:
+def forget_other_rounds(chain_id: str, config_id: str, run_id: str) -> int:
     """Delete every entry that does not belong to this round, and say how many went.
 
     The lexicon holds one round's worth of rows - the ones this round judged - and this is
     what keeps that true. Without it a token judged last round and not this one stays
     readable, and the next round reads a dead round's opinion while claiming it asked.
+
+    One round's worth *per set of settings on this chain*: a second set's entries are its
+    own judgements of the same tokens, and clearing them here would delete evidence out of
+    a card this round never read.
     """
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT ca FROM lexicon WHERE COALESCE(run_id, '') <> ?", (run_id,),
+            "SELECT ca FROM lexicon WHERE chain_id = ? AND config_id = ?"
+            " AND COALESCE(run_id, '') <> ?",
+            (chain_id, config_id, run_id),
         ).fetchall()
         doomed = [row["ca"] for row in rows]
         if not doomed:
             return 0
         marks = ",".join("?" for _ in doomed)
-        conn.execute("DELETE FROM lexicon_sources WHERE ca IN (%s)" % marks, doomed)
-        conn.execute("DELETE FROM lexicon WHERE ca IN (%s)" % marks, doomed)
+        conn.execute(
+            "DELETE FROM lexicon_sources WHERE chain_id = ? AND config_id = ?"
+            " AND ca IN (%s)" % marks, (chain_id, config_id, *doomed))
+        conn.execute(
+            "DELETE FROM lexicon WHERE chain_id = ? AND config_id = ? AND ca IN (%s)" % marks,
+            (chain_id, config_id, *doomed))
         return len(doomed)
     finally:
         conn.close()

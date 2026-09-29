@@ -93,6 +93,230 @@
     }
    }
   },
+  "/api/v1/chains/{chain_id}/configs": {
+   "post": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "Add Chain Config",
+    "description": "Add a set of settings to a chain: a fresh one, or a copy of one that exists.\n\nBoth are seeded from an entry's five sections and neither brings a report library - a\nnew set of settings has earned nothing yet. The new one is born switched off, so adding\none never moves which set of settings the chain is running.",
+    "operationId": "add_chain_config_api_v1_chains__chain_id__configs_post",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChainConfigIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChainConfigDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/chains/{chain_id}/configs/{config_id}": {
+   "get": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "Get Chain Config",
+    "operationId": "get_chain_config_api_v1_chains__chain_id__configs__config_id__get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Config Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChainConfigDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "Rename Chain Config",
+    "description": "Rename a set of settings. The id does not move with the label.\n\nThe id is in five primary keys and in every run key the chain has written, so moving it\nwould be a migration of the whole report library to change what a row reads. The label\nis the part a human reads; this is the only part a rename touches.",
+    "operationId": "rename_chain_config_api_v1_chains__chain_id__configs__config_id__patch",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Config Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LabelIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChainConfigDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "chains"
+    ],
+    "summary": "Delete Chain Config",
+    "description": "Delete a set of settings and its whole report library. There is no undo.\n\nThree gates, in the order a person meets them. The label typed back has to be the one on\nthe entry, because a double confirmation that a click can pass is not a confirmation.\nThe entry has to be one that may go at all, which `config.delete_config` refuses for the\ndefault and for the live one. And no round of it may be in flight, because that round is\na worker reading rows this would delete out from under it.",
+    "operationId": "delete_chain_config_api_v1_chains__chain_id__configs__config_id__delete",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Config Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeleteIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibraryOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/runs": {
    "get": {
     "tags": [
@@ -115,6 +339,22 @@
         }
        ],
        "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
       }
      },
      {
@@ -452,6 +692,22 @@
        "type": "string",
        "title": "Chain Id"
       }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
+      }
      }
     ],
     "responses": {
@@ -482,6 +738,7 @@
      "settings"
     ],
     "summary": "Put Settings",
+    "description": "Save a version, and make this set of settings the chain's live one.\n\nSaving is where the page's dropdown commits: it shows which set of settings is being\nedited, so this is the one write that can mean \"and use it\". A save that left the\nprevious one running would be a save whose effect the operator cannot see, which is the\none thing a settings page cannot afford to be.",
     "operationId": "put_settings_api_v1_chains__chain_id__settings_put",
     "parameters": [
      {
@@ -491,6 +748,22 @@
       "schema": {
        "type": "string",
        "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
       }
      }
     ],
@@ -544,6 +817,22 @@
        "type": "string",
        "title": "Chain Id"
       }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
+      }
      }
     ],
     "responses": {
@@ -587,6 +876,22 @@
        "type": "string",
        "title": "Chain Id"
       }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
+      }
      }
     ],
     "responses": {
@@ -627,6 +932,22 @@
       "schema": {
        "type": "string",
        "title": "Chain Id"
+      }
+     },
+     {
+      "name": "config_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Config Id"
       }
      }
     ],
@@ -972,6 +1293,111 @@
     ],
     "title": "CardOut"
    },
+   "ChainConfigDetailOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "locked": {
+      "type": "boolean",
+      "title": "Locked",
+      "default": false
+     },
+     "library": {
+      "$ref": "#/components/schemas/LibraryOut",
+      "default": {
+       "runs": 0,
+       "reports": 0,
+       "entries": 0,
+       "versions": 0
+      }
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "ChainConfigDetailOut",
+    "description": "One set of settings, with the size of what deleting it would destroy."
+   },
+   "ChainConfigIn": {
+    "properties": {
+     "mode": {
+      "type": "string",
+      "enum": [
+       "new",
+       "copy"
+      ],
+      "title": "Mode",
+      "default": "new"
+     },
+     "from_config_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From Config Id"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     }
+    },
+    "type": "object",
+    "title": "ChainConfigIn",
+    "description": "Add a set of settings: a fresh one, or a copy of one that exists.\n\n`label` is what the dialog had in it. Blank means \"use the naming rule\" - `配置 N` for a\nnew one, `<源> 副本` for a copy - which is what the page prefills anyway."
+   },
+   "ChainConfigOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "locked": {
+      "type": "boolean",
+      "title": "Locked",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "ChainConfigOut",
+    "description": "One set of settings on a chain, as a switcher needs to list it.\n\nThe口径 themselves are read one at a time through `/settings`; this is the name, the\nswitch, and whether the entry can be taken away at all."
+   },
    "ChainOut": {
     "properties": {
      "id": {
@@ -1039,6 +1465,25 @@
        }
       ],
       "title": "Pipeline"
+     },
+     "configs": {
+      "items": {
+       "$ref": "#/components/schemas/ChainConfigOut"
+      },
+      "type": "array",
+      "title": "Configs",
+      "default": []
+     },
+     "warning": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Warning"
      }
     },
     "type": "object",
@@ -1154,6 +1599,18 @@
      "reason"
     ],
     "title": "DeclineRowOut"
+   },
+   "DeleteIn": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "DeleteIn",
+    "description": "The name typed back by whoever asked for the delete.\n\nA delete that cannot be undone gets a gate a click cannot pass by accident: the page\nmakes the human type the label, and this is that same word arriving here. A mismatch is\na refusal rather than a shrug, because the only caller that gets it wrong is one that\ndid not mean it."
    },
    "DeltaOut": {
     "properties": {
@@ -1736,6 +2193,18 @@
     "type": "object",
     "title": "HoldersOut"
    },
+   "LabelIn": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "LabelIn",
+    "description": "The new name for a set of settings. Only the label moves; the id never does."
+   },
    "LexiconOut": {
     "properties": {
      "ca": {
@@ -1746,6 +2215,11 @@
       "type": "string",
       "title": "Chain Id",
       "default": "arc"
+     },
+     "config_id": {
+      "type": "string",
+      "title": "Config Id",
+      "default": "default"
      },
      "run_id": {
       "anyOf": [
@@ -1953,6 +2427,33 @@
      "updated_at"
     ],
     "title": "LexiconOut"
+   },
+   "LibraryOut": {
+    "properties": {
+     "runs": {
+      "type": "integer",
+      "title": "Runs",
+      "default": 0
+     },
+     "reports": {
+      "type": "integer",
+      "title": "Reports",
+      "default": 0
+     },
+     "entries": {
+      "type": "integer",
+      "title": "Entries",
+      "default": 0
+     },
+     "versions": {
+      "type": "integer",
+      "title": "Versions",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "LibraryOut",
+    "description": "How much one set of settings has, for the dialog that asks before deleting it."
    },
    "LinkOut": {
     "properties": {
@@ -2171,6 +2672,17 @@
       "type": "string",
       "title": "Chain Id"
      },
+     "config_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Config Id"
+     },
      "trigger": {
       "type": "string",
       "title": "Trigger",
@@ -2196,6 +2708,11 @@
      "chain_id": {
       "type": "string",
       "title": "Chain Id"
+     },
+     "config_id": {
+      "type": "string",
+      "title": "Config Id",
+      "default": "default"
      },
      "trigger": {
       "type": "string",
@@ -2475,6 +2992,11 @@
      "chain_id": {
       "type": "string",
       "title": "Chain Id"
+     },
+     "config_id": {
+      "type": "string",
+      "title": "Config Id",
+      "default": "default"
      },
      "version": {
       "type": "integer",

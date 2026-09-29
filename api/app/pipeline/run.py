@@ -46,22 +46,34 @@ def _row(run_id: str) -> dict:
 
 
 def create_run(chain_id: str, trigger: str = "manual",
-               scheduled_at: str | None = None) -> dict:
+               scheduled_at: str | None = None,
+               config_id: str | None = None) -> dict:
     """Create a round.
 
     A scheduled slot has a deterministic run_key, so a tick that fires twice creates one
-    round: the second insert is ignored and the first round is returned.
+    round: the second insert is ignored and the first round is returned. The key carries
+    the set of settings too - a chain's sets share a clock, and each slot owes each of
+    them its own round rather than one round between them.
     """
-    config.chain(chain_id)  # KeyError for unknown chains
+    cfg = config.config_entry(chain_id, config_id)  # KeyError for unknown chains
     run_id = uuid4().hex[:12]
-    run_key = f"{chain_id}:{scheduled_at}" if scheduled_at else f"{chain_id}:{trigger}:{run_id}"
+    if scheduled_at:
+        run_key = f"{chain_id}:{cfg['id']}:{scheduled_at}"
+    else:
+        run_key = f"{chain_id}:{cfg['id']}:{trigger}:{run_id}"
+    # The settings this round will read are pinned here, at creation, not at the moment it
+    # happens to start: a save that lands while the round waits in the queue must not move
+    # a knob under a round already written down. `assemble` reads the same column back to
+    # archive the round under the calibre it actually ran with.
+    version_id = config.latest_settings_version(chain_id, cfg["id"])
     conn = db.connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO runs (id, run_key, chain_id, trigger, status, scheduled_at,"
-            " started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (run_id, run_key, chain_id, trigger, RunStatus.PENDING.value, scheduled_at,
-             db.now_iso()),
+            "INSERT OR IGNORE INTO runs (id, run_key, chain_id, config_id, trigger, status,"
+            " scheduled_at, started_at, settings_version_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, run_key, chain_id, cfg["id"], trigger, RunStatus.PENDING.value,
+             scheduled_at, db.now_iso(), version_id),
         )
         row = conn.execute("SELECT * FROM runs WHERE run_key = ?", (run_key,)).fetchone()
     finally:
@@ -81,7 +93,7 @@ def pending_runs() -> list[dict]:
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT id, chain_id FROM runs WHERE status = ? ORDER BY started_at",
+            "SELECT id, chain_id, config_id FROM runs WHERE status = ? ORDER BY started_at",
             (RunStatus.PENDING.value,),
         ).fetchall()
     finally:
@@ -89,18 +101,57 @@ def pending_runs() -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def scheduled_run(chain_id: str, slot: str) -> dict | None:
-    """The round for one cron slot, or None when that slot already has one."""
+def busy_chains() -> list[str]:
+    """Chains with a round in flight. A queued round counts: it is about to read.
+
+    A chain's sets of settings pull from the same sources, at the same rate limits, off
+    the same node, so the ticker starts one of them at a time. This is what it asks to
+    know which chain to leave alone this tick.
+    """
+    conn = db.connect()
+    try:
+        marks = ",".join("?" for _ in states.TERMINAL)
+        rows = conn.execute(
+            "SELECT DISTINCT chain_id FROM runs WHERE status NOT IN (%s)" % marks,
+            tuple(states.TERMINAL),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [row["chain_id"] for row in rows]
+
+
+def busy_configs(chain_id: str) -> list[str]:
+    """The chain's sets of settings that have a round in flight right now.
+
+    Asked before a set of settings is deleted: a round already reading is a run row that
+    would be deleted out from under the worker that owns it.
+    """
+    conn = db.connect()
+    try:
+        marks = ",".join("?" for _ in states.TERMINAL)
+        rows = conn.execute(
+            "SELECT DISTINCT config_id FROM runs WHERE chain_id = ? AND status NOT IN (%s)"
+            % marks,
+            (chain_id, *states.TERMINAL),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [row["config_id"] for row in rows]
+
+
+def scheduled_run(chain_id: str, config_id: str, slot: str) -> dict | None:
+    """The round for one cron slot under one set of settings, or None when it has one."""
     conn = db.connect()
     try:
         seen = conn.execute(
-            "SELECT 1 FROM runs WHERE run_key = ?", (f"{chain_id}:{slot}",)
+            "SELECT 1 FROM runs WHERE run_key = ?", (f"{chain_id}:{config_id}:{slot}",)
         ).fetchone()
     finally:
         conn.close()
     if seen is not None:
         return None
-    return create_run(chain_id, trigger="schedule", scheduled_at=slot)
+    return create_run(chain_id, trigger="schedule", scheduled_at=slot,
+                      config_id=config_id)
 
 
 def _set_progress(run_id: str, percent: int, label: str) -> None:
@@ -183,14 +234,20 @@ def peak_market_caps(chain_id: str) -> dict[str, float]:
     return {str(row["ca"]).lower(): float(row["peak_market_cap_usd"]) for row in rows}
 
 
-def previous_picks(chain_id: str, run_id: str) -> list[dict]:
-    """The last written round's picks, with the numbers a delta is computed from."""
+def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> list[dict]:
+    """The last written round's picks, with the numbers a delta is computed from.
+
+    The last round of *this* set of settings: a second set on the same chain keeps its own
+    library, and reading the first set's picks as "last round" would report a token as
+    new-in or dropped-out against a universe it was never in.
+    """
     conn = db.connect()
     try:
         last = conn.execute(
-            "SELECT id FROM runs WHERE chain_id = ? AND id <> ? AND selected > 0"
+            "SELECT id FROM runs WHERE chain_id = ? AND config_id = ? AND id <> ?"
+            " AND selected > 0"
             " ORDER BY COALESCE(scheduled_at, started_at) DESC LIMIT 1",
-            (chain_id, run_id),
+            (chain_id, config.config_entry(chain_id, config_id)["id"], run_id),
         ).fetchone()
         if last is None:
             return []
@@ -254,7 +311,7 @@ def fail_run(run_id: str, error: str) -> None:
     _set_status(run_id, RunStatus.FAILED.value, error)
 
 
-def run_chain(chain_id: str, run_id: str) -> dict:
+def run_chain(chain_id: str, run_id: str, config_id: str | None = None) -> dict:
     """Drive one round to `written`. Synchronous: the caller owns the thread."""
     reasons: list[str] = []
 
@@ -273,11 +330,15 @@ def run_chain(chain_id: str, run_id: str) -> dict:
         # The tallies are per round, so the log line at the end describes this round and
         # not whatever the process has been doing since it started.
         http.stats(reset=True)
-        chain = config.chain(chain_id)  # KeyError for unknown chains
+        row = _row(run_id)
+        # Which of the chain's sets of settings this round belongs to comes off the row and
+        # not off the caller: the row is what the archive, the口径 line and the report
+        # library are read through, so it is the only answer worth having.
+        config_id = row.get("config_id") or config_id
+        chain = config.chain(chain_id, config_id)  # KeyError for unknown chains
         # The first line of a round, and the one that proves the log is wired up: a round
         # that leaves no trace of itself is how "why was that round slow" went unanswerable.
         log.info("round %s started on %s", run_id, chain_id)
-        row = _row(run_id)
         # Two ways this round is already over before this thread touches it. The operator
         # stopped it while it waited in the queue - and a round with no worker never reads the
         # flag, so the row itself carries the request (`stop_run`) - or the stop landed
@@ -289,11 +350,12 @@ def run_chain(chain_id: str, run_id: str) -> dict:
             return row
         if cancel.requested(run_id):
             return stop_run(run_id)
-        settings = config.settings_payload(chain_id, row.get("settings_version_id"))
+        settings = config.settings_payload(chain_id, row.get("settings_version_id"),
+                                           config_id)
         engine = Engine(
             chain,
             drafts=entries,
-            previous=previous_picks(chain_id, run_id),
+            previous=previous_picks(chain_id, run_id, config_id),
             peaks=peak_market_caps(chain_id),
         )
         # The stopwatch spans the whole round, not just the engine: the write happens out here,
@@ -319,7 +381,7 @@ def run_chain(chain_id: str, run_id: str) -> dict:
         # round's rows go now, so nothing can be read as if it were this round's opinion.
         # A cleanup that throws is a round that still published: logged, never raised.
         try:
-            for_removal = lexicon.forget_other_rounds(run_id)
+            for_removal = lexicon.forget_other_rounds(chain_id, config_id, run_id)
             if for_removal:
                 result.notes.append("词条清理：移除上一轮 %d 条" % for_removal)
         except Exception:

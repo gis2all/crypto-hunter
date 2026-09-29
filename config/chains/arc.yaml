@@ -1,15 +1,17 @@
 # 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
-# Arc 的节奏与口径照抄 hermes 的 arc-200k 那套。
 # 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
 # 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
-
-chains:
-  - id: arc
-    label: Arc 雷达
+id: arc
+label: Arc
+enabled: true
+explorer: https://explorer.arc.io
+# The chain's own node: LP positions and dev balances are read here, not from an API.
+rpc: https://rpc.arc-scan.org
+configs:
+  - id: default
+    label: 默认配置
     enabled: true
-    explorer: https://explorer.arc.io
-    # The chain's own node: LP positions and dev balances are read here, not from an API.
-    rpc: https://rpc.arc-scan.org
+    locked: true
     sources: [geckoterminal, radardex, tolly, gmgn, goplus, sourcify]
     schedule:
       cron: "0 2,5,8,11,14,17,20,23 * * *"
@@ -42,7 +44,6 @@ chains:
         # 持有人区间：下限以上、上限以下才算合规。上限留空 = 不设上限，缺这个键也等于
         # 不设上限 —— 老快照里没有它，一次升级不该因此开始砍币。
         holders_max: null
-
         # 空壳淘汰: 市值与流动性同时缺失的行直接淘汰。未知不淘汰是用在「源没回答」
         # 上的，而一个只有地址、没有任何市场数据的行不是没回答，是没有可答的东西。
         # 这一条在代码里是默认开启的，写在这里只是让你在设定页看得见、关得掉：
@@ -70,68 +71,6 @@ chains:
         # mintable / blacklist / pausable / is_proxy 照常读、卡片上照常显示，只是不再当门槛：
         # 发射台币的 mint 权大多在发射台合约手里，当门槛会连带误杀（UBI 就是这么被砍的）。
         forbid_dangerous_perms: [hidden_owner, owner_change_balance, can_take_back_ownership]
-        honeypot_max_pct: 45
-      scoring:
-        onchain_weight: 55
-        offchain_weight: 45
-        onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
-        onchain_factor_weights:
-          liquidity: 20
-          volume_24h: 20
-          holders: 20
-          top10_concentration: 20
-          bundling: 20
-        offchain_factor_weights:
-          f_completeness: 20
-          f_substance: 20
-          f_team: 20
-          f_narrative: 20
-          f_community: 20
-    report:
-      per_round: 5
-      push_target: telegram
-      push_content: [cards, table]
-    alerts:
-      rename_count_min: 2
-      rename_count: true
-      creator_token_count: true
-      duplicate_symbol: true
-      missing_socials: false
-
-  - id: bsc
-    label: BSC 雷达
-    enabled: false
-    explorer: https://bscscan.com
-    rpc: https://bsc-dataseed.binance.org
-    sources: []
-    schedule:
-      cron: ""
-      interval_hours: 3
-      timezone: Asia/Shanghai
-      push_delay_minutes: 6
-    pipeline:
-      scan_limit: 0
-      scan_sources: []
-      gate_limit: 20
-      prefilter:
-        market_cap_min_usd: 0
-        market_cap_max_usd: 200000
-        liquidity_min_usd: 8000
-        volume_24h_min_usd: 1000
-        holders_min: 150
-        # 持有人上限，留空 = 不设上限。
-        holders_max: null
-        top10_max_pct: 40
-        bundling_max_pct: 25
-        forbid_honeypot: true
-        # 零数据淘汰: how many of the five ranking factors must carry a number once every
-        # source has answered. 0 switches the rule off.
-        min_scored_fields: 1
-      safety:
-        require_verified_source: true
-        source_verification_mode: dual
-        lp_unjudged_passes: true
-        forbid_dangerous_perms: [mintable, blacklist, pausable, hidden_owner]
         honeypot_max_pct: 45
       scoring:
         onchain_weight: 55

@@ -140,31 +140,49 @@ _MARKUP = re.compile(r"<[^>]+>")
 
 
 
-def save_sources(chain_id: str, ca: str, pages: list[dict]) -> None:
+def save_sources(chain_id: str, ca: str, pages: list[dict],
+                 config_id: str = "default") -> None:
     """Record which pages an entry was read from, so the archive can link them."""
     now = db.now_iso()
     conn = db.connect()
     try:
         for page in pages:
             conn.execute(
-                "INSERT INTO lexicon_sources (ca, chain_id, kind, url, fetched_at, note)"
-                " VALUES (?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(ca, url) DO UPDATE SET fetched_at = excluded.fetched_at"
+                "INSERT INTO lexicon_sources (ca, chain_id, config_id, kind, url,"
+                " fetched_at, note)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(chain_id, config_id, ca, url) DO UPDATE SET"
+                " fetched_at = excluded.fetched_at"
                 " WHERE excluded.fetched_at > lexicon_sources.fetched_at",
-                (ca, chain_id, page["kind"], page["url"], now, page.get("note")),
+                (ca, chain_id, config_id, page["kind"], page["url"], now,
+                 page.get("note")),
             )
     finally:
         conn.close()
 
 
-def sources_for(ca: str) -> list[dict]:
-    """The pages behind one entry, newest first."""
+def sources_for(ca: str, chain_id: str | None = None,
+                config_id: str | None = None) -> list[dict]:
+    """The pages behind one entry, newest first.
+
+    The pages belong to the entry and not to the token: a CA screened by two sets of
+    settings on one chain has two cards, each read from its own round's pages. Calling
+    this with no chain reads across all of them, which is what the lexicon screen wants.
+    """
     conn = db.connect()
     try:
-        rows = conn.execute(
-            "SELECT kind, url, fetched_at FROM lexicon_sources WHERE ca = ?"
-            " ORDER BY fetched_at DESC", (ca,)
-        ).fetchall()
+        if chain_id is None:
+            rows = conn.execute(
+                "SELECT kind, url, fetched_at FROM lexicon_sources WHERE ca = ?"
+                " ORDER BY fetched_at DESC", (ca,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT kind, url, fetched_at FROM lexicon_sources"
+                " WHERE chain_id = ? AND config_id = ? AND ca = ?"
+                " ORDER BY fetched_at DESC",
+                (chain_id, config_id or "default", ca)
+            ).fetchall()
     finally:
         conn.close()
     return [
@@ -517,8 +535,10 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None) -> di
     payload = lexicon.entry_payload(entry, symbol)
     # The pages are stored before the text: evidence is worth keeping even when the write
     # that follows it is refused, and the card can then show what was read either way.
-    save_sources(chain_id, ca, pages)
-    lexicon.store_entries(chain_id, str(row.get("run_id") or ""), {ca: payload})
+    config_id = str(row.get("config_id") or "default")
+    save_sources(chain_id, ca, pages, config_id=config_id)
+    lexicon.store_entries(chain_id, str(row.get("run_id") or ""), {ca: payload},
+                          config_id=config_id)
     log.info("research %s: %d/%d pages, %d posts, handle %s, model %.1fs, total %.1fs",
              ca, len(pages), len(links), len(gathered.get("timeline") or ()),
              gathered.get("official") or "-", model_s, time.monotonic() - started)
@@ -544,8 +564,10 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     """
     if not targets or not llm.configured():
         return {}
+    config_id = str(chain.get("config_id") or "default")
     rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
-             "symbol": target.get("symbol"), "run_id": run_id} for target in targets]
+             "config_id": config_id, "symbol": target.get("symbol"),
+             "run_id": run_id} for target in targets]
     total = len(rows)
     done = 0
 

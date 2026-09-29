@@ -43,7 +43,7 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .main{flex:1;min-width:0}
 .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;
   padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
-.topbar h1,.params-head h2{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.topbar h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
 .bhead{display:flex;align-items:center;border-bottom:1px solid var(--hair);background:var(--surface)}
 .batch{display:flex;align-items:center;gap:6px;padding:7px 14px;border-right:1px solid var(--hair);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .batch b{color:var(--muted);font-weight:400}
@@ -241,11 +241,18 @@ details[open] .det-sum:before{content:'-'}
   background:var(--surface-warm);font-size:11.5px;color:var(--fg-2);line-height:1.65}
 .dirtybar b{color:var(--warn-fg)}
 
+/* One register for the settings row's right column (2026-09-29, user). Units and operators
+   were already --muted while every other answer in the column - typed values, checkbox
+   titles, derived readings, read-only readouts and the bare fallback text - sat in --fg,
+   so a single row read as two colours. Past the label the column is one answer, so it
+   reads in one register. The picker that replaced the native select takes the same ink;
+   its line sits with the picker, in app.css. The checkbox tick is a data-URL image, so it
+   does not follow this colour. */
 .prow input.num{width:80px;height:var(--ctrl-h);padding:0 6px}
 .prow .unit{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .prow .op{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .prow .dim{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-left:6px;font-weight:400}
-.prow .chk{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--fg)}
+.prow .chk{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .prow .chk input{width:auto;margin:0}
 .prow.wide{flex-wrap:wrap;row-gap:7px}
 .prow.wide .field{flex:1 1 100%;margin-left:128px;flex-wrap:wrap;justify-content:flex-start;gap:14px;row-gap:7px}
@@ -256,11 +263,9 @@ details[open] .det-sum:before{content:'-'}
 .prow.ro{background:var(--surface)}
 .prow.ro>label{color:var(--muted)}
 .psub{padding:7px 12px 5px;font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.02em;background:var(--surface);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
-.prow .derived{font-family:var(--mono);font-size:10.5px;color:var(--fg)}
-.prow .ro-v{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .derived{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.prow .ro-v{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .chk .cd{font-family:var(--mono);font-size:9.5px;color:var(--muted)}
-.prow .sel{border:1px solid var(--border);height:var(--ctrl-h);padding:0 4px;font-family:var(--mono);
-  font-size:11.5px;background:var(--surface);color:var(--fg)}
 .prow.dirty{background:var(--warn-bg)}
 .prow.dirty>label{color:var(--warn-fg)}
 .drop-x{display:none;color:var(--warn-fg)}
@@ -294,9 +299,6 @@ details[open] .det-sum:before{content:'-'}
 .tab:hover{background:var(--surface)}
 .tab.on{background:var(--accent);color:var(--accent-on);font-weight:600}
 .params{padding:14px 16px 40px}
-.params-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.params-head .chain{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-.params-head .spacer{margin-left:auto}
 .blk{margin-bottom:16px}
 .blk-t{display:flex;align-items:baseline;gap:8px;padding-bottom:7px;margin-bottom:10px;
   border-bottom:1px solid var(--fg)}
@@ -319,9 +321,9 @@ details[open] .det-sum:before{content:'-'}
 .prow{display:flex;align-items:center;gap:8px;padding:8px 12px}
 .prow:hover{background:var(--surface)}
 .prow>label{font-size:11.5px;white-space:nowrap;min-width:120px}
-.prow .field{margin-left:0;flex:1 1 auto;display:flex;align-items:center;gap:6px;justify-content:flex-start}
+.prow .field{margin-left:0;flex:1 1 auto;display:flex;align-items:center;gap:6px;justify-content:flex-start;color:var(--muted)}
 .prow input{width:108px;border:1px solid var(--border);padding:3px 6px;font-family:var(--mono);font-size:11.5px;
-  text-align:right;color:var(--fg);background:var(--surface)}
+  text-align:right;color:var(--muted);background:var(--surface)}
 .prow .drop:empty{display:none}
 .prow .drop{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--muted);
   min-width:54px;text-align:right}
