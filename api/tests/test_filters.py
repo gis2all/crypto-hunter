@@ -53,6 +53,36 @@ def test_prefilter_reports_missing_data_as_unknown_not_ok():
     assert verdict.failed == []
 
 
+def test_the_market_floors_wait_for_the_per_token_read():
+    """Liquidity and 24h volume are judged after the caliber has been bought.
+
+    Off the bulk pull they judge a number the correcting read never happened for - and
+    this half's verdicts are final, so a thin token read on the inflated feed is thin
+    forever. The market-cap band stays free because every bulk source agrees on it."""
+    from app.core.filters import check_prefilter_enriched, check_prefilter_free
+
+    thin = _metrics(liquidity_usd=900, volume_24h_usd=10)
+    free = check_prefilter_free(thin, PRE)
+    assert free.passed and free.failed == []
+
+    verdict = check_prefilter_enriched(thin, PRE)
+    assert not verdict.passed
+    assert DropReason.LIQUIDITY in verdict.failed
+    assert DropReason.VOLUME_24H in verdict.failed
+
+
+def test_a_blank_volume_is_unknown_and_never_a_drop():
+    """A short ranking window leaves the volume blank rather than wrong. That blank has
+    to read as 未判定 - the whole point of gating the field at the source is that the
+    floor then declines to judge it instead of dropping a token on a number that
+    measured something else."""
+    from app.core.filters import check_prefilter_enriched
+
+    verdict = check_prefilter_enriched(_metrics(volume_24h_usd=None), PRE)
+    assert verdict.passed
+    assert verdict.unknown == [DropReason.VOLUME_24H]
+
+
 def test_safety_unverified_source_fails():
     verdict = check_safety(SafetyFacts(source_verified=False), {"require_verified_source": True})
     assert not verdict.passed and DropReason.SOURCE_UNVERIFIED in verdict.failed
