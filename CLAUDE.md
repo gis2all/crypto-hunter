@@ -121,7 +121,7 @@ cd web; npm install; npm run dev
 | 视觉验证的 playwright | 必须给 Chromium 绝对路径：`C:/Users/12620/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe`。 |
 | 服务常驻 `http://127.0.0.1:8787` | 托管 `web/dist`（前端改完要 build ＋ 强刷，见 2.5 / 2.6）。 |
 | 跑 pytest 前先想一下常驻服务 | 保存设定会用 `os.replace` 换掉 `config/chains/<chain>.yaml`，Windows 上目标文件正被别的进程读着的那一刻换不动 —— 抛 `PermissionError [WinError 5]`，整套里偶发一条红（实测 `test_api.py::test_a_text_knob_can_still_be_cleared`，重跑就绿）。判据是「单独跑这条过、只在全套里偶尔不过」——那是抢文件，不是代码坏了。 |
-| 有提交历史，但本次重构大部分还没提交 | 当前分支 `improvement`，`git status` 里仍有大量 ` M` / `??`；删文件前先确认它没被跟踪。 |
+| 删文件前先确认它没被跟踪 | 分支 `improvement`。工作区干净时 `git status -s` 就是空的 —— 判一个文件在不在跟踪用 `git ls-files <path>`，别拿 `git status` 当「一定有东西待提交」。 |
 
 # 3. 任务索引
 
