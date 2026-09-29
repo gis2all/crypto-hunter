@@ -42,20 +42,24 @@ class SettingsIn(BaseModel):
     note: str | None = None
 
 
-def _chain_or_404(chain_id: str) -> dict:
+def _chain_or_404(chain_id: str, config_id: str | None = None) -> dict:
+    """The chain read through one of its sets of settings. 404s on either name."""
     try:
-        return config.chain(chain_id)
+        return config.chain(chain_id, config_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"没有这条链：{chain_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"没有这条链：{chain_id if not config_id else chain_id + ':' + config_id}",
+        )
 
 
-def _yaml_defaults(chain_id: str) -> dict:
+def _yaml_defaults(chain_id: str, config_id: str | None = None) -> dict:
     """The config file's own values, before any saved snapshot is laid over them.
 
     Two readers want the file rather than the merge: the page, which overlays its own
     saved version on top, and `_resolve_blanks`, which has to ask whether a knob shipped
     empty - a question the saved snapshot has already answered differently."""
-    cfg = _chain_or_404(chain_id)
+    cfg = _chain_or_404(chain_id, config_id)
     return {key: cfg.get(key) for key in SECTIONS}
 
 
@@ -149,7 +153,7 @@ def _boxes(weights: dict, path: str, labels: dict[str, str]) -> str:
     A 422 that only says "must sum to 100" leaves the operator adding five numbers by
     hand; naming the rows and printing each one turns it into "move this box". The labels
     come from the page's own model (`forms.field_labels`), so the error and the row above it
-    cannot read differently (C-003).
+    cannot read differently (CLAUDE.md 2.3.3).
     """
     return " ｜ ".join("%s %s%%" % (labels.get(path + key, key), _pct(value))
                       for key, value in weights.items())
@@ -191,49 +195,73 @@ def _validate(payload: dict, labels: dict[str, str]) -> dict:
     return payload
 
 
-def effective_payload(chain_id: str) -> tuple[dict, dict]:
+def effective_payload(chain_id: str, config_id: str | None = None) -> tuple[dict, dict]:
     """The settings in force right now, plus where they came from.
 
     The stored snapshot is overlaid on the YAML rather than replacing it, so a knob
     added to the config after a snapshot was saved still exists (at its YAML default)
     instead of vanishing from the page and being rejected on save.
+
+    One set of settings at a time: a chain's second set has its own chain of versions,
+    and the first set's latest is not a version of this one.
     """
-    base = _yaml_defaults(chain_id)
+    base = _yaml_defaults(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
     conn = db.connect()
     try:
         row = conn.execute(
             "SELECT id, version, payload_json, note, created_at FROM settings_versions"
-            " WHERE chain_id = ? ORDER BY version DESC LIMIT 1",
-            (chain_id,),
+            " WHERE chain_id = ? AND config_id = ? ORDER BY version DESC LIMIT 1",
+            (chain_id, entry["id"]),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
         return base, {
-            "version": 0, "source": "config/chains.yaml", "settings_version_id": None,
-            "created_at": None, "note": None,
+            "version": 0, "source": config.chain_entry(chain_id)["path"],
+            "settings_version_id": None, "created_at": None, "note": None,
         }
-    return config.merge_patch(base, json.loads(row["payload_json"])), {
+    # The snapshot is read against the YAML's shape, so a knob the config dropped is not
+    # a known path here: `_reject_unknown_paths` would otherwise accept a patch aimed at
+    # one and the save path would prune it away again - a save that says it worked and
+    # changed nothing, which is the one outcome that guard exists to prevent.
+    return config.merge_patch(
+        base, config.prune_unknown(base, json.loads(row["payload_json"]))), {
         "version": row["version"], "source": "db", "settings_version_id": row["id"],
         "created_at": row["created_at"], "note": row["note"],
     }
 
 
 @router.get("", response_model=SettingsOut)
-def get_settings(chain_id: str) -> dict:
-    _chain_or_404(chain_id)
-    payload, meta = effective_payload(chain_id)
-    return {"chain_id": chain_id, "payload": payload, **meta}
+def get_settings(chain_id: str, config_id: str | None = None) -> dict:
+    _chain_or_404(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
+    payload, meta = effective_payload(chain_id, entry["id"])
+    return {"chain_id": chain_id, "config_id": entry["id"], "payload": payload, **meta}
 
 
 @router.put("", response_model=SettingsOut)
-def put_settings(chain_id: str, body: SettingsIn) -> dict:
-    chain = _chain_or_404(chain_id)
-    current, _meta = effective_payload(chain_id)
+def put_settings(chain_id: str, body: SettingsIn,
+                 config_id: str | None = None) -> dict:
+    """Save a version, and make this set of settings the chain's live one.
+
+    Saving is where the page's dropdown commits: it shows which set of settings is being
+    edited, so this is the one write that can mean "and use it". A save that left the
+    previous one running would be a save whose effect the operator cannot see, which is the
+    one thing a settings page cannot afford to be.
+    """
+    chain = _chain_or_404(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
+    current, _meta = effective_payload(chain_id, entry["id"])
     _reject_unknown_paths(current, body.patch)
     labels = forms.field_labels(chain)
-    patch = _resolve_blanks(_yaml_defaults(chain_id), body.patch, labels=labels)
-    merged = config.sync_schedule(config.merge_patch(current, patch))
+    base = _yaml_defaults(chain_id, entry["id"])
+    patch = _resolve_blanks(base, body.patch, labels=labels)
+    # A version is the YAML plus every version saved before it, and a merge only ever
+    # adds: a knob the config dropped would otherwise be copied forward for ever. The
+    # shape this version claims to have is the YAML's, so the orphans stop here.
+    merged = config.sync_schedule(
+        config.prune_unknown(base, config.merge_patch(current, patch)))
     _validate(merged, labels)
     conn = db.connect()
     try:
@@ -242,42 +270,44 @@ def put_settings(chain_id: str, body: SettingsIn) -> dict:
             (chain_id,),
         ).fetchone()["v"]
         conn.execute(
-            "INSERT INTO settings_versions (chain_id, version, payload_json, note, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (chain_id, int(latest) + 1, json.dumps(merged, ensure_ascii=False), body.note,
-             db.now_iso()),
+            "INSERT INTO settings_versions (chain_id, config_id, version, payload_json,"
+            " note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (chain_id, entry["id"], int(latest) + 1,
+             json.dumps(merged, ensure_ascii=False), body.note, db.now_iso()),
         )
     finally:
         conn.close()
-    return get_settings(chain_id)
+    config.set_active_config(chain_id, entry["id"])
+    return get_settings(chain_id, entry["id"])
 
 
-def _latest_run(chain_id: str) -> dict | None:
+def _latest_run(chain_id: str, config_id: str | None = None) -> dict | None:
     conn = db.connect()
     try:
         row = conn.execute(
-            "SELECT * FROM runs WHERE chain_id = ? ORDER BY COALESCE(scheduled_at, started_at)"
-            " DESC LIMIT 1",
-            (chain_id,),
+            "SELECT * FROM runs WHERE chain_id = ? AND config_id = ?"
+            " ORDER BY COALESCE(scheduled_at, started_at) DESC LIMIT 1",
+            (chain_id, config.config_entry(chain_id, config_id)["id"]),
         ).fetchone()
     finally:
         conn.close()
     return dict(row) if row else None
 
 
-def _latest_batch(chain_id: str) -> dict | None:
-    run = _latest_run(chain_id)
+def _latest_batch(chain_id: str, config_id: str | None = None) -> dict | None:
+    run = _latest_run(chain_id, config_id)
     if run is None:
         return None
     return report_assemble.batch(run["id"], per_round=5)
 
 
 @router.get("/form", response_model=SettingsFormOut)
-def get_form(chain_id: str) -> dict:
-    chain = _chain_or_404(chain_id)
-    payload, meta = effective_payload(chain_id)
-    batch = _latest_batch(chain_id)
-    run = _latest_run(chain_id)
+def get_form(chain_id: str, config_id: str | None = None) -> dict:
+    chain = _chain_or_404(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
+    payload, meta = effective_payload(chain_id, entry["id"])
+    batch = _latest_batch(chain_id, entry["id"])
+    run = _latest_run(chain_id, entry["id"])
 
     rule_counts = {r["key"]: r["count"] for r in ((batch or {}).get("rule_counts") or [])}
     scores = [c for c in ((batch or {}).get("cards") or [])]
@@ -415,21 +445,23 @@ def _last_batch_text(batch: dict | None) -> str:
 
 
 @router.post("/run", response_model=None)
-def run_now(chain_id: str) -> dict:
+def run_now(chain_id: str, config_id: str | None = None) -> dict:
     """Run this round immediately with the settings in force.
 
     Creating the row is not starting it. The ticker looks at the clock, so it would never
     pick a manual round up - the button has to hand the round to the worker itself, or the
     row sits at `pending` looking like it is still waiting for a slot.
     """
-    _chain_or_404(chain_id)
-    row = pipeline_run.create_run(chain_id, trigger="manual")
-    schedule.submit(chain_id, row["id"])
+    _chain_or_404(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
+    row = pipeline_run.create_run(chain_id, trigger="manual", config_id=entry["id"])
+    schedule.submit(chain_id, row["id"], entry["id"])
     return row
 
 
 @router.post("/recompute", response_model=None)
-def recompute(chain_id: str, body: SettingsIn) -> JSONResponse:
+def recompute(chain_id: str, body: SettingsIn,
+              config_id: str | None = None) -> JSONResponse:
     """Replay the latest snapshots against a candidate patch: who moves, and why.
 
     Blocked on purpose, but not on the口径: those are decided and implemented. A
@@ -438,13 +470,14 @@ def recompute(chain_id: str, body: SettingsIn) -> JSONResponse:
     would produce a diff against a smaller pool than the round actually ran, which is a
     fabricated answer, and worse than no answer.
     """
-    chain = _chain_or_404(chain_id)
-    current, _meta = effective_payload(chain_id)
+    chain = _chain_or_404(chain_id, config_id)
+    entry = config.config_entry(chain_id, config_id)
+    current, _meta = effective_payload(chain_id, entry["id"])
     _reject_unknown_paths(current, body.patch)
     labels = forms.field_labels(chain)
     _validate(config.merge_patch(current,
-                                 _resolve_blanks(_yaml_defaults(chain_id), body.patch,
-                                                 labels=labels)),
+                                 _resolve_blanks(_yaml_defaults(chain_id, entry["id"]),
+                                                 body.patch, labels=labels)),
               labels)
     return JSONResponse(
         status_code=501,
