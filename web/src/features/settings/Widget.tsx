@@ -1,5 +1,7 @@
 import type { SettingsField } from "../../api/client";
 
+import { Pick } from "../../components/Pick";
+
 export type FieldValue = string | number | boolean | string[] | null;
 
 export function stringValue(value: FieldValue): string {
@@ -78,14 +80,17 @@ export function Widget({
   }
 
   if (field.widget === "select") {
+    const current = stringValue(value);
+    const shown = field.options.find((option) => option.value === current)?.label ?? current;
     return (
-      <select className="sel" value={stringValue(value)} onChange={(e) => onValue(e.target.value)}>
-        {field.options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <Pick
+        className="btn sec"
+        label={field.label}
+        current={current}
+        trigger={<span className="pick-cur">{shown}</span>}
+        options={field.options.map((option) => ({ value: option.value, label: option.label }))}
+        onPick={onValue}
+      />
     );
   }
 

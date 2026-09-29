@@ -1,7 +1,8 @@
-import { ChevronRight, Download, FileText, FoldVertical, LayoutGrid, Play, Save, Send, SlidersHorizontal, UnfoldVertical } from "lucide-react";
+import { ChevronRight, Download, FileText, FoldVertical, Layers, LayoutGrid, Play, Save, Send, Settings2, SlidersHorizontal, UnfoldVertical } from "lucide-react";
 
-import type { Batch } from "../../api/client";
+import type { Batch, Chain } from "../../api/client";
 import { Icon } from "../../components/Icon";
+import { Pick } from "../../components/Pick";
 import { whole } from "../../format";
 import type { SettingsState } from "../settings/useSettingsState";
 
@@ -18,6 +19,10 @@ export function TopBar({
   onOverview,
   onExport,
   settings,
+  chain,
+  configId,
+  onSelectConfig,
+  onManage,
   openAll,
   onToggleCards,
 }: {
@@ -26,9 +31,17 @@ export function TopBar({
   onOverview: () => void;
   onExport: () => void;
   settings: SettingsState;
+  chain: Chain | undefined;
+  configId: string;
+  onSelectConfig: (configId: string) => void;
+  /** Open the drawer that adds, renames and drops sets of settings. */
+  onManage: () => void;
   openAll: boolean;
   onToggleCards: () => void;
 }) {
+  const configs = chain?.configs ?? [];
+  const current = configs.find((item) => item.id === configId);
+
   return (
     <header className="topbar">
       {/* No chain name here: the rail on the left already says which radar this is, and a
@@ -82,6 +95,46 @@ export function TopBar({
           </>
         ) : (
           <>
+            {/* Which set of settings this page is editing, and the way to the other three
+                writes. Both stand left of 保存并生效 because they are what the two buttons
+                on their right act on: 保存并生效 writes the set the picker names and
+                立即运行 runs it - the row reads left to right as 这一套 → 全部几套 → 写 → 跑
+                (user, 2026-09-29; moved here from the middle the same day). The list it
+                opens is drawn by the app, not by the platform - see components/Pick.tsx. */}
+            {configs.length ? (
+              <Pick
+                className="btn sec cfg-pick"
+                label="配置"
+                current={configId}
+                trigger={
+                  <>
+                    <Icon as={Layers} size={14} />
+                    <span className="cfg-cur">
+                      {current ? (current.enabled ? `${current.label} · 生效` : current.label) : ""}
+                    </span>
+                  </>
+                }
+                options={configs.map((config) => ({
+                  value: config.id,
+                  label: (
+                    <>
+                      <span className={`cfg-dot${config.enabled ? " live" : ""}`} />
+                      {config.label}
+                      {config.enabled ? <em className="cfg-tag on">生效</em> : null}
+                    </>
+                  ),
+                }))}
+                onPick={onSelectConfig}
+              />
+            ) : null}
+            {/* 配置管理 and 本轮总览 open the same way - a drawer over the page - so they
+                end the same way: one trailing chevron, the app's own mark for "this one
+                leaves the page". */}
+            <button className="btn sec" onClick={onManage}>
+              <Icon as={Settings2} size={14} />
+              配置管理
+              <Icon as={ChevronRight} size={14} />
+            </button>
             <button
               className="btn sec"
               id="save-btn"
