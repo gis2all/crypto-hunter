@@ -14,6 +14,8 @@ Two shapes carry the product:
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 Scalar = str | float | int | bool | list[str] | None
@@ -35,6 +37,21 @@ class HealthOut(BaseModel):
     chains: list[str]
 
 
+class ChainConfigOut(BaseModel):
+    """One set of settings on a chain, as a switcher needs to list it.
+
+    The口径 themselves are read one at a time through `/settings`; this is the name, the
+    switch, and whether the entry can be taken away at all.
+    """
+
+    id: str
+    label: str
+    enabled: bool = True
+    #: The default entry. A chain always keeps one set of settings to fall back to, so
+    #: this one cannot be deleted.
+    locked: bool = False
+
+
 class ChainOut(BaseModel):
     id: str
     label: str
@@ -44,12 +61,68 @@ class ChainOut(BaseModel):
     schedule: dict | None = None
     report: dict | None = None
     pipeline: dict | None = None
+    #: Every set of settings this chain carries, in file order, the default first. The
+    #: settings fields above are the default one's, so a client that never learned about
+    #: the switcher keeps reading exactly what it read before.
+    configs: list[ChainConfigOut] = []
+    #: Something about the file a human has to fix, as the backend's own sentence. A chain
+    #: file with two sets of settings switched on is the one case today: it is read as the
+    #: first one winning, and the page prints this so the file gets edited.
+    warning: str | None = None
+
+
+class LibraryOut(BaseModel):
+    """How much one set of settings has, for the dialog that asks before deleting it."""
+
+    runs: int = 0
+    reports: int = 0
+    entries: int = 0
+    versions: int = 0
+
+
+class ChainConfigDetailOut(ChainConfigOut):
+    """One set of settings, with the size of what deleting it would destroy."""
+
+    library: LibraryOut = LibraryOut()
+
+
+class ChainConfigIn(BaseModel):
+    """Add a set of settings: a fresh one, or a copy of one that exists.
+
+    `label` is what the dialog had in it. Blank means "use the naming rule" - `配置 N` for a
+    new one, `<源> 副本` for a copy - which is what the page prefills anyway.
+    """
+
+    mode: Literal["new", "copy"] = "new"
+    from_config_id: str | None = None
+    label: str | None = None
+
+
+class LabelIn(BaseModel):
+    """The new name for a set of settings. Only the label moves; the id never does."""
+
+    label: str = ""
+
+
+class DeleteIn(BaseModel):
+    """The name typed back by whoever asked for the delete.
+
+    A delete that cannot be undone gets a gate a click cannot pass by accident: the page
+    makes the human type the label, and this is that same word arriving here. A mismatch is
+    a refusal rather than a shrug, because the only caller that gets it wrong is one that
+    did not mean it.
+    """
+
+    label: str = ""
 
 
 class RunOut(BaseModel):
     id: str
     run_key: str
     chain_id: str
+    #: Which of the chain's sets of settings this round ran under. Two sets keep two
+    #: report libraries, and this is what tells them apart.
+    config_id: str = "default"
     trigger: str
     scheduled_at: str | None = None
     status: str
@@ -257,6 +330,7 @@ class BatchOut(BaseModel):
 
 class SettingsOut(BaseModel):
     chain_id: str
+    config_id: str = "default"
     version: int
     source: str
     settings_version_id: int | None = None
@@ -343,6 +417,7 @@ class SettingsFormOut(BaseModel):
 class LexiconOut(BaseModel):
     ca: str
     chain_id: str = "arc"
+    config_id: str = "default"
     run_id: str | None = None
     symbol: str | None = None
     tag: str | None = None
