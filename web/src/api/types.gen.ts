@@ -55,6 +55,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chains/{chain_id}/configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Chain Config
+         * @description Add a set of settings to a chain: a fresh one, or a copy of one that exists.
+         *
+         *     Both are seeded from an entry's five sections and neither brings a report library - a
+         *     new set of settings has earned nothing yet. The new one is born switched off, so adding
+         *     one never moves which set of settings the chain is running.
+         */
+        post: operations["add_chain_config_api_v1_chains__chain_id__configs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chains/{chain_id}/configs/{config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chain Config */
+        get: operations["get_chain_config_api_v1_chains__chain_id__configs__config_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chain Config
+         * @description Delete a set of settings and its whole report library. There is no undo.
+         *
+         *     Three gates, in the order a person meets them. The label typed back has to be the one on
+         *     the entry, because a double confirmation that a click can pass is not a confirmation.
+         *     The entry has to be one that may go at all, which `config.delete_config` refuses for the
+         *     default and for the live one. And no round of it may be in flight, because that round is
+         *     a worker reading rows this would delete out from under it.
+         */
+        delete: operations["delete_chain_config_api_v1_chains__chain_id__configs__config_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Chain Config
+         * @description Rename a set of settings. The id does not move with the label.
+         *
+         *     The id is in five primary keys and in every run key the chain has written, so moving it
+         *     would be a migration of the whole report library to change what a row reads. The label
+         *     is the part a human reads; this is the only part a rename touches.
+         */
+        patch: operations["rename_chain_config_api_v1_chains__chain_id__configs__config_id__patch"];
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -185,7 +244,15 @@ export interface paths {
         };
         /** Get Settings */
         get: operations["get_settings_api_v1_chains__chain_id__settings_get"];
-        /** Put Settings */
+        /**
+         * Put Settings
+         * @description Save a version, and make this set of settings the chain's live one.
+         *
+         *     Saving is where the page's dropdown commits: it shows which set of settings is being
+         *     edited, so this is the one write that can mean "and use it". A save that left the
+         *     previous one running would be a save whose effect the operator cannot see, which is the
+         *     one thing a settings page cannot afford to be.
+         */
         put: operations["put_settings_api_v1_chains__chain_id__settings_put"];
         post?: never;
         delete?: never;
@@ -376,6 +443,77 @@ export interface components {
             /** Links */
             links: components["schemas"]["LinkOut"][];
         };
+        /**
+         * ChainConfigDetailOut
+         * @description One set of settings, with the size of what deleting it would destroy.
+         */
+        ChainConfigDetailOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+            /**
+             * @default {
+             *       "runs": 0,
+             *       "reports": 0,
+             *       "entries": 0,
+             *       "versions": 0
+             *     }
+             */
+            library: components["schemas"]["LibraryOut"];
+        };
+        /**
+         * ChainConfigIn
+         * @description Add a set of settings: a fresh one, or a copy of one that exists.
+         *
+         *     `label` is what the dialog had in it. Blank means "use the naming rule" - `配置 N` for a
+         *     new one, `<源> 副本` for a copy - which is what the page prefills anyway.
+         */
+        ChainConfigIn: {
+            /**
+             * Mode
+             * @default new
+             * @enum {string}
+             */
+            mode: "new" | "copy";
+            /** From Config Id */
+            from_config_id?: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * ChainConfigOut
+         * @description One set of settings on a chain, as a switcher needs to list it.
+         *
+         *     The口径 themselves are read one at a time through `/settings`; this is the name, the
+         *     switch, and whether the entry can be taken away at all.
+         */
+        ChainConfigOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Locked
+             * @default false
+             */
+            locked: boolean;
+        };
         /** ChainOut */
         ChainOut: {
             /** Id */
@@ -400,6 +538,13 @@ export interface components {
             pipeline?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Configs
+             * @default []
+             */
+            configs: components["schemas"]["ChainConfigOut"][];
+            /** Warning */
+            warning?: string | null;
         };
         /** ChangeOut */
         ChangeOut: {
@@ -442,6 +587,22 @@ export interface components {
             score?: number | null;
             /** Reason */
             reason: string;
+        };
+        /**
+         * DeleteIn
+         * @description The name typed back by whoever asked for the delete.
+         *
+         *     A delete that cannot be undone gets a gate a click cannot pass by accident: the page
+         *     makes the human type the label, and this is that same word arriving here. A mismatch is
+         *     a refusal rather than a shrug, because the only caller that gets it wrong is one that
+         *     did not mean it.
+         */
+        DeleteIn: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
         };
         /** DeltaOut */
         DeltaOut: {
@@ -681,6 +842,17 @@ export interface components {
              */
             note: string;
         };
+        /**
+         * LabelIn
+         * @description The new name for a set of settings. Only the label moves; the id never does.
+         */
+        LabelIn: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
         /** LexiconOut */
         LexiconOut: {
             /** Ca */
@@ -690,6 +862,11 @@ export interface components {
              * @default arc
              */
             chain_id: string;
+            /**
+             * Config Id
+             * @default default
+             */
+            config_id: string;
             /** Run Id */
             run_id?: string | null;
             /** Symbol */
@@ -731,6 +908,32 @@ export interface components {
              * @default []
              */
             sources: components["schemas"]["LinkOut"][];
+        };
+        /**
+         * LibraryOut
+         * @description How much one set of settings has, for the dialog that asks before deleting it.
+         */
+        LibraryOut: {
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+            /**
+             * Reports
+             * @default 0
+             */
+            reports: number;
+            /**
+             * Entries
+             * @default 0
+             */
+            entries: number;
+            /**
+             * Versions
+             * @default 0
+             */
+            versions: number;
         };
         /** LinkOut */
         LinkOut: {
@@ -849,6 +1052,8 @@ export interface components {
         RunCreate: {
             /** Chain Id */
             chain_id: string;
+            /** Config Id */
+            config_id?: string | null;
             /**
              * Trigger
              * @default manual
@@ -863,6 +1068,11 @@ export interface components {
             run_key: string;
             /** Chain Id */
             chain_id: string;
+            /**
+             * Config Id
+             * @default default
+             */
+            config_id: string;
             /** Trigger */
             trigger: string;
             /** Scheduled At */
@@ -961,6 +1171,11 @@ export interface components {
         SettingsOut: {
             /** Chain Id */
             chain_id: string;
+            /**
+             * Config Id
+             * @default default
+             */
+            config_id: string;
             /** Version */
             version: number;
             /** Source */
@@ -1091,10 +1306,150 @@ export interface operations {
             };
         };
     };
+    add_chain_config_api_v1_chains__chain_id__configs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChainConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainConfigDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chain_config_api_v1_chains__chain_id__configs__config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainConfigDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chain_config_api_v1_chains__chain_id__configs__config_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_chain_config_api_v1_chains__chain_id__configs__config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainConfigDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_api_v1_runs_get: {
         parameters: {
             query?: {
                 chain_id?: string | null;
+                config_id?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -1317,7 +1672,9 @@ export interface operations {
     };
     get_settings_api_v1_chains__chain_id__settings_get: {
         parameters: {
-            query?: never;
+            query?: {
+                config_id?: string | null;
+            };
             header?: never;
             path: {
                 chain_id: string;
@@ -1348,7 +1705,9 @@ export interface operations {
     };
     put_settings_api_v1_chains__chain_id__settings_put: {
         parameters: {
-            query?: never;
+            query?: {
+                config_id?: string | null;
+            };
             header?: never;
             path: {
                 chain_id: string;
@@ -1383,7 +1742,9 @@ export interface operations {
     };
     get_form_api_v1_chains__chain_id__settings_form_get: {
         parameters: {
-            query?: never;
+            query?: {
+                config_id?: string | null;
+            };
             header?: never;
             path: {
                 chain_id: string;
@@ -1414,7 +1775,9 @@ export interface operations {
     };
     run_now_api_v1_chains__chain_id__settings_run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                config_id?: string | null;
+            };
             header?: never;
             path: {
                 chain_id: string;
@@ -1445,7 +1808,9 @@ export interface operations {
     };
     recompute_api_v1_chains__chain_id__settings_recompute_post: {
         parameters: {
-            query?: never;
+            query?: {
+                config_id?: string | null;
+            };
             header?: never;
             path: {
                 chain_id: string;
