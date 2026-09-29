@@ -124,18 +124,27 @@ def _depth(row: Candidate) -> tuple[float, float]:
 
 
 def _needs_chips(metrics: TokenMetrics) -> bool:
-    """A row the bulk sweep left without one of the chip numbers the hard filter reads.
+    """A row the bulk sweep left without a number the hard filter reads.
 
-    GMGN is the only scan source that carries all three, so this is really the question "did
-    GMGN list this token" - and the read that answers it brings the honeypot flag back with
-    them, which is why that flag is not a fourth condition here. A row that already carries
-    the three carries its flag as well, and the gate re-reads the flag through `check_all`
-    for every candidate either way.
+    The three chip numbers are GMGN's: it is the only scan source that carries all three,
+    so asking for them is really the question "did GMGN list this token" - and the read
+    that answers brings the honeypot flag back with them, which is why that flag is not a
+    fourth condition here. A row that already carries the three carries its flag as well,
+    and the gate re-reads the flag through `check_all` for every candidate either way.
+
+    24h volume joins them for a different reason. The bulk sweep only has GMGN's rank row
+    for it, and that row answers in the window it ranked in - a short-window reading is
+    gated out at the source (`GmGn._metrics`), which leaves the row blank rather than
+    wrong. A blank is the one thing the volume floor cannot judge, so it has to be bought
+    here, where one per-token read settles it for good. Leaving it blank would be worse
+    than asking: 未判定 never rejects, so every short-window row would sail through the
+    floor that exists precisely to keep $6-a-day tokens out of the pool.
     """
     return (
         metrics.holders is None
         or metrics.top10_pct is None
         or metrics.bundling_pct is None
+        or metrics.volume_24h_usd is None
     )
 
 #: This round’s `targets` in, the off-chain judgement for each out, and told how far
