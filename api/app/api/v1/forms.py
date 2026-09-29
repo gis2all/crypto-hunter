@@ -462,7 +462,7 @@ def field_labels(chain: dict) -> dict[str, str]:
 
     Read when the API refuses a save: a refusal has to name the box the operator can see,
     never a dotted path. Composed from the same `build` the page renders, so the answer and
-    the row above it cannot drift apart (C-003). A range is one label over two boxes, so
+    the row above it cannot drift apart (CLAUDE.md 2.3.3). A range is one label over two boxes, so
     its two ends are told apart as 下限 / 上限 - "「市值」不能留空" would not say which.
     """
     labels: dict[str, str] = {}
