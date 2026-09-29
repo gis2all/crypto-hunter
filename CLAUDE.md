@@ -67,15 +67,15 @@ ids: 2.3.x 红线 | 6/8/9.x 规则 | 11.x 曾经的错 | 12.x 实测 | 10.x 待�
 
 ## 2.4 一轮的阶段
 
-`拉扫描源 -> 去重 -> 硬过滤（免费半）-> 补齐链上数据 -> 硬过滤（筹码半）-> 按流动性取前 N -> 安全判定与富集 -> 链下调研与写作 -> 打分排序 -> 选前 N -> 落库出卡 -> 归档 -> 下一轮对比上一轮`
+`拉扫描源 -> 去重 -> 硬过滤（不花钱那一半：市值区间 ＋ 空壳淘汰）-> 补齐链上数据（持有人 / Top10 / 捆绑 / 24h 成交 ＋ 市场口径行情）-> 硬过滤（花钱那一半：流动性 / 24h 成交下限 ＋ 筹码 ＋ 零数据）-> 按流动性取前 N -> 安全判定与距高回撤 -> 链下调研与写作 -> 打分排序 -> 选前 N -> 落库出卡 -> 归档 -> 下一轮对比上一轮`
 
 | 阶段（时间线键） | 做什么 | 实现 |
 | --- | --- | --- |
 | `pull` | 每个扫描源拉一次全量 | `pipeline/collect.py` |
 | `dedupe` | 按 CA 去重，逐字段按优先级合并 | `collect.py` + 6.1.2 |
-| `prefilter` | 免费半硬过滤（只吃粗筛行） | `core/filters.py` `check_prefilter_free`（6.1.3 / 6.1.5 – 6.1.7 / 6.1.14） |
-| `topup` | 逐币补齐持有人 / Top10 / 捆绑 | `decide.Engine._top_up`（6.1.9 / 6.1.10） |
-| `gate` | 按流动性取前 N -> 逐币富集 -> 安全判定 | `decide.Engine._gate`（6.1.11 / 6.2.1..6.2.7） |
+| `prefilter` | 硬过滤第一半：粗筛行就能定的规则（市值区间 ＋ 空壳淘汰） | `core/filters.py` `check_prefilter_free`（6.1.3 / 6.1.5 – 6.1.7 / 6.1.14） |
+| `topup` | 逐币补齐持有人 / Top10 / 捆绑 / 24h 成交，并带回市场口径行情 | `decide.Engine._top_up`（6.1.9 / 6.1.10） |
+| `gate` | 硬过滤第二半（流动性 / 24h 成交下限 ＋ 筹码 ＋ 零数据）-> 按流动性取前 N -> 逐币富集 -> 安全判定 | `core/filters.py` `check_prefilter_enriched` ＋ `decide.Engine._gate`（6.1.11 / 6.2.1..6.2.7） |
 | `draft` | 链下调研与写作（X 搜索 ＋ 读页面 ＋ 写词条） | `report/research.py`（6.4.1 – 6.4.8） |
 | `score` | 链上分位 ＋ 链下块 = 综合分 | `core/scoring.py`（6.3.1 – 6.3.4） |
 | `sharpen` | 选出前 `per_round` ＋ 入选后补读 GeckoTerminal | `decide.Engine._picks`（6.2.10 / 9.6.3） |
@@ -166,6 +166,7 @@ cd web; npm install; npm run dev
 | sharpen | 入选之后补读 GeckoTerminal 那一段 |
 | `0` | **是答案，不是缺失**：判空用 `is not None` 而不是 `if value:`，见 6.6.2 |
 | 空列表 | 集合类的 `[]` 算「没答」，不赢走字段，见 6.6.3 |
+| 市场口径 | 一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` / `h24`），不是榜单或发射台自报的那一个，见 6.1.3 |
 
 # 5. 代码地图
 
@@ -191,18 +192,18 @@ cd web; npm install; npm run dev
 
 ## 6.1 硬过滤
 
-先免费后花钱：免费半只吃粗筛行，缺筹码数据的先买回来，再跑筹码半。
+先免费后花钱：第一半只放粗筛行就能定的规则（现在只剩市值区间与空壳淘汰），缺数据的先按 `MARKET_ENRICH` 买回来，再跑第二半。两半的分界是「这个数是不是每个源答得一样」，不是「要不要花钱」。
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
 | 6.1.1 | 拉取：universe 的主源是「池」不是「币」。GeckoTerminal 分页拉池（`FULL_PAGES = 12`，全量 ≈ 3249 个池/币），RadarDEX 一次拉全量做长尾补充（`limit=2000`，覆盖 ≈ 4145）；Arc 没有 token 级列表端点。 | 别拿 RadarDEX 的 `sort=mcap` 当全链排名 —— 它的市值口径与 GMGN / GT 不是一回事（12.1）。 |
 | 6.1.2 | 合并按优先级：一个源一个适配器，同名标量取谁的值由 `collect.py` 的 `DEFAULT_PRIORITY` 定，字段级例外写在 `FIELD_PRIORITY`；集合类型取并集、空列表不赢走字段。 | 细则与反例见 6.6.1 / 6.6.3。 |
-| 6.1.3 · 6.1.5 – 6.1.7 | 免费半只吃粗筛行、不花钱，砍三刀：市值 1 万 – 20 万（`market_cap_min_usd` / `market_cap_max_usd`）、流动性 ≥ 5000（`liquidity_min_usd`）、24h 成交 ≥ 1000（`volume_24h_min_usd`），都在 `config/chains/*.yaml` 的 `pipeline.prefilter`。再加一条空壳淘汰（`require_market_data`，默认开）：市值与流动性**同时**缺失的行直接淘汰（那不是「源没回答」，是「没有可答的东西」；`MISSING_DATA` 在 `PREFILTER_PRIORITY` 排最后）。**持有人是区间**：`holders_min = 100`，`holders_max` 默认 `null` ＝ 不设上限，上下限共用「持有人」这一条规则（`_ceiling`），**缺键 ＝ 无上限**。 | 下限压到 1 万是为了不漏刚起步的那批（Arc 上 85% 的币停在 launchpad 发币时的 5000–9000 U 初始 FDV）。两个反例：老快照没有 `require_market_data` 这个键 → 一轮把四千个空壳行全判成「未知 ＝ 通过」；随手给 `holders_max` 一个数 ＝ 凭空开始砍币，而「市值 1–20 万的币持有人能到多少」在 Arc 上没实测过（10.4）。以后加上限，淘汰计数、漏斗行、设定页那一行都不用跟着改。 |
+| 6.1.3 · 6.1.5 – 6.1.7 | 阈值都在 `config/chains/*.yaml` 的 `pipeline.prefilter`，但**分两半跑**（6.1.8）：第一半（粗筛行就能定、不花钱）只剩市值 1 万 – 20 万（`market_cap_min_usd` / `market_cap_max_usd`）＋ 空壳淘汰（`require_market_data`，默认开：市值与流动性**同时**缺失的行直接淘汰 —— 那不是「源没回答」，是「没有可答的东西」；`MISSING_DATA` 在 `PREFILTER_PRIORITY` 排最后）；流动性 ≥ 5000（`liquidity_min_usd`）、24h 成交 ≥ 1000（`volume_24h_min_usd`）与持有人区间在第二半。**持有人是区间**：`holders_min = 100`，`holders_max` 默认 `null` ＝ 不设上限，上下限共用「持有人」这一条规则（`_ceiling`），**缺键 ＝ 无上限**。 | 为什么只有市值留在第一半：同一个币，市值在 GMGN / DexScreener 两家按美元一致（中位差 2%，实测 2026-09-29；Tolly 有 4.7% 的行差 2 倍以上，12.23），而流动性 / 成交不一致（12.15 / 12.22）——第一半的判决是终审，不能拿没校准的读数开判（动一下就整体重排池子）。下限压到 1 万是为了不漏刚起步的那批（Arc 上 85% 的币停在 launchpad 发币时的 5000–9000 U 初始 FDV）。两个反例：老快照没有 `require_market_data` 这个键 → 一轮把四千个空壳行全判成「未知 ＝ 通过」；随手给 `holders_max` 一个数 ＝ 凭空开始砍币，而「市值 1–20 万的币持有人能到多少」在 Arc 上没实测过（10.4）。以后加上限，淘汰计数、漏斗行、设定页那一行都不用跟着改。 |
 | 6.1.4 | 零数据淘汰：五个排序因子（`scoring.FACTOR_FIELDS`：流动性 / 24h 成交 / 持有人 / Top10 / 捆绑）一个数都没有的按 `missing_data` 淘汰 —— 它没法打分。**只在富集之后判**（`check_all`）；关掉用 `prefilter.min_scored_fields: 0` 或缺键。 | 富集前空字段的含义是「粗筛没带这个字段」；放进 `check_prefilter` 会把粗筛没带字段的行整批误杀。 |
-| 6.1.8 · 6.1.14 | **未判定永不淘汰**：整源缺失记 `None`，既不判通过也不判淘汰。所以筹码半（持有人 / Top10 / 捆绑 / 貔貅）只能跑在补齐之后 —— 只有 GMGN 的批量行全带这三项，粗筛没带的行读出来是 `None`，先按 `MARKET_ENRICH = ("dexscreener", "gmgn")` 把缺的买回来再裁决。 | 反例：两半合成一次，未知等于放行，上千个发射台自报的行直接进池。 |
-| 6.1.9 · 6.1.10 | 补齐链上数据是独立的一次：`_needs_chips` 决定补谁（缺持有人 / Top10 / 捆绑任一项），只补按流动性排在前 `ENRICH_POOL_MULTIPLE × gate_limit` 的行（`gate_limit: 0` 时补全池）；答案落 `item.metrics`，但**不置 `enriched`、不写 `facts`** —— 安全判定仍只由 gate 那一遍给，否则 gate 会以为这个币判过了。补齐走轻量入口 `GmGn.fetch_chips`（只发 `token_stat` 一个请求，不是 `fetch_token` 的四个端点，映射共用 `_stat_facts`）；DexScreener 同批必问 —— 它是行情口径源，而发射台自报的深度是虚的（Tolly 全族 5.52 倍）。 | 用全量 `fetch_token` 的话，这一步的耗时就是「行数 × 0.45s 每主机节流」，worker 开 8 / 16 / 24 都一样（已到节流下限）。 |
+| 6.1.8 · 6.1.14 | 第二半（`check_prefilter_enriched`，跑在补齐之后）：流动性 ≥ 5000、24h 成交 ≥ 1000、持有人区间、Top10 / 捆绑上限、貔貅。**未判定永不淘汰**：整源缺失记 `None`，既不判通过也不判淘汰 —— 所以凡是要读单个币才能定的数都只能放这一半，粗筛没带的行读出来是 `None`，先按 `MARKET_ENRICH = ("dexscreener", "gmgn")` 把缺的买回来再裁决。 | 反例：两半合成一次，未知等于放行，上千个发射台自报的行直接进池。 |
+| 6.1.9 · 6.1.10 | 补齐链上数据是独立的一次：`_needs_chips` 决定补谁（缺持有人 / Top10 / 捆绑 / 24h 成交任一项），只补按流动性排在前 `ENRICH_POOL_MULTIPLE × gate_limit` 的行（`gate_limit: 0` 时补全池）；答案落 `item.metrics`，但**不置 `enriched`、不写 `facts`** —— 安全判定仍只由 gate 那一遍给，否则 gate 会以为这个币判过了。补齐走轻量入口 `GmGn.fetch_chips`（只发 `token_stat` 一个请求，不是 `fetch_token` 的四个端点，映射共用 `_stat_facts`）；DexScreener 同批必问 —— 它是市场口径源，而发射台自报的深度是虚的（Tolly 全族 5.52 倍）；短窗口读出来的成交量在这里留空，等这一遍按币问回来（12.22）。 | 用全量 `fetch_token` 的话，这一步的耗时就是「行数 × 0.45s 每主机节流」，worker 开 8 / 16 / 24 都一样（已到节流下限）。 |
 | 6.1.11 | 短名单排序键 ＝ 流动性：`_depth` 按流动性降序，**完全相同**才用 24h 成交额破平 —— 成交额永远不会把浅池排到深池前面。 | 反例：用 `min(流动性, 成交额)` 或拿成交额当主键，深但没量的池会被刷量的浅池挤掉。 |
-| 6.1.12 | 淘汰数按优先级累计，不是独立计数：优先级顺序即设定页 `RULE_ROWS` 顺序 —— 市值 -> 流动性 -> 持有人 -> Top10 -> 捆绑 -> 貔貅 -> 24h 成交 -> 源码 -> LP -> 危险权限；**同时踩真阈值的仍记在阈值那一行**（距高回撤排最后）。实现是 `core/funnel.py` 的 `cumulative_drop_counts` / `DROP_PRIORITY`。 | 各行独立计数，加起来就不等于 `dropped`。 |
+| 6.1.12 | 淘汰数按优先级累计，不是独立计数：优先级顺序即设定页 `RULE_ROWS` 顺序 —— 市值 -> 流动性 -> 持有人 -> Top10 -> 捆绑 -> 貔貅 -> 24h 成交 -> 源码 -> LP -> 危险权限；**同时踩真阈值的仍记在阈值那一行**（距高回撤排最后）。这个顺序是**归属顺序**，不是运行顺序 —— 流动性 / 成交的下限现在跑在第二半（6.1.8）。实现是 `core/funnel.py` 的 `cumulative_drop_counts` / `DROP_PRIORITY`。 | 各行独立计数，加起来就不等于 `dropped`。 |
 | 6.1.13 | 距高回撤：回撤 ≤ `-70%` 淘汰，**三个读数任一枚举跌够即淘汰**，不是三个都要同意。读数三条：① **源高点** `metrics.high_market_cap_usd`（GMGN `history_highest_market_cap`，随 pull 就来，是测量值）；② **库记录高点** `tokens.peak_market_cap_usd`（每轮把源高点回写，upsert 只升不降，所以源沉默的轮次也仍有真高点）；③ **池面高点** `metrics.drawdown_pct`（GeckoTerminal 按池子全历史日线，`ATH_DAYS = 1000`）。噪声闸 `HIGH_SANITY_MULTIPLE = 50`：任何高点超过链市值上限 ×50 视为解析噪声丢弃（三个来源共用）。 | — |
 | 6.1.13 | 距高回撤的例外与落点：整源沉默（`drawdown_unread` 未置位）＝ 放行（**首见不算「未知」**）；池面**读失败**（429 / 超时，`fetch_token` 置 `drawdown_unread = True`）＝ 一个没问到的问题、不是答案，记**未判定**而非静默放行。gate **不买**池面读数（一次问二十个会被 GeckoTerminal 打限流），池面由画卡那一遍顺带买（`_picks` 的 `_enrich(only=DEFERRED_ENRICH)` 之后 `check_drawdown` 再判一次，跌够当场淘汰、顺位补下一个，所以卡片数不会因此变少），且**这一遍记 `unknown`**（池面读失败的入选币在报告里显示未判定，不是静默通过）。键 `pipeline.prefilter.drawdown_max_pct`；配套 `geckoterminal.py` 的 `_ath_pools()` 取最深池 ＋ 第二深池（≥ 最深 10%）各读一条日线、取较大高点，`_read()` 对 429 退避重试（5 / 10 / 15s，`RATE_LIMIT_TRIES = 3`）、404 记 `NEGATIVE`，`OHLCV_TTL` 6h → **24h**。 | 反例：要求三读数一致 → 那批 169 个已跌够的币一个没淘汰，ARCAT 漏进报告（12.4）。 |
 
@@ -214,13 +215,13 @@ cd web; npm install; npm run dev
 | --- | --- |
 | 全链扫描（`scan_sources`） | gmgn / radardex / tolly / geckoterminal |
 | 安全与源码 | goplus（貔貅、税、危险权限、`dex[]` / `holders[]` / `lp_holders[]`）/ sourcify（源码验证） |
-| 只补链接（`registry.ENRICH_ONLY`） | dexscreener：只填 `socials` / `websites` / `description`，**不填任何进分的数** |
+| 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`** —— 它是市场口径源，而它没有全链列表，所以只可能赢下逐币那一遍（6.2.1） |
 | 挖链找页面（在 `app/search/`，不在 `sources/`） | X 高级搜索（`search/engines/xsearch.py`，cookie 子进程，不吃 token）＋ `identify` 读页面互证；只交出候选链接，tier 由 `identify` 挣 |
 | 链上直读 | `sources/onchain.py` 走链自己的 RPC（LP 位置、dev 余额） |
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 6.2.1 | 扫描源与富集源分开：`scan_sources` 只放能供全链表的那几家；`registry.ENRICH_ONLY` 的源（当前只有 dexscreener）**不进扫描**，只在逐币那一遍被问，且只允许填链接类字段 —— 任何进分的数都不许从它来。 | 把 dexscreener 加进 `scan_sources`，它的行情口径就混进分位分母（6.3.1）。 |
+| 6.2.1 | 扫描源与富集源分开：`scan_sources` 只放能供全链表的那几家；`registry.ENRICH_ONLY` 的源（当前只有 dexscreener）**不进扫描**，只在逐币那一遍被问。它在两处上场：填 `socials` / `websites` / `description`，**并领跑四个市场数与 `price_change_24h_pct`**（`collect.FIELD_PRIORITY` 里排第一）—— 它是市场口径源，而 `fetch_universe` 返回空，所以它只可能赢下逐币那一遍。 | 反例：把 dexscreener 加进 `scan_sources` —— 它没有全链列表，只会在凭证行里挂一个 0。真正的代价在别处：只有被逐币补齐的那批行带市场口径，池子里其余行还是粗筛口径，分位分母因此是混的（10.9）。 |
 | 6.2.2 | GoPlus 独占 `pool_list` / `top_holders` / `burn_pct` / `locked_holder_pct` / `contract_holder_pct` / `transfer_tax_pct`；`holders` / `top10_pct` / `buy_tax_pct` / `sell_tax_pct` 以 gmgn 为主、goplus 兜底（一次响应 34 个字段，只用其中一部分是浪费）。写在 `pipeline/collect.py` 的 `FIELD_PRIORITY`。 | 让 gmgn 抢 `pool_list`，它的空列表会把 goplus 的答案挡在外面（6.6.3）。 |
 | 6.2.3 | blockscout **不在 `scan_sources`**：它仍在合并优先级链里做兜底，但列表接口只有持有人数、市值与流动性全空，会把候选池灌成四千个。explorer 的 `blockscout_checked` 不走 `http.cached`。 | 「浏览器不认识这个地址」每轮都会重问，这是已知的重复代价。 |
 | 6.2.4 | 税率只认 GMGN 安全表：读 `gmgn.ai/api/v1/token_security_evm/{chain}/{ca}` 的 `total_buy_tax` / `total_sell_tax`（缓存 6h）；所以 `FIELD_PRIORITY` 里 `buy_tax_pct` / `sell_tax_pct` **只列 gmgn**，没有表的标的宁可显示「—」。同一张表带 `is_honeypot`，是貔貅判定的第二声（三态另有实现，见 8.1.7）。 | GMGN 排行行的税率是占位 0、goplus 的税率在 Arc 上也全是 0，而 **0 是「有值」、会赢走字段** —— 把 goplus 兜底进来，报告里全部税率的 0 都是假的。 |
@@ -235,7 +236,7 @@ cd web; npm install; npm run dev
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 6.3.1 | 分位分母 ＝ **本轮硬过滤幸存者**（不是全历史池，也不是过完安全门槛的池）：`core/scoring.py` 的 `CandidateSetPercentile`，中点法 `(below + 0.5*ties)/n`；分母由 `universe.metrics` 的**粗筛视图**构造。 | 反例：换成富集后的 `item.metrics`，被富集的那十几个会改分母，同一支币的分数随分批顺序漂移。 |
+| 6.3.1 | 分位分母 ＝ **本轮硬过滤幸存者**（不是全历史池，也不是过完安全门槛的池）：`core/scoring.py` 的 `CandidateSetPercentile`，中点法 `(below + 0.5*ties)/n`；分母用**补齐后的** `item.metrics` 构造（`decide.py` 在 gate 之后建它），为的是让这个币和它比较的池子在同一口径上。 | 代价：**分母因此是混口径的** —— 被补齐的行是 DexScreener 的市场口径，没被补齐的行还是粗筛口径（实测 97 个幸存者里 58 个 gmgn / 34 个 dexscreener / 5 个 tolly，见 10.9）。所以别再把新源塞进 `scan_sources` 想「顺手校准」（6.2.1），也别指望分位对口径免疫。 |
 | 6.3.2 | 五个链上因子 ＋ 两个逆向因子：`scoring.FACTOR_FIELDS` = 流动性 / 24h 成交 / 持有人 / Top10 / 捆绑；逆向因子 `REVERSE_FACTORS = {top10_concentration, bundling}`（越小越好，分位反算）。 | 反例：把 Top10 / 捆绑当正向因子，筹码越集中分越高。 |
 | 6.3.3 | 综合分 = 链上质量 ＋ 链下调研：`onchain_weight` 默认 55%、`offchain_weight` 默认 45%（`config/chains/*.yaml`，以 `settings_versions` 表为准）；两块各自的五个因子带一套 `*_factor_weights`（出厂各 20%，见 8.2.9），合成时按权重归一，缺项读 0 不进分母。 | 两层权重都在设定页上、落库成设定版本、下一轮生效；两个总权重合计与每套五个因子合计都必须 = 100%，否则 422（`settings.py` 的三条 detail）。 |
 | 6.3.4 | 链下调研没落地的标的 = `pending`（冷启动）：本轮调研还没回来的，既不参与排名也不显示 0 分，等它落地后下一轮才有分数（`scoring.score_token` 的 `pending`）。 | 给 0 分的话，一个刚部署、还没来得及调研的币会被排到末尾当成「差」（6.5.11）。 |
@@ -317,7 +318,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 6.6.6 | 卡片读数取「先有值的那一份」：同一批读数库里存两份（`metrics` 批量榜单、`safety` 逐币判定），`cards._either(metrics, safety, key)` 逐字段取。 | 硬过滤与安检读的是 `metrics`，所以取错只是显示错、不是判断错 —— 但显示错同样要修。 |
 | 6.6.7 | 税率只认 GMGN 安全表（见 6.2.4）；`dex[].pool_fee` 在 v4 上不可读，**池子清单不印费率**。 | 印上卡片那一列全是「—」。 |
 | 6.6.8 | 事实表只有一份实现：`report/facts.py` 的 `lines()` / `block()` / `safety_line()` 由**卡片与词条两处共用**，缺值打印「—」（「五个源都没这个数」本身就是事实）。 | 两边各拼一份，同一轮里两处对同一个字段的取值就不一样（6.5.8 的「永远写未判定」就是这么来的）。 |
-| 6.6.9 | 链接逐币从 DexScreener 读（`sources/dexscreener.py`：只填 `socials` / `websites` / `description`，**不填任何进分的数**）；它不在 `sources:` 里，而是 `registry.ENRICH_ONLY`，由 `Engine._enrich` 在逐币那一遍问 —— 位置在写词条之前，所以链接是写作输入的一部分，而 X 搜索挖到的候选链接是另一条来源（6.4.3 / 6.4.4）。取值只认 `baseToken.address` 命中的那一对，否则若答案里只有一条链才接受；社媒的 handle / 裸域名由 `base.social_url` / `base.web_url` 补主机与 scheme（RadarDEX / Tolly / GMGN 共用）。 | 反例：另一条链的 X 句柄写到这张卡上 —— 比空着更糟。 |
+| 6.6.9 | 链接逐币从 DexScreener 读（`sources/dexscreener.py`：填 `socials` / `websites` / `description`，**并在 `FIELD_PRIORITY` 里领跑四个市场数与 `price_change_24h_pct`**，见 6.2.1）；它不在 `sources:` 里，而是 `registry.ENRICH_ONLY`，由 `Engine._enrich` 在逐币那一遍问 —— 位置在写词条之前，所以链接是写作输入的一部分，而 X 搜索挖到的候选链接是另一条来源（6.4.3 / 6.4.4）。取值只认 `baseToken.address` 命中的那一对，否则若答案里只有一条链才接受；社媒的 handle / 裸域名由 `base.social_url` / `base.web_url` 补主机与 scheme（RadarDEX / Tolly / GMGN 共用）。 | 反例：另一条链的 X 句柄写到这张卡上 —— 比空着更糟。 |
 
 ## 6.7 读数与漏斗
 
@@ -522,6 +523,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 10.6 | 深色主题的状态边框对比度不达标（2.29 / 2.37 / 1.63:1，8.6.7） | 要达标就把 `--ok-border` / `--warn-border` / `--danger-border` 各提一档。 |
 | 10.7 | 链上读路径要再压，只能减少「哪些读是必需的」 | 30 次 / 轮里没有可去的重复调用（9.1.5）。 |
 | 10.8 | 链下调研五项的边界 | 第 2 项（项目实质与亮点）与第 4 项（叙事与官方关系）的界线、粗筛条件、`per_round` 取值、判定细则、链下调研块的其他参数（8.2.9）。**权重已定**，不在待决里：五项各有百分比旋钮、出厂等权 20%。 |
+| 10.9 | 分位分母是混口径的：只有被逐币补齐的那批行带市场口径（DexScreener），池子里其余行还是粗筛口径 | 池子 165 行里只有 60 行进得了补齐，实测 97 个幸存者的口径分布是 gmgn 58 / dexscreener 34 / tolly 5（12.26）；两端流动性中位差 1.11 倍、最大 10 倍（12.23），所以同一个分位里既有市场口径也有粗筛口径，流动性分位会随「这行补没补」漂移（实测中位 0.041、p90 0.32、最大 0.73，12.24）。三条路 —— ① 全池买一遍 DexScreener（90s 量级），但 `MARKET_ENRICH` 是 dexscreener ＋ gmgn，全池走这条路会把 GMGN 那半边也拉到全池（那才是 20 分钟的来源），要只买行情得给 `_top_up` 单开一条只带 dexscreener 的路；② 按口径切开各算各的分位（分母变小，可比性反而更差）；③ 认了它并写进文档（现状）。**动它要重跑一轮对比，别顺手改。** |
 
 # 11. 附录：为什么这么定
 
@@ -550,6 +552,9 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 11.19 | `CH_LLM_TIMEOUT` 180s × `CH_LLM_TRIES` 2 → 一次死掉的调用独占 366s（那一轮 draft 421s） | 6.4.8 |
 | 11.20 | 第三方渲染 `r.jina.ai` 与 `networkidle` 等待策略都试过并放弃 | 6.4.6 ｜ 12.12 |
 | 11.21 | 设定 patch 在两层嵌套组上做浅合并 → 同一次保存改两个权重只留下最后一个 | 8.2.1 |
+| 11.22 | DexScreener 的四个市场数在 `FIELD_PRIORITY` 里一个都没列 → 一轮又一轮地花钱问、问完丢掉（17,573 张快照的 `provenance` 里它只赢过 `socials` / `websites`） | 6.1.3 ｜ 6.2.1 ｜ 12.23 |
+| 11.23 | GMGN 榜单的 `volume` / `price_change_percent` 跟着查询窗口走，下游一律当 24h 记 → 5m 榜的 $47 被当成「一天成交 $47」淘汰（CORTEX 真实 24h $14,549） | 6.1.9 ｜ 12.22 |
+| 11.24 | 流动性 / 24h 成交的下限跑在不含逐币读数的第一半 → 判的是没校准的读数（Tolly 深度可以差 20 倍、GMGN 的成交是别的窗口） | 6.1.3 ｜ 6.1.8 |
 
 # 12. 附录：实测台账
 
@@ -560,7 +565,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 12.1 | RadarDEX 的市值口径与 GMGN / GeckoTerminal 不是一回事（拿 `sort=mcap` 当全链排名会错） | 6.1.1 |
 | 12.2 | 全链口径：GeckoTerminal 分页全量 ≈ 3249 个池/币，RadarDEX 一次拉全量覆盖 ≈ 4145；Arc 上 85% 的币停在发行时的 5000–9000 U 初始 FDV（这就是市值下限压到 1 万的依据） | 6.1.1 ｜ 6.1.5 ｜ 6.1.6 |
 | 12.3 | 补齐 29 行：全量 `fetch_token` 53.1s、轻量 `fetch_chips` 13.6s；worker 开 8 / 16 / 24 都是 13.6s（已到每主机节流下限，加并发无用） | 6.1.14 |
-| 12.4 | 169 个已跌够的币一个没淘汰；ARCAT：库内高点 $266K、GMGN 源高点 $5.05M、现市值 $113.8K → 免费半段 −97.7% 直接淘汰 | 6.1.13 |
+| 12.4 | 169 个已跌够的币一个没淘汰；ARCAT：库内高点 $266K、GMGN 源高点 $5.05M、现市值 $113.8K → −97.7% 直接淘汰 | 6.1.13 |
 | 12.5 | gate 一次问二十个候选被 GeckoTerminal 打限流：`ok=24 fail=18 retry=78`，gate 54s → 242s | 6.1.13 ｜ 6.2.10 |
 | 12.6 | RPC 请求数 40 → 30 / 轮（≈ −25%）；`gate` 36–44s → 29s | 9.1.3 |
 | 12.7 | 单次上链请求 2.2–2.5s；并发 1 / 4 / 8 / 12 = 2.16 / 2.37 / 2.88 / 3.56s；同样两次请求，单发 4.61s vs 打包成 JSON-RPC 批量 3.54s | 9.1.1 |
@@ -578,3 +583,8 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 12.19 | 思考关掉后 research 单次 11–17s（300s 只剩兜底作用） | 6.4.8 |
 | 12.20 | 节点延迟轮间 2.2–4s 波动，`eth_getLogs` 的调用次数也轮间不可比 | 7.1.5 ｜ 9.1.4 |
 | 12.21 | 一轮有九个「阶段」键（耗时日志与运行面板用）与五个进度段，两套名字很容易被当成一套 | 2.4 ｜ 9.6.1 |
+| 12.22 | GMGN 排行接口 `/rank/arc/swaps/{period}` 只返回一个 `volume`，跟着窗口走：同一个 CORTEX 读到 47.58（5m）/ 59.56（1h）/ 9386.81（6h），两个独立源给的 24h 是 14,549；40 个币跨窗口比对：`volume`（131 倍）、`price_change_percent`（符号都反）、`swaps` / `buys` / `sells` 是窗口量，`market_cap` / `liquidity` / `price` / `holder_count` 只差采样抖动（0.01%） | 6.1.9 ｜ 11.23 |
+| 12.23 | 同一批 Arc 币三个源的口径比：市值 DexScreener / GMGN 中位 0.98（n=24，0.92–1.03），Tolly / GMGN 中位 1.00 但 4.7% 的行差 2 倍以上（n=85，最多 10 倍）；流动性 DexScreener / GMGN 中位 1.11（n=24，1.00–10.23），DexScreener / Tolly 中位 1.89（n=42，0.09–9.99）—— Tolly 的偏差没方向：发射台行上高 5.52 倍（12.15），排行行上低约一半 | 6.1.3 ｜ 6.3.1 |
+| 12.24 | 97 个幸存者的流动性分位，同池对比「改口径前 / 后」：中位差 0.041、p90 0.32、最大 0.73（43 行差过 0.05）—— 这一改会整体重排池子 | 6.3.1 ｜ 10.9 |
+| 12.25 | 一轮 165 个池子行里 106 行需要逐币补，只有 60 行进得了补齐（`gate_limit: 20 × ENRICH_POOL_MULTIPLE: 3`）；DexScreener 逐币读 0.55s/次（24 次 13.3s，已是节流下限） | 6.1.9 ｜ 10.9 |
+| 12.26 | 补齐后的 97 个幸存者，流动性口径分布：gmgn 58 / dexscreener 34 / tolly 5；成交口径：gmgn 41 / dexscreener 35 / tolly 16 / 空 5 | 6.3.1 ｜ 10.9 |
