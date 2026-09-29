@@ -417,6 +417,11 @@ html{scrollbar-gutter:stable}
    In the note bar it floats rather than sits in the flow: the bar is a single wrapping
    sentence, and a float lets the text wrap under the icon instead of being pushed below
    it or run under it.
+   The icon and its label carry no box of their own (user, 2026-09-29): a 1px rectangle
+   drawn around two words that already sit alone at the end of the header, and the open
+   state's fill drew a second box. Hover and open now say themselves in ink, the way the
+   rest of the header does.
+
 
    proto.css is the frozen baseline, so none of this is written there. */
 
@@ -434,10 +439,9 @@ html{scrollbar-gutter:stable}
 .pgroup-h .note-help{align-self:center}
 
 .note-help-btn{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 5px;
-  border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;
+  border:0;background:none;color:var(--muted);cursor:pointer;
   font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;line-height:1;white-space:nowrap}
-.note-help-btn:hover{border-color:var(--fg-2);color:var(--fg)}
-.note-help.open .note-help-btn{border-color:var(--fg-2);background:var(--surface-warm);color:var(--fg)}
+.note-help-btn:hover,.note-help.open .note-help-btn{color:var(--fg)}
 .note-help .note-help-pop{display:none;position:absolute;top:calc(100% + 7px);right:0;z-index:40;
   width:min(440px,58vw);padding:9px 11px;border:1px solid var(--border);background:var(--surface-warm);
   box-shadow:var(--shadow);font-family:var(--mono);font-size:10.5px;line-height:1.8;
