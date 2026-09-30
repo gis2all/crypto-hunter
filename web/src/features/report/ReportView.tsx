@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 
 import { errorText } from "../../api/client";
-import type { Batch } from "../../api/client";
+import type { Batch, Card as CardModel } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { BatchHead } from "./BatchHead";
 import { Card } from "./Card";
@@ -18,6 +18,8 @@ export function ReportView({
   onNext,
   openAll,
   bulkTick,
+  favorited,
+  onFavorite,
 }: {
   batch: Batch | undefined;
   loading: boolean;
@@ -28,6 +30,9 @@ export function ReportView({
   onNext: () => void;
   openAll: boolean;
   bulkTick: number;
+  /** The CAs the shelf already holds. A report page only asks - the shelf is another view. */
+  favorited: Set<string>;
+  onFavorite: (card: CardModel) => void;
 }) {
   if (error) {
     return (
@@ -60,7 +65,14 @@ export function ReportView({
       <div className="grid">
         {batch.cards.length ? (
           batch.cards.map((card) => (
-            <Card key={card.ca} card={card} openAll={openAll} bulkTick={bulkTick} />
+            <Card
+              key={card.ca}
+              card={card}
+              openAll={openAll}
+              bulkTick={bulkTick}
+              favorited={favorited.has(card.ca)}
+              onFavorite={() => onFavorite(card)}
+            />
           ))
         ) : (
           <div className="note-bar">

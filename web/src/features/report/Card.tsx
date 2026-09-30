@@ -1,5 +1,5 @@
-import { Boxes, ChevronDown, ChevronRight, ShieldCheck } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Boxes, ChevronDown, ChevronRight, ShieldCheck, Star } from "lucide-react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
@@ -90,10 +90,21 @@ export function Card({
   card,
   openAll,
   bulkTick,
+  favorited = false,
+  onFavorite,
+  foot,
 }: {
   card: CardModel;
   openAll: boolean;
   bulkTick: number;
+  /** Already on the shelf. The star is drawn filled and clicking it takes the card off. */
+  favorited?: boolean;
+  /** Keep this card, or take it off. Absent where there is no shelf to act on. */
+  onFavorite?: () => void;
+  /** A second footer band, under the links. Only the shelf passes one: it is where a kept
+   *  card says which round and which set of settings it was read as, and a card drawn from
+   *  the round it is standing in has nothing to say there. */
+  foot?: ReactNode;
 }) {
   const short = `${card.ca.slice(0, 6)}…${card.ca.slice(-4)}`;
   // Ranks 1-3 carry the podium strip; the colours live in app.css.
@@ -113,6 +124,21 @@ export function Card({
           </span>
         </div>
         <div className="head-r">
+          {/* The star stands beside the score because it acts on this card: it is the one
+              control on a card that keeps it rather than opens it, and it is drawn filled
+              once the shelf holds this CA. */}
+          {onFavorite ? (
+            <button
+              type="button"
+              className={"fav" + (favorited ? " on" : "")}
+              aria-pressed={favorited}
+              aria-label={favorited ? "取消收藏" : "收藏这张卡"}
+              title={favorited ? "取消收藏" : "收藏这张卡"}
+              onClick={onFavorite}
+            >
+              <Icon as={Star} size={14} />
+            </button>
+          ) : null}
           <span className="score">{whole(card.score)}</span>
           <span className="score-label">综合分</span>
         </div>
@@ -295,6 +321,8 @@ export function Card({
           </Fragment>
         ))}
       </footer>
+
+      {foot ? <div className="card-src">{foot}</div> : null}
     </article>
   );
 }
