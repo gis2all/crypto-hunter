@@ -332,6 +332,41 @@ class BatchOut(BaseModel):
     decline: list[DeclineRowOut]
 
 
+
+class FavoriteOut(BaseModel):
+    """One kept card: the reader is following the token, and this is that token's current card.
+
+    A copy rather than a reference, on purpose: a report row is deleted with its round, and
+    a whole report library can be dropped, while a kept card has to stay readable. It is
+    also why `config_id` is not part of the key - a card can come from a chain this app does
+    not screen, so the shelf is keyed by (chain_id, ca) alone. It is a value: the set of
+    settings the round ran under, for the line the shelf prints under the card.
+
+    A round that writes one of these tokens again replaces the payload in place
+    (report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward
+    while `saved_at` stays at the moment the reader kept it.
+    """
+
+    chain_id: str
+    ca: str
+    symbol: str | None = None
+    origin: str = "round"               # round | search
+    origin_run_id: str | None = None
+    origin_label: str = ""
+    score: float | None = None
+    rank: int | None = None
+    config_id: str | None = None
+    saved_at: str
+    updated_at: str
+    card: CardOut
+
+
+class RemovedOut(BaseModel):
+    removed: bool
+
+
+
+
 class SettingsOut(BaseModel):
     chain_id: str
     config_id: str = "default"
