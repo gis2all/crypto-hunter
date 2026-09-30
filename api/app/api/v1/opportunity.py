@@ -38,6 +38,9 @@ def _item(row: dict) -> OpportunityItemOut:
     Both are the same rule - the frontend does not decode anything.
     """
     barrier = [name for name in str(row.get("barrier") or "").split(",") if name]
+    # 成熟度与新机制是「这个东西是什么」的读数，只对 project 有意义。活动卡上留着这两个
+    # 字段是重判前的旧值（2026-10-28 全量重判后还有活动卡带着 maturity）。
+    project = row.get("kind") == "project"
     sources = []
     try:
         sources = json.loads(row.get("sources_json") or "[]")
@@ -62,7 +65,8 @@ def _item(row: dict) -> OpportunityItemOut:
         chain_type=schema.chain_type(row.get("ecosystem")),
         chain_public=schema.chain_is_public(row.get("ecosystem")),
         source_type=row.get("source_type"), risk=row.get("risk"), barrier=barrier,
-        maturity=row.get("maturity"), started_at=row.get("started_at"),
+        maturity=row.get("maturity") if project else "",
+        started_at=row.get("started_at"),
         deadline=row.get("deadline"), status=row.get("status") or "candidate",
         reason=promote.reason_label(row.get("reason")),
         user_state=row.get("user_state") or "active",
@@ -71,7 +75,7 @@ def _item(row: dict) -> OpportunityItemOut:
         discovered_at=row["discovered_at"],
         source_kind=row.get("source_kind"), source_ref=row.get("source_ref"),
         extract_version=row.get("extract_version"),
-        novelty=row.get("novelty"),
+        novelty=row.get("novelty") if project else "",
         steps=[_step(step) for step in row.get("steps") or []],
     )
 
