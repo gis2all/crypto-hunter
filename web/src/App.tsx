@@ -1,10 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Batch } from "./api/client";
-import { useBatch, useCancelRun, useChains, useLiveRun, useRuns } from "./api/hooks";
+import type { Batch, Card as CardModel } from "./api/client";
+import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
+  useKeepFavorite, useLiveRun, useRuns } from "./api/hooks";
 import { OverviewPanel } from "./features/overview/OverviewPanel";
-import { Rail } from "./features/rail/Rail";
+import { FavoritesView } from "./features/favorites/FavoritesView";
+import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
 import { batchToMarkdown, TopBar, type View } from "./features/report/TopBar";
 import { RunPanel } from "./features/run/RunPanel";
@@ -25,6 +27,7 @@ const TERMINAL = new Set(["researched", "cancelled", "failed"]);
 const CHAIN_KEY = "ch.chain";
 const CONFIG_KEY = "ch.config";
 const VIEW_KEY = "ch.view";
+const PLACE_KEY = "ch.place";
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -49,6 +52,9 @@ export default function App() {
   const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
+  // 雷达 or 收藏. The two are places, not tabs: 收藏 is not scoped by the selected chain or
+  // by a set of settings, so it cannot live under 报告 / 设定 - see Rail's Place.
+  const [place, setPlace] = useState<Place>(() => (readPref(PLACE_KEY) === "favorites" ? "favorites" : "radar"));
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [runPanelOpen, setRunPanelOpen] = useState(false);
@@ -60,6 +66,32 @@ export default function App() {
 
   const chain = chains.data?.find((item) => item.id === chainId);
   const configs = useMemo(() => chain?.configs ?? [], [chain]);
+
+  // The shelf, and the two writes a star performs. One query answers both readers: the 收藏
+  // page draws the cards from it, and a report page only asks which of its CAs are on it.
+  const shelf = useFavorites();
+  const keep = useKeepFavorite();
+  const forget = useForgetFavorite();
+  // Scoped to the radar the report page is showing: a CA kept while reading another chain is
+  // not a star on this page. The shelf itself is not scoped by anything.
+  const favCas = useMemo(
+    () => new Set((shelf.data ?? [])
+      .filter((row) => row.chain_id === chainId)
+      .map((row) => row.ca)),
+    [shelf.data, chainId],
+  );
+  // One star, two outcomes. A card already on the shelf is taken off; one that is not is
+  // kept from the round the page is showing, which is where its payload comes from.
+  const onFavorite = (card: CardModel) => {
+    if (!run) {
+      return;
+    }
+    if (favCas.has(card.ca)) {
+      forget.mutate({ chainId, ca: card.ca });
+      return;
+    }
+    keep.mutate({ runId: run.id, ca: card.ca });
+  };
 
   // A remembered radar that is no longer on the rail - dropped from the list, or turned off -
   // is not a place the page can be: the rail draws only the enabled chains (8.3.1), so the
@@ -143,6 +175,10 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
+    savePref(PLACE_KEY, place);
+  }, [place]);
+
+  useEffect(() => {
     if (live) {
       setRunPanelOpen(true);
     }
@@ -193,7 +229,12 @@ export default function App() {
       <Rail
         chains={chains.data}
         activeChainId={chainId}
-        onSelectChain={setChainId}
+        place={place}
+        onSelectPlace={setPlace}
+        onSelectChain={(id) => {
+          setChainId(id);
+          setPlace("radar");
+        }}
         theme={theme}
         onTheme={(next) => {
           saveTheme(next);
@@ -201,48 +242,58 @@ export default function App() {
         }}
       />
       <main className="main">
-        <TopBar
-          view={view}
-          onView={setView}
-          runPanelOpen={runPanelOpen}
-          onToggleRunPanel={toggleRunPanel}
-          hasRun={Boolean(run)}
-          onOverview={() => setOverviewOpen((open) => !open)}
-          onExport={() => batch.data && download(batch.data)}
-          settings={settings}
-          chain={chain}
-          configId={configId}
-          onSelectConfig={setConfigId}
-          onManage={() => setConfigMgrOpen(true)}
-          openAll={bulk.open}
-          onToggleCards={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}
-        />
-        {run ? (
-          <RunPanel
-            run={liveRun.data ?? run}
-            running={live}
-            open={runPanelOpen}
-            batch={batch.data}
-            onCancel={() => run && cancel.mutate(run.id)}
-            cancelling={cancel.isPending}
-          />
-        ) : null}
-        <div hidden={view !== "report"}>
-          <ReportView
-            batch={batch.data}
-            loading={batch.isLoading || runs.isLoading}
-            error={batch.error ?? runs.error}
-            canPrev={batchIndex < list.length - 1}
-            canNext={batchIndex > 0}
-            onPrev={() => setBatchIndex((index) => Math.min(index + 1, list.length - 1))}
-            onNext={() => setBatchIndex((index) => Math.max(index - 1, 0))}
+        {place === "favorites" ? (
+          // The whole list, not just the names: the shelf's chain switcher is a fixed row
+          // read off these (8.7.4), so it needs the order and which of them the rail draws.
+          <FavoritesView chains={chains.data ?? []} />
+        ) : (
+          <>
+          <TopBar
+            view={view}
+            onView={setView}
+            runPanelOpen={runPanelOpen}
+            onToggleRunPanel={toggleRunPanel}
+            hasRun={Boolean(run)}
+            onOverview={() => setOverviewOpen((open) => !open)}
+            onExport={() => batch.data && download(batch.data)}
+            settings={settings}
+            chain={chain}
+            configId={configId}
+            onSelectConfig={setConfigId}
+            onManage={() => setConfigMgrOpen(true)}
             openAll={bulk.open}
-            bulkTick={bulk.tick}
+            onToggleCards={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}
           />
-        </div>
-        <div hidden={view !== "params"}>
-          <SettingsView state={settings} chain={chain} configId={configId} />
-        </div>
+          {run ? (
+            <RunPanel
+              run={liveRun.data ?? run}
+              running={live}
+              open={runPanelOpen}
+              batch={batch.data}
+              onCancel={() => run && cancel.mutate(run.id)}
+              cancelling={cancel.isPending}
+            />
+          ) : null}
+          <div hidden={view !== "report"}>
+            <ReportView
+              batch={batch.data}
+              loading={batch.isLoading || runs.isLoading}
+              error={batch.error ?? runs.error}
+              canPrev={batchIndex < list.length - 1}
+              canNext={batchIndex > 0}
+              onPrev={() => setBatchIndex((index) => Math.min(index + 1, list.length - 1))}
+              onNext={() => setBatchIndex((index) => Math.max(index - 1, 0))}
+              openAll={bulk.open}
+              bulkTick={bulk.tick}
+              favorited={favCas}
+              onFavorite={onFavorite}
+            />
+          </div>
+          <div hidden={view !== "params"}>
+            <SettingsView state={settings} chain={chain} configId={configId} />
+          </div>
+          </>
+        )}
       </main>
       <OverviewPanel batch={batch.data} open={overviewOpen} onClose={() => setOverviewOpen(false)} />
       <ConfigManager

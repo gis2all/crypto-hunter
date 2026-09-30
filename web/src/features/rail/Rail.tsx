@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Star, Sun } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { ArcMark } from "../../components/ArcMark";
@@ -21,6 +21,11 @@ function chainIdMark(id: string) {
   return null;
 }
 
+/** The two places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is
+ *  one shelf for every chain, so it is not a row in the chain list - the shelf can hold a
+ *  card from a chain this app does not screen at all. */
+export type Place = "radar" | "favorites";
+
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
  *  chain, not a menu, and a row nobody can open is not a menu item. Settings is a tab in
  *  the topbar, not a rail entry. */
@@ -29,12 +34,17 @@ export function Rail({
   chains,
   activeChainId,
   onSelectChain,
+  place,
+  onSelectPlace,
   theme,
   onTheme,
 }: {
   chains: Chain[] | undefined;
   activeChainId: string;
   onSelectChain: (chainId: string) => void;
+  /** Which of the two places the page is in. 收藏 is not a radar and not a chain. */
+  place: Place;
+  onSelectPlace: (place: Place) => void;
   theme: Theme;
   onTheme: (theme: Theme) => void;
 }) {
@@ -51,7 +61,9 @@ export function Rail({
             either - the rail says which radar you are in, and the round's own numbers
             are on the round's strip. */}
         {(chains ?? []).filter((chain) => chain.enabled).map((chain) => {
-          const on = chain.id === activeChainId;
+          // One lit row at a time: a chain is the place you are in only while a radar is the
+          // place you are in - on the shelf the chain you last read is not where you are.
+          const on = chain.id === activeChainId && place === "radar";
           return (
             <div
               key={chain.id}
@@ -63,6 +75,17 @@ export function Rail({
             </div>
           );
         })}
+      </nav>
+      {/* The shelf, under the radars and separated from them: a kept card belongs to no
+          single chain, so it is not a row in a list of chains - it is the other place. */}
+      <nav className="nav-shelf">
+        <div
+          className={"nav-i" + (place === "favorites" ? " on" : "")}
+          onClick={() => onSelectPlace("favorites")}
+        >
+          <Icon as={Star} size={14} />
+          收藏
+        </div>
       </nav>
       {/* Two segments, not one toggle: with two states a reader should see which one they
           are in rather than guess what the next click does. */}
