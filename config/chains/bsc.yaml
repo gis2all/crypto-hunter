@@ -20,7 +20,9 @@ configs:
     pipeline:
       scan_limit: 0
       scan_sources: []
-      gate_limit: 20
+      # 判定跑整个幸存者池（0 = 全池）；链下调研另有 research_limit（0 = 全部调研）。
+      gate_limit: 0
+      research_limit: 20
       prefilter:
         market_cap_min_usd: 0
         market_cap_max_usd: 200000

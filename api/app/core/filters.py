@@ -32,6 +32,15 @@ SAFETY_PRIORITY = (
     DropReason.LP_UNLOCKED,
     DropReason.DANGEROUS_PERM,
 )
+#: Every rule the run panel's single 淘汰 row covers, and the set that row is credited from.
+#: It used to be split in two - 硬过滤 and 安全判定 - and that split was never a stage
+#: boundary: LP 已锁, 陷阱占比 and 距高回撤 are numbers like the others, and the filter is
+#: what reads numbers (`check_all`). One row also settles the arithmetic the funnel is read
+#: against: 淘汰 = 扫描 - 候选, with nothing credited to a third column.
+FILTER_PRIORITY = PREFILTER_PRIORITY + SAFETY_PRIORITY + (
+    DropReason.ENTRAPMENT,
+    DropReason.MARKET_CAP_DRAWDOWN,
+)
 
 
 def _floor(value, floor, reason, failed, unknown) -> None:

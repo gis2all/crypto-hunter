@@ -249,10 +249,10 @@ def store_round(conn, result: RoundResult) -> None:
         "changes": result.changes,
         "caliber": forms.caliber_text({**settings, "id": result.chain_id}),
         "sources": result.sources,
-        # 淘汰 is one number on the strip, but the run panel splits it into the hard
-        # filter's share and the safety gate's. The split is written here, where the
-        # items are, instead of being subtracted on the page from two other numbers.
-        "dropped_hard": result.prefilter_dropped,
+        # The run panel's 淘汰 row is the strip's own number: the filter rejects a token
+        # before the round spends a token on it, so there is no third column to subtract.
+        # Written here, where the items are, rather than derived on the page.
+        "dropped_hard": result.filter_dropped,
         "gate": {
             "judged": len(result.survivors) - result.unjudged,
             "unjudged": result.unjudged,
