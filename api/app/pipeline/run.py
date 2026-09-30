@@ -21,7 +21,7 @@ from uuid import uuid4
 from .. import cancel, config
 from ..core.models import RunStatus
 from ..sources import http
-from ..report import lexicon, research
+from ..report import assemble as report_assemble, lexicon, research
 from ..store import db
 from . import progress, states
 from .decide import Engine
@@ -305,7 +305,7 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
 
 
 def _finish(run_id: str) -> None:
-    """The last two steps of a round, in one place so the rule can be read at once.
+    """The last steps of a round, in one place so the rule can be read at once.
 
     `written` is not the end of anything: it says the rows are in, and a round that stops
     there reads as still running. There is no outlet to wait for - the delivery is the
@@ -313,9 +313,19 @@ def _finish(run_id: str) -> None:
     to `researched`, which is also the state that writes `finished_at` and gives the page a
     stopwatch to stop. Without this the run panel would show 正在运行 and a growing 已用 on
     every round forever.
+
+    Then the shelf, which belongs to a token rather than to a round: a kept card is the card
+    for that token, so the tokens this round wrote again get this round's card put in place
+    of the one they were carrying (report/assemble.py `refresh_kept`). Guarded the way the
+    lexicon cleanup is - a shelf that failed to refresh is not a round that failed to
+    publish, and the round is already out the door by the time this runs.
     """
     _set_status(run_id, RunStatus.WRITTEN.value)
     _set_status(run_id, RunStatus.RESEARCHED.value)
+    try:
+        report_assemble.refresh_kept(run_id)
+    except Exception:
+        log.exception("round %s could not refresh the shelf", run_id)
 
 
 def stop_run(run_id: str) -> dict:
