@@ -638,3 +638,61 @@ div.pgroup>.pset{margin-top:auto}
 .cfg-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end}
 .cfg-danger{border-color:var(--danger-border)}
 .cfg-danger .grp-h{border-bottom-color:var(--danger-border);color:var(--danger-fg)}
+
+/* ---------- 收藏 (the shelf) ---------- */
+/* The one control on a card that keeps it instead of opening it. It stands where the score
+   already is, in the same register as the numbers around it: outline in --muted, and filled
+   in --accent once the shelf holds this CA. Filling the same glyph rather than swapping in a
+   second icon is what keeps the two states from drifting apart. */
+.fav{border:0;background:none;padding:0 2px;line-height:1;cursor:pointer;color:var(--muted);
+  display:inline-flex;align-items:center}
+.fav:hover{color:var(--accent-fg)}
+.fav svg{fill:none}
+.fav.on{color:var(--accent)}
+.fav.on svg{fill:currentColor}
+.fav:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+
+/* The shelf is the second place in the rail and not a chain, so it is separated from the list
+   of radars rather than being another row in it (Rail.tsx). It is deliberately not .nav: that
+   class is flex:1, and two of them would split the column in half. */
+.nav-shelf{border-top:1px solid var(--hair);padding:10px 0 10px}
+.nav-shelf .nav-i{color:var(--muted)}
+.nav-shelf .nav-i.on{color:var(--fg)}
+
+/* The shelf's own strip, standing where the topbar stands so the page does not jump between a
+   radar and the shelf. The title carries no count: the cards are the count, and the chips and
+   the sort are what a reader reads off this bar. */
+#view-favorites .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+  gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
+.fav-title{display:flex;align-items:center;gap:7px}
+.fav-title b{font-size:15px;font-weight:600}
+.fav-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.fav-chips{display:flex}
+.chip{height:var(--ctrl-h);padding:0 9px;border:1px solid var(--border);background:var(--surface);
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;line-height:1;cursor:pointer;white-space:nowrap}
+.chip+.chip{margin-left:-1px}
+.chip:hover{background:var(--surface-warm);color:var(--fg-2)}
+.chip.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
+/* The trigger keeps one width, the longer label's: a control that changes size when the
+   reader picks the other sort drags the button beside it back and forth. */
+.fav-sort{width:106px}
+/* Wide enough for a whole CA - a filter box that cannot show the thing being filtered on the
+   one screen where CAs are what you copy is a box that hides its own answer. */
+.fav-search{height:var(--ctrl-h);width:322px;padding:0 7px;border:1px solid var(--border);
+  background:var(--surface);color:var(--fg);font-family:var(--mono);font-size:11.5px}
+/* The hint reads at the register of the card's own identity row (`--muted`, the colour
+   `流动性 #6` is written in) rather than the platform's own grey, which is a different grey in
+   each engine. Typed text is still `--fg` above it, so the two do not read alike. Scoped to
+   this box: a placeholder standing in for something the reader has to type verbatim - the
+   delete-confirm field in the settings drawer - must not look like a value already in it. */
+.fav-search::placeholder{color:var(--muted)}
+.fav-search:focus{outline:none;border-color:var(--accent)}
+/* A kept card's second footer band: which chain and which set of settings the card was read
+   as, and the two timestamps - what a bookmark cannot tell you. It is inside the card, under
+   the link row and behind a hair-line rather than a full border, so it reads as one more line
+   of the same card instead of a note about the card left lying in the gutter. Bordered by
+   --hair, like the sections above it: --border is what separates the card from the page. */
+.card-src{margin-top:auto;padding:7px 12px;border-top:1px solid var(--hair);
+  display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:10.5px;
+  line-height:1.5;color:var(--muted)}
+
