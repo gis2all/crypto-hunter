@@ -15,7 +15,7 @@ CA can arrive twice: keyed by CA, a repeat costs nothing, and a refused page cos
 import re
 
 from app.pipeline import collect
-from app.sources import tolly
+from app.sources.arc import tolly
 
 CA_A = "0x" + "aa" * 20
 CA_B = "0x" + "bb" * 20

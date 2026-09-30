@@ -524,3 +524,18 @@ def test_the_card_reads_a_shell_page_with_a_browser_and_an_account_without_one(
 
     assert "rendered copy" in site["text"], "the shell was drawn and the drawing was read"
     assert account is None, "a shell that cannot be drawn out of an account is not evidence"
+def test_the_prompt_names_the_chain_the_round_is_about(isolated_db, monkeypatch):
+    """One prompt file serves every chain, so the name is substituted per call. An Arc
+    prompt asking a Robinhood token 「和 Arc 什么关系」 is the radar answering the wrong
+    question, and the model can only answer what it was asked (user, 2026-09-30)."""
+    _snapshot(CA, websites=["https://t.xyz"])
+    _page(monkeypatch)
+    seen: dict = {}
+    _model_answering(monkeypatch, seen)
+
+    research.research_entries({"id": "robinhood", "name": "Robinhood"}, _targets([CA]),
+                              "run1")
+
+    assert "Robinhood" in seen["prompt"]
+    assert "Arc" not in seen["prompt"], "the prompt is one file for every chain"
+    assert research.CHAIN_TOKEN not in seen["prompt"], "the placeholder is filled in"

@@ -241,36 +241,47 @@ html{scrollbar-gutter:stable}
    the round strip and the page padding - about 263px more than a 1440-tall window
    holds, which is the overrun that was allowed for. Chrome is the other 310.6.
 
-   What does not fit gets an ellipsis, and the full text is one hover away: the popover
-   below carries the same segments and is only built when the text is really cut
-   (`scrollHeight` still reports the full box under `-webkit-line-clamp`, so the test is
-   exact - a short conclusion opens nothing). Hover and keyboard focus open it, a click
-   does not, so dragging across the conclusion to copy it stays a plain selection. The
-   popover is the width of the card it sits in: wider would reach past the last column
-   and put a horizontal scrollbar on the page, which is the one thing this layout must
-   not do. */
+   What does not fit gets an ellipsis, and the rest is opened by the 展开 button in the
+   corner of that box (2026-09-30, user): the full text used to float over the card below on
+   hover, which could not be pinned open and covered the card it landed on. The button is
+   built only when the text is really cut (`scrollHeight` still reports the full box under
+   `-webkit-line-clamp`, so the test is exact - a short conclusion shows no button), and it
+   is measured with the clamp on, so opening the text cannot take the button away. */
 :root{--verdict-lines:10}
 .sec-verdict .verdict{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;
   -webkit-line-clamp:var(--verdict-lines);
   min-height:calc(var(--verdict-lines) * 1.72em)}
-/* 全部展开 drops the clamp on every conclusion (2026-09-26). The bulk action opens the
+/* 展开卡片 drops the clamp on every conclusion (2026-09-26). The bulk action opens the
    two <details> on all five cards; a conclusion left clamped under them is the one block
-   still asking for a hover, so the third thing it opens is the text itself. `display:block`
+   still asking for a click, so the third thing it opens is the text itself. `display:block`
    is what retires the clamp - `-webkit-line-clamp` only applies to a `-webkit-box`, and
    declaring the clamp `none` alone would leave the box in the way of the second line.
-   全部收起 takes the class off and the fixed 10 lines and the hover come back together. */
+   收起卡片 takes the class off and the fixed ten lines and the 展开 button come back
+   together. The reader's own 展开 on one card is the same class; 收起 takes it off. */
 .verdict-wrap.full .verdict{display:block;overflow:visible;-webkit-line-clamp:none}
 .verdict-wrap{position:relative}
-.verdict-pop{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;
-  max-height:60vh;overflow-x:hidden;overflow-y:auto;padding:8px 10px;border:1px solid var(--border);
-  background:var(--surface-warm);color:var(--fg);font-family:var(--serif);font-size:12.5px;
-  line-height:1.7;overflow-wrap:anywhere;scrollbar-width:none}
-/* `overflow-x:hidden` plus `anywhere` is what keeps this panel free of the bottom bar a
-   bare `overflow:auto` drew: one 42-character contract address is wider than the card
-   and cannot break on its own. The scrollbar itself stays hidden rather than absent -
-   a 60vh cap still has to be reachable on a short window. */
-.verdict-pop::-webkit-scrollbar{width:0;height:0}
-.verdict-wrap.open .verdict-pop{display:block}
+/* The button, in the bottom-right corner of the ten-line box: it sits on the last line, on
+   top of what the clamp cut, which is why it carries the card's own fill - the fade is what
+   makes the covered words read as deliberate rather than clipped. It is out of the flow, so
+   the box keeps the height it had before the button existed and the round keeps its 525.6px
+   cards; `1.72em` is the line the box is measured in, so the button and the line it covers
+   are the same height instead of each carrying a value that can drift from the other.
+
+   Opened, the button drops below the text instead - there is nothing left to sit on top of
+   - and stays at the right edge of the card, which is inside the last column: a wider
+   control would reach past it and put a horizontal scrollbar on the page, which is the one
+   thing this layout must not do. */
+.verdict-more{position:absolute;right:0;bottom:0;display:flex;align-items:center;height:1.72em;
+  padding-left:16px;background:linear-gradient(to right,transparent,var(--surface) 16px)}
+.verdict-wrap.full .verdict-more{position:static;justify-content:flex-end;height:auto;
+  padding:3px 0 0;background:none}
+.verdict-more button{display:inline-flex;align-items:center;gap:3px;padding:0 5px;border:0;
+  background:none;color:var(--accent-fg);font-family:var(--sans);font-size:11.5px;line-height:1;
+  cursor:pointer}
+.verdict-more button:hover{background:var(--surface-warm)}
+.verdict-more button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.verdict-more button>.ico{transition:transform .12s ease}
+.verdict-more button[aria-expanded=true]>.ico{transform:rotate(180deg)}
 
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all
@@ -504,7 +515,7 @@ div.pgroup>.pset{margin-top:auto}
    that gap reads looser than the brand line above it, so the rail's gap comes down to the 7
    the brand uses and the labels go uppercase, the case the wordmark right above them is in. */
 .nav-i{gap:7px;text-transform:uppercase}
-.nav-i .arc-mark{flex:0 0 auto}
+.nav-i .chain-mark{flex:0 0 auto}
 
 
 
@@ -556,10 +567,10 @@ div.pgroup>.pset{margin-top:auto}
   .pgroup.split .pcol>.prow>.field{grid-column:2}
 
   /* 推送与依赖 is the narrowest group and its longest reading overruns the column:
-     `数据源凭据` lists six sources. `.ro-v` ellipsizes by design (a long value must never
-     widen its track into a horizontal scrollbar), but here the value is the whole answer -
-     `GMGN · Rad…` is not a reading, and 500px is still not enough to hold the six sources
-     on one line. Let it wrap: the row grows by a line and the group stays under the
+     `数据源凭据` lists seven sources on Robinhood (Arc has six). `.ro-v` ellipsizes by
+     design (a long value must never widen its track into a horizontal scrollbar), but here
+     the value is the whole answer - `GMGN · Rad…` is not a reading, and 500px is still not
+     enough to hold them on one line. Let it wrap: the row grows by a line and the group stays under the
      block's height. */
   #card-push .ro-v{white-space:normal}
 }
@@ -627,3 +638,61 @@ div.pgroup>.pset{margin-top:auto}
 .cfg-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end}
 .cfg-danger{border-color:var(--danger-border)}
 .cfg-danger .grp-h{border-bottom-color:var(--danger-border);color:var(--danger-fg)}
+
+/* ---------- 收藏 (the shelf) ---------- */
+/* The one control on a card that keeps it instead of opening it. It stands where the score
+   already is, in the same register as the numbers around it: outline in --muted, and filled
+   in --accent once the shelf holds this CA. Filling the same glyph rather than swapping in a
+   second icon is what keeps the two states from drifting apart. */
+.fav{border:0;background:none;padding:0 2px;line-height:1;cursor:pointer;color:var(--muted);
+  display:inline-flex;align-items:center}
+.fav:hover{color:var(--accent-fg)}
+.fav svg{fill:none}
+.fav.on{color:var(--accent)}
+.fav.on svg{fill:currentColor}
+.fav:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+
+/* The shelf is the second place in the rail and not a chain, so it is separated from the list
+   of radars rather than being another row in it (Rail.tsx). It is deliberately not .nav: that
+   class is flex:1, and two of them would split the column in half. */
+.nav-shelf{border-top:1px solid var(--hair);padding:10px 0 10px}
+.nav-shelf .nav-i{color:var(--muted)}
+.nav-shelf .nav-i.on{color:var(--fg)}
+
+/* The shelf's own strip, standing where the topbar stands so the page does not jump between a
+   radar and the shelf. The title carries no count: the cards are the count, and the chips and
+   the sort are what a reader reads off this bar. */
+#view-favorites .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+  gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
+.fav-title{display:flex;align-items:center;gap:7px}
+.fav-title b{font-size:15px;font-weight:600}
+.fav-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.fav-chips{display:flex}
+.chip{height:var(--ctrl-h);padding:0 9px;border:1px solid var(--border);background:var(--surface);
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;line-height:1;cursor:pointer;white-space:nowrap}
+.chip+.chip{margin-left:-1px}
+.chip:hover{background:var(--surface-warm);color:var(--fg-2)}
+.chip.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
+/* The trigger keeps one width, the longer label's: a control that changes size when the
+   reader picks the other sort drags the button beside it back and forth. */
+.fav-sort{width:106px}
+/* Wide enough for a whole CA - a filter box that cannot show the thing being filtered on the
+   one screen where CAs are what you copy is a box that hides its own answer. */
+.fav-search{height:var(--ctrl-h);width:322px;padding:0 7px;border:1px solid var(--border);
+  background:var(--surface);color:var(--fg);font-family:var(--mono);font-size:11.5px}
+/* The hint reads at the register of the card's own identity row (`--muted`, the colour
+   `流动性 #6` is written in) rather than the platform's own grey, which is a different grey in
+   each engine. Typed text is still `--fg` above it, so the two do not read alike. Scoped to
+   this box: a placeholder standing in for something the reader has to type verbatim - the
+   delete-confirm field in the settings drawer - must not look like a value already in it. */
+.fav-search::placeholder{color:var(--muted)}
+.fav-search:focus{outline:none;border-color:var(--accent)}
+/* A kept card's second footer band: which chain and which set of settings the card was read
+   as, and the two timestamps - what a bookmark cannot tell you. It is inside the card, under
+   the link row and behind a hair-line rather than a full border, so it reads as one more line
+   of the same card instead of a note about the card left lying in the gutter. Bordered by
+   --hair, like the sections above it: --border is what separates the card from the page. */
+.card-src{margin-top:auto;padding:7px 12px;border-top:1px solid var(--hair);
+  display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:10.5px;
+  line-height:1.5;color:var(--muted)}
+

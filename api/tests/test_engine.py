@@ -6,7 +6,7 @@ every assertion here is about which token was asked about, when, and what came o
 
 from app.core import filters, funnel
 from app.core.models import SafetyFacts, TokenMetrics
-from app.pipeline.decide import Engine, _rule_note
+from app.pipeline.decide import GATE_LIMIT, RESEARCH_LIMIT, Engine, _gate_cap, _research_cap, _rule_note
 
 CHAIN = {"id": "arc", "label": "Arc", "pipeline": {"scan_limit": 5000}, "sources": []}
 
@@ -95,9 +95,8 @@ def test_a_batch_is_the_biggest_movers_cut_to_the_limit():
 
 
 def test_an_uncapped_pool_is_judged_even_once_enough_have_qualified():
-    """`gate_limit: 0` is the old behaviour, kept for rounds that would rather be complete
-    than quick: the first batch already clears four against a `per_round` of 2, and the pool
-    still gets judged to the end."""
+    """`gate_limit: 0` - the default - judges the pool to the end: the first batch already
+    clears four against a `per_round` of 2, and the round still walks the rest."""
     rows = [_row("0x%02d" % i, volume_24h_usd=1000 * i) for i in range(1, 8)]
     source = FakeSource("gmgn", rows)
     engine, _reader = _engine([source])
@@ -142,10 +141,10 @@ def test_the_candidate_count_is_the_pool_the_gate_drew_from():
     result = engine.run(_settings(), "run-1")
     assert result.universe == 7
     assert len(result.survivors) == 7
-    assert result.prefilter_dropped == 0
-    assert result.qualified == 6               # judged, and the gate let them through
+    assert result.filter_dropped == 1          # 0x07: LP 未锁 is a filter drop
+    assert result.qualified == 6               # judged, and the filter let them through
     assert result.unjudged == 0                # nothing here was left without an answer
-    # 0x07 is the safety gate's to claim; every other survivor is 候选, picked or not.
+    # 0x07 is the filter's to claim; every other survivor is 候选, picked or not.
     assert result.funnel_summary.candidates == 7 - 1
 
 
@@ -158,7 +157,7 @@ def test_the_strip_adds_up_to_the_scan_even_when_the_cap_strands_survivors():
     """
     source = FakeSource("gmgn", _movers(30))
     engine, _reader = _engine([source])
-    result = engine.run(_settings(), "run-1")
+    result = engine.run(_settings(pipeline=_pipeline(gate_limit=20)), "run-1")
     assert result.unjudged == 10               # twenty judged, ten left without a source
 
     summary = result.funnel_summary
@@ -167,27 +166,25 @@ def test_the_strip_adds_up_to_the_scan_even_when_the_cap_strands_survivors():
     assert summary.candidates == 30          # 入选 are inside 候选, not beside them
 
 
-def test_the_two_淘汰_rows_on_the_panel_are_a_split_of_the_strip_one():
-    """The panel says 淘汰 twice - 硬过滤 and 安全门槛 - and the strip says it once.
+def test_the_淘汰_row_on_the_panel_is_the_strip_own_number():
+    """One filter row, and it is `dropped` itself.
 
-    `dropped` is the total; `prefilter_dropped` is the hard filter's share of it. Both
-    rows using the total would count the safety gate's tokens twice, which is the other
-    way to make a funnel that does not add up.
+    Every rule that can reject a token does it before the round spends a token on it -
+    the pool rules, the safety gate, the trap ceiling and 距高回撤 - so there is no second
+    column to split it into. The split this replaces credited 距高回撤 to neither row and
+    the panel stopped adding up to the scan.
     """
     source = FakeSource("gmgn", _movers(30))
-    # The unlocked two have to be inside the cap's twenty, or they are never judged and
-    # never dropped: the gate reads the pool biggest-volume first.
     engine, _reader = _engine([source], reader=FakeReader(unlocked={"0x30", "0x29"}))
     result = engine.run(_settings(), "run-1")
 
-    pool = {reason.value for reason in filters.PREFILTER_PRIORITY}
-    gate = {reason.value for reason in filters.SAFETY_PRIORITY} | {"entrapment"}
+    rules = {reason.value for reason in filters.FILTER_PRIORITY}
     dropped = [item for item in result.items.values() if item.decision == "dropped"]
     credited = [funnel.first_reason({"failed": item.failed}) for item in dropped]
 
-    # Two rows on the panel, one number on the strip: nothing may land outside them.
-    assert credited and all(reason in pool | gate for reason in credited), credited
-    assert sum(1 for reason in credited if reason in pool) == result.prefilter_dropped
+    # One row on the panel, one number on the strip: nothing may land outside them.
+    assert credited and all(reason in rules for reason in credited), credited
+    assert result.filter_dropped == len(dropped)
     assert result.funnel_summary.dropped == len(dropped)
     assert result.funnel_summary.dropped + result.funnel_summary.candidates \
         == result.funnel_summary.scanned
@@ -231,7 +228,7 @@ def test_a_pool_rule_that_only_bites_after_enrichment_is_still_a_pool_drop():
     result = engine.run(_settings(), "run-1")
     assert len(result.survivors) == 2          # the bulk view let both through
     assert result.qualified == 1               # only 0x01 was left to score
-    assert result.prefilter_dropped == 1       # and 0x02 is the pool rules' to claim
+    assert result.filter_dropped == 1          # and 0x02 is the pool rules' to claim
 
 
 def test_the_percentile_denominator_is_the_survivors_not_the_gated_pool():
@@ -305,17 +302,74 @@ def _movers(n: int):
     return [_row("0x%02d" % i, volume_24h_usd=1000 * i) for i in range(1, n + 1)]
 
 
-def test_the_gate_spends_its_budget_on_the_biggest_movers_and_stops():
-    """甲: twenty candidates by 24h volume, then stop. This is the reference's own shape -
-    judging the whole pool is what made a round take twenty minutes, because per-token
-    reads are paced per host and that pace is a serial cost more workers cannot shorten."""
+def test_the_gate_judges_the_whole_pool_by_default():
+    """0 is the rule. The cap used to be twenty and it sat *before* the paid read, so the
+    deepest rows took every slot - and the deepest rows are exactly the ones the chip and
+    safety rules are about to reject (Robinhood 2026-09-30: seventeen of the top twenty).
+    A filter that runs on a sample of the pool is not a filter."""
     source = FakeSource("gmgn", _movers(30))
     engine, _reader = _engine([source])
     result = engine.run(_settings(), "run-1")
 
+    assert len(source.asked) == 30
+    assert source.asked[:3] == ["0x30", "0x29", "0x28"]
+    assert result.qualified == 30
+
+
+def test_the_gate_limit_knob_still_caps_the_pool():
+    """The knob stays for an operator who wants a shorter round: deepest first, then stop.
+    Per-token reads are paced per host and that pace is a serial cost more workers cannot
+    shorten, so a round that stops at twenty is a round that spends a third of the time."""
+    source = FakeSource("gmgn", _movers(30))
+    engine, _reader = _engine([source])
+    result = engine.run(_settings(pipeline=_pipeline(gate_limit=20)), "run-1")
+
     assert len(source.asked) == 20
     assert source.asked[:3] == ["0x30", "0x29", "0x28"]
     assert result.qualified == 20
+
+
+def test_a_negative_gate_limit_is_read_as_the_whole_pool():
+    """The knob's convention is 0 = the whole pool, so a negative is 0 rather than a number
+    to compare against: an unreachable cap would turn `_top_up`'s `reach` into a negative
+    slice and quietly drop the pool's deepest rows."""
+    assert _gate_cap({"gate_limit": -1}) == 0
+    assert _gate_cap({"gate_limit": 5}) == 5
+    assert _gate_cap({}) == GATE_LIMIT
+    assert _research_cap({"research_limit": -3}) == 0
+    assert _research_cap({"research_limit": 4}) == 4
+    assert _research_cap({}) == RESEARCH_LIMIT
+
+
+def test_the_research_limit_cuts_after_the_filter_not_before_it():
+    """调研上限 is spent on the qualified pool, deepest first.
+
+    The bug this replaces: the cap sat before the paid read, so a deep-but-dead row took a
+    slot a healthy one needed. On Robinhood 2026-09-30 the top twenty by depth were
+    seventeen LP-unlocked / entrapment / drawdown rejects and the deepest clean token
+    (dotswarm, 29th by liquidity) was never asked about at all. Here 0xdeep is rejected by
+    its own holder count, so the budget reaches past it.
+    """
+    lake = [
+        _row("0xdeep", liquidity_usd=90_000, holders=10),   # below the holder floor
+        _row("0x01", liquidity_usd=50_000),
+        _row("0x02", liquidity_usd=40_000),
+        _row("0x03", liquidity_usd=30_000),
+    ]
+    source = FakeSource("gmgn", lake)
+    seen = {}
+
+    def drafts(targets, _tell):
+        seen["cas"] = [t["ca"] for t in targets]
+        return {t["ca"]: {"f_completeness": 3.0, "f_substance": 3.0, "f_team": 3.0,
+                          "f_narrative": 3.0, "f_community": 3.0} for t in targets}
+
+    engine, _reader = _engine([source], drafts=drafts)
+    result = engine.run(_settings(pipeline=_pipeline(research_limit=2)), "run-1")
+
+    assert seen["cas"] == ["0x01", "0x02"], seen
+    assert any("只调研前 2 个" in note for note in result.notes), result.notes
+    assert result.unjudged == 0            # the gate asked about every survivor
 
 
 def test_the_shortlist_ranks_on_liquidity_alone():
@@ -363,7 +417,7 @@ def test_a_row_the_pull_left_without_a_chip_number_is_asked_about_before_the_fil
     assert result.survivors == []
     assert result.items["0x01"].decision == "dropped"
     assert result.items["0x01"].failed == ["holders"]
-    assert result.prefilter_dropped == 1
+    assert result.filter_dropped == 1
 
 
 def test_the_top_up_asks_the_cheap_entry_when_the_source_offers_one():
@@ -417,7 +471,7 @@ def test_the_rest_of_the_pool_is_left_unjudged_and_the_round_says_so():
     the round says so out loud rather than let 候选 imply every one of them was checked."""
     source = FakeSource("gmgn", _movers(30))
     engine, _reader = _engine([source])
-    result = engine.run(_settings(), "run-1")
+    result = engine.run(_settings(pipeline=_pipeline(gate_limit=20)), "run-1")
 
     assert any("未判定" in note and "10" in note for note in result.notes), result.notes
     assert not any(item.enriched for item in result.survivors[20:])

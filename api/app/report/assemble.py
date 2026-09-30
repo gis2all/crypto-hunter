@@ -2,7 +2,9 @@
 
 One call builds everything the report page draws - the batch strip, the funnel, the
 change list, the five cards and the落选 table - so the SPA never stitches requests
-together. Reads only: nothing here writes, re-fetches or recomputes a score.
+together. Reads only, plus the one write at the end: a card on the shelf belongs to a
+token rather than to a round, so a round that wrote one of those tokens again hands the
+shelf its newer card (`refresh_kept`). Nothing here re-fetches or recomputes a score.
 """
 
 from __future__ import annotations
@@ -99,6 +101,55 @@ def cards(run_id: str) -> list[dict]:
             )
         )
     return out
+
+
+def _kept_label(run: dict) -> str:
+    """When a round ran, in the shape the shelf prints it: to the minute and without the
+    offset. The offset is real, but it is the same +08:00 on every row of one machine, so on
+    a card it buys the reader nothing and costs the line its width."""
+    return str(run.get("started_at") or run.get("scheduled_at") or "")[:16].replace("T", " ")
+
+
+def kept_row(run: dict, card: dict) -> dict:
+    """One of a round's cards as a row for the shelf: the only place that shape is written.
+
+    Both writers go through here - the reader keeping a card (`api/v1/favorites.py`) and a
+    round refreshing the cards it superseded - so the two can never disagree about what a
+    kept card says. `saved_at` is not part of it: that stamp is when the reader kept the
+    token, and no round is the reader.
+    """
+    return {
+        "chain_id": run["chain_id"],
+        "ca": card["ca"],
+        "symbol": card.get("sym"),
+        "origin": "round",
+        "origin_run_id": run["id"],
+        "origin_label": _kept_label(run),
+        "score": card.get("score"),
+        "rank": card.get("rank"),
+        "config_id": run["config_id"],
+        "payload_json": json.dumps(card, ensure_ascii=False),
+    }
+
+
+def refresh_kept(run_id: str) -> int:
+    """Hand the shelf the newer cards this round wrote, and answer how many it took.
+
+    A kept card is somebody following a *token*, not a moment: the star is the same whether
+    a newer card exists, so the shelf answers with the round that ran last. Two things this
+    deliberately does not do - a card for a token nobody kept is not added, and a token this
+    round did not write keeps the card it has (a token that fell out of the report has not
+    become a worse token, it has stopped being reported on).
+    """
+    conn = db.connect()
+    try:
+        run = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+    finally:
+        conn.close()
+    if run is None:
+        return 0
+    run = dict(run)
+    return db.favorite_refresh([kept_row(run, card) for card in cards(run_id)])
 
 
 def decline(run_id: str, per_round: int = 5) -> list[dict]:

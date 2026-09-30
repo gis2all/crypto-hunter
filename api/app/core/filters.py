@@ -32,6 +32,15 @@ SAFETY_PRIORITY = (
     DropReason.LP_UNLOCKED,
     DropReason.DANGEROUS_PERM,
 )
+#: Every rule the run panel's single 淘汰 row covers, and the set that row is credited from.
+#: It used to be split in two - 硬过滤 and 安全判定 - and that split was never a stage
+#: boundary: LP 已锁, 陷阱占比 and 距高回撤 are numbers like the others, and the filter is
+#: what reads numbers (`check_all`). One row also settles the arithmetic the funnel is read
+#: against: 淘汰 = 扫描 - 候选, with nothing credited to a third column.
+FILTER_PRIORITY = PREFILTER_PRIORITY + SAFETY_PRIORITY + (
+    DropReason.ENTRAPMENT,
+    DropReason.MARKET_CAP_DRAWDOWN,
+)
 
 
 def _floor(value, floor, reason, failed, unknown) -> None:
@@ -60,14 +69,21 @@ def _ordered(reasons: list[DropReason]) -> list[DropReason]:
 
 
 def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
-    """The half of the pool rules the universe pull alone can answer: the market-cap band,
-    the liquidity and 24h-volume floors, and the empty-shell rule.
+    """The pool rules the bulk pull alone can settle: the market-cap band, and the
+    empty-shell rule.
 
-    It costs no request, which is why it runs first - and it is also why no rule that reads
-    the chip picture is in here. A rule reading a holder count this half never carried is
-    reading a blank, and 未判定 never rejects: it would either drop nobody or drop the wrong
-    token, and both are worse than waiting for the read. `check_prefilter_enriched` is the
-    other half, and it runs once the blanks have been filled.
+    It costs no request, which is why it runs first - and what is left in it is only what
+    every bulk source answers the same way. Market cap passes that test: GMGN, Tolly and
+    DexScreener read the same number to the dollar on the same token (measured
+    2026-09-29). Liquidity and 24h volume do not, so both floors moved to
+    `check_prefilter_enriched`, where they run on the caliber that corrects them:
+    Tolly's liquidity runs 5.52x high, and GMGN's rank row answers volume in whichever
+    window it ranked in. A floor read straight off the pull judged a number before the
+    read that fixes it had happened - and this half's verdicts are final.
+
+    No rule that reads the chip picture is in here either. A rule reading a holder count
+    this half never carried is reading a blank, and 未判定 never rejects: it would either
+    drop nobody or drop the wrong token, and both are worse than waiting for the read.
     """
     failed: list[DropReason] = []
     unknown: list[DropReason] = []
@@ -76,10 +92,6 @@ def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdic
              DropReason.MARKET_CAP, failed, unknown)
     _floor(metrics.market_cap_usd, prefilter.get("market_cap_min_usd"),
            DropReason.MARKET_CAP, failed, unknown)
-    _floor(metrics.liquidity_usd, prefilter.get("liquidity_min_usd"),
-           DropReason.LIQUIDITY, failed, unknown)
-    _floor(metrics.volume_24h_usd, prefilter.get("volume_24h_min_usd"),
-           DropReason.VOLUME_24H, failed, unknown)
 
     # 空壳淘汰: a row no source could put a market cap or a reserve on is not a token we
     # failed to measure, it is a token with nothing to measure. Unknown is never dropped,
@@ -98,17 +110,24 @@ def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdic
 
 
 def check_prefilter_enriched(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
-    """The half that reads the chip picture: the holder band, the top-10 and bundling
-    ceilings, and the honeypot flag.
+    """The half that reads numbers the bulk sweep cannot be trusted for: the liquidity and
+    24h-volume floors, the holder band, the top-10 and bundling ceilings, and the
+    honeypot flag.
 
-    These are the rules that need a per-token answer, and on a bulk row most of them read a
-    blank - so they run after `decide` has bought the numbers the bulk sweep did not carry.
-    A blank here is then a blank the paid read could not fill either, which is the only
-    sense in which 未判定 is an honest answer for them.
+    Each of these needs a per-token answer, for one of two reasons: the field only exists
+    per token (holders, top-10, bundling), or the feed that bulk-carries it is a different
+    measurement than the one the rule means (Tolly's 5.52x liquidity, GMGN's volume,
+    which is the ranking window's total rather than the day's). So they run after `decide`
+    has bought those numbers. A blank here is then a blank the paid read could not fill
+    either, which is the only sense in which 未判定 is an honest answer for them.
     """
     failed: list[DropReason] = []
     unknown: list[DropReason] = []
 
+    _floor(metrics.liquidity_usd, prefilter.get("liquidity_min_usd"),
+           DropReason.LIQUIDITY, failed, unknown)
+    _floor(metrics.volume_24h_usd, prefilter.get("volume_24h_min_usd"),
+           DropReason.VOLUME_24H, failed, unknown)
     _floor(metrics.holders, prefilter.get("holders_min"),
            DropReason.HOLDERS, failed, unknown)
     # 持有人上限留空 = 不设上限。它和市值一样是「区间」而不是「下限」：一个键在设置页里

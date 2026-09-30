@@ -13,16 +13,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from ... import config
 from ...core import funnel
 
-SCAN_SOURCES = ("gmgn", "radardex", "tolly", "geckoterminal")
 # Display order for the credential row: scanners first, then the verification sources.
-SOURCE_ORDER = ["gmgn", "radardex", "tolly", "geckoterminal", "blockscout", "goplus", "sourcify"]
+# One list for every chain - the checkbox row reads the chain's own `scan_sources`, so a
+# scanner that is not in a chain's config simply never appears on that chain's page.
+SOURCE_ORDER = [
+    "gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
+    "geckoterminal", "blockscout", "goplus", "sourcify",
+]
 
 SOURCE_SHORT = {
     "gmgn": "GMGN",
     "radardex": "RadarDEX",
     "tolly": "Tolly",
+    "coinbarrel": "CoinBarrel",
+    "pez": "PEZ",
+    "peeps": "Peeps",
     "geckoterminal": "GT",
     "blockscout": "Blockscout",
     "goplus": "GoPlus",
@@ -32,6 +40,9 @@ SOURCE_LABELS = {
     "gmgn": "GMGN 活跃榜",
     "radardex": "RadarDEX 发射台",
     "tolly": "Tolly 全链榜",
+    "coinbarrel": "CoinBarrel 全链榜",
+    "pez": "PEZ 发射台",
+    "peeps": "Peeps 发射台",
     "geckoterminal": "GeckoTerminal 池",
     "blockscout": "Blockscout 全链底表",
     "goplus": "GoPlus",
@@ -61,11 +72,14 @@ INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
 #: The five 0-5 judgements the off-chain block is computed from, with the anchor each one
 #: is scored against. The anchors are 口径, not knobs: they ride in the group's 说明, and
 #: the weights that split the block live in `pipeline.scoring.offchain_factor_weights`.
+#: The narrative anchor names a chain, and the page must name its own: 「离开 Arc 跑不起来 = 5」
+#: printed on the Robinhood page scores the wrong chain's question. Substituted per page from
+#: `config.chain_name` - the chain's own name, not the radar's label (user, 2026-09-30).
 OFFCHAIN_LABELS = {
     "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
     "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
     "f_team": ("团队与 dev 可信度", "0–5 · 只奖可追溯；批量建币一票降档"),
-    "f_narrative": ("叙事与官方关系", "0–5 · 离开 Arc 跑不起来 = 5"),
+    "f_narrative": ("叙事与官方关系", "0–5 · 离开 %s 跑不起来 = 5"),
     "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
 }
 ALERT_LABELS = {
@@ -74,6 +88,17 @@ ALERT_LABELS = {
     "duplicate_symbol": "同名合约并行",
     "missing_socials": "官网漏收录 X/TG",
 }
+
+
+def _offchain_labels(chain: dict) -> dict[str, tuple[str, str]]:
+    """The five 0-5 judgements, with this chain's own name in the narrative anchor.
+
+    One list for every chain, and exactly one entry in it names a chain - so the name is
+    filled in here rather than written into the constant, and a chain that never set a
+    `name` still prints its label.
+    """
+    label, anchor = OFFCHAIN_LABELS["f_narrative"]
+    return {**OFFCHAIN_LABELS, "f_narrative": (label, anchor % config.chain_name(chain))}
 
 
 def _field(key: str, label: str, widget: str, value: Any = None, **kw: Any) -> dict:
@@ -268,7 +293,7 @@ def build(
     ] + [
         _field("pipeline.scoring.offchain_factor_weights.%s" % key, label, "num",
                str(offchain_weights.get(key, "")), unit="%")
-        for key, (label, _anchor) in OFFCHAIN_LABELS.items()
+        for key, (label, _anchor) in _offchain_labels(chain).items()
     ]
 
     interval = int(schedule.get("interval_hours") or 3)
@@ -281,7 +306,10 @@ def build(
         _field("report.per_round", "每轮报告数", "num", str(report.get("per_round", 5)), unit="份",
                drop_x="下轮生效"),
         _field("pipeline.gate_limit", "判定候选数", "num",
-               str(pipeline.get("gate_limit", 20)), op="≤", unit="个",
+               str(pipeline.get("gate_limit", 0)), op="≤", unit="个",
+               drop_x="下轮生效"),
+        _field("pipeline.research_limit", "调研上限", "num",
+               str(pipeline.get("research_limit", 20)), op="≤", unit="个",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
                options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
@@ -413,7 +441,7 @@ def build(
                             "五个 0–5 判断（权重默认各 20%）：",
                         ]
                         + ["%s %s" % (label, anchor)
-                           for label, anchor in OFFCHAIN_LABELS.values()]
+                           for label, anchor in _offchain_labels(chain).values()]
                     ),
                 },
             ],
@@ -430,7 +458,7 @@ def build(
                         line
                         for line in (
                             scan_reading,
-                            "判定候选数按流动性取前 N，0 = 判完整个幸存者池。",
+                            "判定候选数 0 = 判完整个幸存者池；调研上限按流动性取前 N 个过关候选做链下调研，0 = 全部调研。",
                             "触发时刻由间隔生成；推送延迟 = 报告发布后等待的分钟数。",
                         )
                         if line
@@ -486,14 +514,20 @@ def interval_slots(hours: int) -> list[int]:
 
 
 def _source_checks(enabled: list[str], counts: list[dict]) -> list[dict]:
-    """Only the scanners. GoPlus and Sourcify verify safety, they do not scan."""
+    """The scanners this chain's own config lists, in the config's own order.
+
+    The list is read from `scan_sources` rather than kept here as a constant: Arc scans
+    RadarDEX and Tolly, Robinhood scans its launchpads, and a constant would offer one
+    chain's sources on the other chain's page. GoPlus and Sourcify verify safety, they
+    never scan, so they are not in `scan_sources` to begin with.
+    """
     by_name = {c.get("name"): c.get("count") for c in counts}
     out = []
-    for name in SCAN_SOURCES:
+    for name in enabled:
         count = by_name.get(name)
         out.append({
             "value": name,
-            "label": SOURCE_LABELS[name],
+            "label": SOURCE_LABELS.get(name, name),
             "count": int(count) if count is not None else None,
         })
     return out

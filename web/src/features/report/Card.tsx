@@ -1,5 +1,5 @@
-import { Boxes, ChevronRight, ShieldCheck } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Boxes, ChevronDown, ChevronRight, ShieldCheck, Star } from "lucide-react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
@@ -7,39 +7,52 @@ import { Icon } from "../../components/Icon";
 import { Rich } from "../../components/Rich";
 import { whole } from "../../format";
 
-/** The 结论, five lines of it, with the rest one hover away.
+/** The 结论, ten lines of it, with the rest one click away.
  *
  * The box is a fixed height so the cards are: every block on a collapsed card is fixed
  * except this one, and a round whose cards each end somewhere else cannot be read down a
- * column. Five lines is the height that fits twelve cards - see the `--verdict-lines`
+ * column. Ten lines is the height that fits twelve cards - see the `--verdict-lines`
  * block in app.css, which is also where the number can be turned.
  *
- * The popover is built only when the text is really cut. `scrollHeight` still reports the
- * full box under `-webkit-line-clamp`, so the measurement is exact rather than a guess at
- * a character count, and a conclusion that fits does not open a panel repeating what is
- * already on the page. Hover and focus open it; a click does not, so dragging across a
- * conclusion to copy it stays an ordinary selection.
+ * The text that does not fit is opened by the 展开 button in the bottom-right corner of the
+ * box, and put back by the same button reading 收起 (2026-09-30, user). It used to be a
+ * hover that floated the whole conclusion over the card below: it could not be pinned open,
+ * and it covered the card it landed on.
  *
- * 全部展开 reaches this too (2026-09-26): a clamped conclusion under a bulk-open card is
- * the one block still asking for a hover, so the bulk state drops the clamp as well (CSS,
- * `.verdict-wrap.full`) and there is nothing left to reveal. 全部收起 puts both back. */
+ * The button is built only when the text is really cut. `scrollHeight` still reports the
+ * full box under `-webkit-line-clamp`, so the measurement is exact rather than a guess at a
+ * character count, and a conclusion that fits opens nothing.
+ *
+ * 展开卡片 reaches this too (2026-09-26): a clamped conclusion under a bulk-open card is
+ * the one block still asking for a click, so the bulk state drops the clamp as well (CSS,
+ * `.verdict-wrap.full`) and there is nothing left to reveal. 收起卡片 puts both back. */
 function Verdict({ segments, full }: { segments: CardModel["verdict"]; full: boolean }) {
   const box = useRef<HTMLParagraphElement>(null);
   const [cut, setCut] = useState(false);
   const [open, setOpen] = useState(false);
 
-  // 全部展开 is the reader saying "show me everything", and a clamped conclusion under it
-  // is the one block still asking for a hover. The clamp itself is in CSS; what changes
-  // here is that the popover is not built and the box is not a tab stop while the text is
-  // all on the page. `full` re-runs the measurement, so both directions stay exact.
-  const clipped = cut && !full;
+  // 展开卡片 and this card own 展开 drop the clamp, and a box without a clamp always
+  // reports "not cut" - so the measurement is skipped while either is on and the answer
+  // stands from the layout that had the clamp. Measuring there is a loop: `cut` clears, the
+  // button goes away, the clamp comes back, the text is cut again, and the button blinks at
+  // every resize tick (seen on 2026-09-30).
+  const expanded = full || (open && cut);
+  const grown = useRef(expanded);
+  grown.current = expanded;
+
+  // The button exists only while there is something to open: 展开卡片 has already put the
+  // whole conclusion on the page, and an uncut one never had anything hidden.
+  const more = cut && !full;
 
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     // A resize can re-wrap the text and put the last line back inside the box, so the
     // answer is re-derived rather than remembered from the first layout.
-    const measure = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    const measure = () => {
+      if (grown.current) return;
+      setCut(el.scrollHeight > el.clientHeight + 1);
+    };
     measure();
     const watch = new ResizeObserver(measure);
     watch.observe(el);
@@ -47,21 +60,16 @@ function Verdict({ segments, full }: { segments: CardModel["verdict"]; full: boo
   }, [segments, full]);
 
   return (
-    <div className={"verdict-wrap" + (full ? " full" : "") + (open && clipped ? " open" : "")}>
-      <p
-        className="verdict"
-        ref={box}
-        tabIndex={clipped ? 0 : -1}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-      >
+    <div className={"verdict-wrap" + (expanded ? " full" : "")}>
+      <p className="verdict" ref={box}>
         <Rich segments={segments} />
       </p>
-      {clipped ? (
-        <div className="verdict-pop" role="note">
-          <Rich segments={segments} />
+      {more ? (
+        <div className="verdict-more">
+          <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? "收起" : "展开"}
+            <Icon as={ChevronDown} size={14} />
+          </button>
         </div>
       ) : null}
     </div>
@@ -72,18 +80,31 @@ function rank(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `#${value}`;
 }
 
-/** `openAll` + `bulkTick` are the topbar's 全部展开 / 全部收起 reaching every card at
- *  once. The two <details> are uncontrolled - the reader owns them - so a bulk action
- *  remounts them under a new key rather than trying to become their state. One click
- *  then lands on all five cards, and a manual toggle keeps working until the next one. */
+/** `openAll` + `bulkTick` are the topbar's 展开卡片 / 收起卡片 reaching every card at
+ *  once. The two <details> and the 展开 button under the conclusion are uncontrolled - the
+ *  reader owns them - so a bulk action remounts them under a new key rather than trying to
+ *  become their state. One click then lands on all five cards, and a manual toggle keeps
+ *  working until the next one: 收起卡片 puts back the ten lines and the 展开 button on the
+ *  card the reader had opened too, which is what one round of the bulk control means. */
 export function Card({
   card,
   openAll,
   bulkTick,
+  favorited = false,
+  onFavorite,
+  foot,
 }: {
   card: CardModel;
   openAll: boolean;
   bulkTick: number;
+  /** Already on the shelf. The star is drawn filled and clicking it takes the card off. */
+  favorited?: boolean;
+  /** Keep this card, or take it off. Absent where there is no shelf to act on. */
+  onFavorite?: () => void;
+  /** A second footer band, under the links. Only the shelf passes one: it is where a kept
+   *  card says which round and which set of settings it was read as, and a card drawn from
+   *  the round it is standing in has nothing to say there. */
+  foot?: ReactNode;
 }) {
   const short = `${card.ca.slice(0, 6)}…${card.ca.slice(-4)}`;
   // Ranks 1-3 carry the podium strip; the colours live in app.css.
@@ -103,6 +124,21 @@ export function Card({
           </span>
         </div>
         <div className="head-r">
+          {/* The star stands beside the score because it acts on this card: it is the one
+              control on a card that keeps it rather than opens it, and it is drawn filled
+              once the shelf holds this CA. */}
+          {onFavorite ? (
+            <button
+              type="button"
+              className={"fav" + (favorited ? " on" : "")}
+              aria-pressed={favorited}
+              aria-label={favorited ? "取消收藏" : "收藏这张卡"}
+              title={favorited ? "取消收藏" : "收藏这张卡"}
+              onClick={onFavorite}
+            >
+              <Icon as={Star} size={14} />
+            </button>
+          ) : null}
           <span className="score">{whole(card.score)}</span>
           <span className="score-label">综合分</span>
         </div>
@@ -160,7 +196,7 @@ export function Card({
         <h4 className="sec-h">
           结论
         </h4>
-        <Verdict segments={card.verdict} full={openAll} />
+        <Verdict key={`verdict-${bulkTick}`} segments={card.verdict} full={openAll} />
       </section>
 
       <details key={`quality-${bulkTick}`} className="card-sec sec-quality" open={openAll}>
@@ -285,6 +321,8 @@ export function Card({
           </Fragment>
         ))}
       </footer>
+
+      {foot ? <div className="card-src">{foot}</div> : null}
     </article>
   );
 }

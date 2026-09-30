@@ -99,7 +99,7 @@ def test_the_ranking_row_carries_the_high_gmgn_measured():
     from app.sources.gmgn import GmGn
 
     metrics = GmGn()._metrics("0xabc", {"symbol": "ABC", "market_cap": "113800",
-                                        "history_highest_market_cap": "5048753"})
+                                        "history_highest_market_cap": "5048753"}, "24h")
     assert metrics.high_market_cap_usd == 5_048_753
     assert metrics.provenance["high_market_cap_usd"] == "gmgn"
 
@@ -110,6 +110,54 @@ def test_a_row_with_no_high_answers_nothing():
     from app.sources.gmgn import GmGn
 
     source = GmGn()
-    assert source._metrics("0xabc", {"market_cap": "113800"}).high_market_cap_usd is None
-    assert source._metrics("0xabc",
-                           {"history_highest_market_cap": "0"}).high_market_cap_usd is None
+    assert source._metrics("0xabc", {"market_cap": "113800"}, "24h").high_market_cap_usd is None
+    assert source._metrics("0xabc", {"history_highest_market_cap": "0"},
+                           "24h").high_market_cap_usd is None
+
+
+def test_a_short_window_row_answers_no_24_hour_volume():
+    """`volume` and `price_change_percent` are the ranking window's totals, not the day's.
+
+    One Arc token read 47.58 on the 5m board, 59.56 on the 1h board and 9,386.81 on the 6h
+    board where the real 24h figure was 14,549 (measured 2026-09-29, two independent feeds
+    agreeing). Stored as a 24h number that reading put a $14.5K-a-day token at $6 and the
+    volume floor dropped it - so the adapter leaves both fields blank off a short window,
+    and 未判定 never rejects. The spot numbers on the same row are not window-scoped and
+    still answer."""
+    from app.sources.gmgn import GmGn
+
+    row = {"market_cap": "178794", "liquidity": "37153.4", "holder_count": 646,
+           "volume": "5.75836", "price_change_percent": "-0.319918"}
+    source = GmGn()
+
+    daily = source._metrics("0xabc", row, "24h")
+    assert daily.volume_24h_usd == 5.75836
+    assert daily.price_change_24h_pct == -0.319918
+    assert daily.provenance["volume_24h_usd"] == "gmgn"
+
+    hourly = source._metrics("0xabc", row, "1h")
+    assert hourly.volume_24h_usd is None
+    assert hourly.price_change_24h_pct is None
+    assert "volume_24h_usd" not in hourly.provenance
+    assert hourly.market_cap_usd == 178794 and hourly.liquidity_usd == 37153.4
+    assert hourly.holders == 646
+
+
+def test_rank_rows_hands_on_the_window_that_answered(monkeypatch):
+    """The window is the only thing that says what `volume` means, so it travels with the
+    row; the 24h board wins whenever the token is on it. It rides inside the row because
+    the answer is cached through JSON, which would hand a pair back as a list."""
+    from app.sources import gmgn
+
+    boards = {"1m": [], "5m": [{"address": "0xAA", "volume": "5"}],
+              "1h": [{"address": "0xaa", "volume": "59"}], "6h": [],
+              "24h": [{"address": "0xaa", "volume": "9386"}]}
+    source = gmgn.GmGn()
+    monkeypatch.setattr(gmgn, "cached", lambda _key, _ttl, produce: produce())
+    monkeypatch.setattr(source, "_rank_page",
+                        lambda chain_id, period, page: boards[period] if page == 1 else [])
+
+    rows = source.rank_rows("arc")
+    assert list(rows) == ["0xaa"]
+    assert rows["0xaa"]["_window"] == "24h"
+    assert rows["0xaa"]["volume"] == "9386"

@@ -63,3 +63,21 @@ def test_the_tax_comes_from_the_source_that_measures_it():
     assert out.sell_tax_pct is None
     assert "buy_tax_pct" not in out.provenance
 
+
+
+def test_the_market_caliber_leads_the_numbers_the_rules_read():
+    """DexScreener is the round's market caliber, so it has to outrank the bulk feeds on
+    the four numbers the floors and the sort read.
+
+    It was missing from all four lists, so a per-token answer was bought, merged in and
+    then dropped on the floor: 0 of 17,573 stored snapshots had ever credited it with a
+    market number (measured 2026-09-29). It has no bulk sweep, so leading a list cannot
+    override a feed's own row - it only decides the enrich merge, which is the point.
+    """
+    from app.pipeline.collect import FIELD_PRIORITY
+
+    for field in ("market_cap_usd", "liquidity_usd", "volume_24h_usd", "price_usd"):
+        assert FIELD_PRIORITY[field][0] == "dexscreener", field
+    # GMGN answers 24h change in the ranking window's units, so it is listed - and the
+    # two feeds that ship a real change24h sit right behind it.
+    assert FIELD_PRIORITY["price_change_24h_pct"][:3] == ("gmgn", "radardex", "tolly")

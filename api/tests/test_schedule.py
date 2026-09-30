@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.pipeline import schedule
+from app.store import db
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -121,6 +122,84 @@ def test_a_round_a_restart_left_pending_is_taken_on_again(isolated_db, monkeypat
 
     assert schedule.recover() == [left["id"]]
     assert taken == [left["id"]], "only the round nothing has touched"
+
+    # And the one that *was* being read is closed, not left looking like it still is: after
+    # a restart nothing owns it, so the page would otherwise count up for the rest of the
+    # week. It stored no reports, so it did not finish, and it says so.
+    conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT status, error, finished_at FROM runs WHERE id = ?", (done["id"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["status"] == "failed"
+    assert row["finished_at"], "a round with no finish time reads as one still going"
+    assert "中断" in row["error"]
+
+
+def test_a_round_nobody_owns_is_not_a_chain_with_a_round_in_flight(isolated_db, monkeypatch):
+    """The ticker used to ask the table "is any round not terminal?" - and a process that
+    dies mid-round leaves one behind for good, so every chain with one read as busy and no
+    scheduled round ever started again (2026-09-30: both chains, eleven hours of slots)."""
+    from app.pipeline import run as pipeline_run
+
+    stale = pipeline_run.create_run("arc")
+    pipeline_run._set_status(stale["id"], "collected")
+    monkeypatch.setattr(schedule, "_live", {})
+    assert schedule.busy_chains() == set()
+    assert schedule.live_configs("arc") == []
+
+    started = []
+    monkeypatch.setattr(schedule, "submit",
+                        lambda chain_id, run_id, config_id=None: started.append(run_id))
+    monkeypatch.setattr(schedule.config, "enabled_configs", lambda: [_chain()])
+    now = datetime(2026, 9, 24, 5, 0, 10, tzinfo=SHANGHAI)
+    assert len(schedule.tick(now)) == 1, "a leftover must not hold the chain out of the tick"
+    assert len(started) == 1
+
+
+def test_a_leftover_that_stored_reports_did_finish(isolated_db):
+    """Which terminal state a leftover gets is read off its own output: the write is the
+    last thing before the status moves on, so a round holding cards did finish."""
+    from app.pipeline import run as pipeline_run
+
+    done = pipeline_run.create_run("arc")
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE runs SET status = 'written' WHERE id = ?", (done["id"],))
+        conn.execute(
+            "INSERT INTO reports (run_id, ca, rank, status, payload_json, created_at)"
+            " VALUES (?, '0xaa', 1, 'written', '{}', ?)",
+            (done["id"], db.now_iso()),
+        )
+    finally:
+        conn.close()
+    assert pipeline_run.close_abandoned(done["id"]) == "researched"
+    assert pipeline_run.abandoned_runs() == []
+
+
+def test_a_leftover_from_a_state_machine_that_is_gone_is_closed_too(isolated_db):
+    """`sent` is not in the enum any more, so `states.can` has no answer for it - and a
+    row left at it keeps reading as a round still running to anyone who scrolls back."""
+    from app.pipeline import run as pipeline_run
+
+    old = pipeline_run.create_run("arc")
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE runs SET status = 'sent' WHERE id = ?", (old["id"],))
+    finally:
+        conn.close()
+    assert pipeline_run.close_abandoned(old["id"]) == "failed"
+    assert pipeline_run.abandoned_runs() == []
+
+def test_a_round_of_this_process_is_a_chain_with_a_round_in_flight(isolated_db, monkeypatch):
+    """The other half: a round that *is* being read has to hold its chain out of the tick,
+    or two rounds would pull the same sources off the same node at once."""
+    monkeypatch.setattr(schedule, "_live", {"abc123": ("arc", "default")})
+    assert schedule.busy_chains() == {"arc"}
+    assert schedule.live_configs("arc") == ["default"]
+    assert schedule.live_configs("robinhood") == []
 
 
 def test_a_chain_with_no_interval_has_no_cron_of_its_own():

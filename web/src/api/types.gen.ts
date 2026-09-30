@@ -345,6 +345,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Favorites
+         * @description The shelf, newest kept first. Every row carries its card: the page draws cards.
+         */
+        get: operations["list_favorites_api_v1_favorites_get"];
+        put?: never;
+        /**
+         * Keep Favorite
+         * @description Keep the card this round wrote for this token, as the report page drew it.
+         *
+         *     Taken from report.assemble.cards rather than from the raw report payload: the page is
+         *     already drawn from that assembly (the new/continuing flag, the deltas against the round
+         *     before, the two weights), and freezing anything less would mean re-deriving those on
+         *     read - against a later round. The row itself is shaped by that same module, so the card a
+         *     reader keeps and the card a later round refreshes it with are one shape.
+         */
+        post: operations["keep_favorite_api_v1_favorites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/favorites/{chain_id}/{ca}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Favorite */
+        get: operations["get_favorite_api_v1_favorites__chain_id___ca__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Forget Favorite
+         * @description Take one card off the shelf. A card that was already gone is not an error.
+         */
+        delete: operations["forget_favorite_api_v1_favorites__chain_id___ca__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -520,6 +571,11 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
             /** Enabled */
             enabled: boolean;
             /** Explorer */
@@ -622,6 +678,61 @@ export interface components {
             badge: string;
             /** Body */
             body: components["schemas"]["SegmentOut"][];
+        };
+        /**
+         * FavoriteIn
+         * @description A card to keep: the round it came from, and which of that round cards.
+         */
+        FavoriteIn: {
+            /** Run Id */
+            run_id: string;
+            /** Ca */
+            ca: string;
+        };
+        /**
+         * FavoriteOut
+         * @description One kept card: the reader is following the token, and this is that token's current card.
+         *
+         *     A copy rather than a reference, on purpose: a report row is deleted with its round, and
+         *     a whole report library can be dropped, while a kept card has to stay readable. It is
+         *     also why `config_id` is not part of the key - a card can come from a chain this app does
+         *     not screen, so the shelf is keyed by (chain_id, ca) alone. It is a value: the set of
+         *     settings the round ran under, for the line the shelf prints under the card.
+         *
+         *     A round that writes one of these tokens again replaces the payload in place
+         *     (report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward
+         *     while `saved_at` stays at the moment the reader kept it.
+         */
+        FavoriteOut: {
+            /** Chain Id */
+            chain_id: string;
+            /** Ca */
+            ca: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Origin
+             * @default round
+             */
+            origin: string;
+            /** Origin Run Id */
+            origin_run_id?: string | null;
+            /**
+             * Origin Label
+             * @default
+             */
+            origin_label: string;
+            /** Score */
+            score?: number | null;
+            /** Rank */
+            rank?: number | null;
+            /** Config Id */
+            config_id?: string | null;
+            /** Saved At */
+            saved_at: string;
+            /** Updated At */
+            updated_at: string;
+            card: components["schemas"]["CardOut"];
         };
         /** FieldOptionOut */
         FieldOptionOut: {
@@ -1038,6 +1149,11 @@ export interface components {
             volume?: number | null;
             /** Holders */
             holders?: number | null;
+        };
+        /** RemovedOut */
+        RemovedOut: {
+            /** Removed */
+            removed: boolean;
         };
         /** RuleCountOut */
         RuleCountOut: {
@@ -1861,6 +1977,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LexiconOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_favorites_api_v1_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteOut"][];
+                };
+            };
+        };
+    };
+    keep_favorite_api_v1_favorites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FavoriteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_favorite_api_v1_favorites__chain_id___ca__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                ca: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_favorite_api_v1_favorites__chain_id___ca__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                ca: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedOut"];
                 };
             };
             /** @description Validation Error */

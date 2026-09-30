@@ -1,0 +1,106 @@
+# 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
+# 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
+# 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
+id: robinhood
+# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
+name: Robinhood
+label: Robinhood 雷达
+enabled: true
+explorer: https://robinhoodchain.blockscout.com
+# The chain's own node: LP positions and dev balances are read here, not from an API.
+rpc: https://rpc.mainnet.chain.robinhood.com
+configs:
+  - id: default
+    label: 默认配置
+    enabled: true
+    locked: true
+    # 三个发射台各给一份整链清单（coinbarrel / pez / peeps 只索引这条链，住在
+    # sources/robinhood/ 下），GMGN 给换手榜，GeckoTerminal 给池子枚举，
+    # GoPlus 与 Sourcify 只判安全、不扫链。
+    sources: [geckoterminal, coinbarrel, pez, peeps, gmgn, goplus, sourcify]
+    schedule:
+      cron: "0 2,5,8,11,14,17,20,23 * * *"
+      interval_hours: 3
+      timezone: Asia/Shanghai
+      push_delay_minutes: 6
+    pipeline:
+      scan_limit: 5000
+      universe_holders_floor: 50
+      scan_sources: [gmgn, coinbarrel, pez, peeps, geckoterminal]
+      # 判定跑整个幸存者池（0 = 全池）。只判前 N 个等于把名额交给最深的那批，而深水里恰好
+      # 是 LP 未锁 / 陷阱超标 / 深跌的币最多（2026-09-30 实测：前 20 个里 17 个死在这三
+      # 条），健康的币排在后面就永远没被问过。先读完、再用规则裁，规则才拦得住。
+      gate_limit: 0
+      # 链下调研是本轮唯一烧 token 的一步（X 搜索 + 读页面 + 写词条）：过关候选按流动性取
+      # 前 N 个做调研，0 = 全部调研。
+      research_limit: 20
+      prefilter:
+        # 这条链的分布（2026-09-30 实测）：发射台在曲线段的初始 FDV 是 4,300 U 上下，
+        # 毕业线在 3.5-4 万 U（CoinBarrel 报 40,000、Peeps 报 35,000）；GMGN 换手榜上
+        # 1 万-20 万这一段有 40 个币，24h 成交 70 万-130 万 U。下限沿用 1 万，掉的是
+        # 曲线段那一批没起步的，留的是换手榜上真在动的。
+        # 上限 20 万还有一个作用：这条链上有代币化股票（NVDA 1,900 万、PONS 5.3 亿），
+        # 它们天然落在这条线之外，不会挤进榜单。
+        market_cap_min_usd: 10000
+        market_cap_max_usd: 200000
+        # 实测：CoinBarrel 全链 293 个币里流动性 ≥5 千的 22 个、≥3 千的 117 个。
+        # 5 千正是「已经毕业、池子里真有钱」与「还在曲线上」之间那道线。
+        liquidity_min_usd: 5000
+        # 这一条比 Arc 低得多，是量出来的：CoinBarrel 能看到的那 293 个币里，24h 成交非零
+        # 的只有 16 个，≥100 U 的 3 个，≥1000 U 的 1 个 —— 按 Arc 的 1000 走，这一条会把
+        # 候选池清空。300 留住真正在动的，同时淘汰掉那 289 个没有成交的。
+        volume_24h_min_usd: 300
+        # 实测：CoinBarrel 持有人 ≥50 的 11 个、≥100 的 6 个；Peeps 那个 347；PEZ 毕业的
+        # 一个 3,294。GMGN 在 Robinhood 上不报持有人数 —— 那种行是「未判定」，不会因为
+        # 这一条被淘汰。
+        holders_min: 50
+        # 持有人上限，留空 = 不设上限。
+        holders_max: null
+        # 空壳淘汰: 市值与流动性同时缺失的行直接淘汰。未知不淘汰是用在「源没回答」上的，
+        # 而一个只有地址、没有任何市场数据的行不是没回答，是没有可答的东西。
+        require_market_data: true
+        # 距高回撤：距历史最高点回撤 70% 以上即淘汰。Robinhood 上这条链自己的两个发射台
+        # 各自带一份历史高点（CoinBarrel 的 peak_fdv_usd、Peeps 的 athMarketCap），
+        # 池面读数由 GeckoTerminal 提供，三个读数取最深的那个，其余规则同 Arc。
+        drawdown_max_pct: -70
+        top10_max_pct: 40
+        bundling_max_pct: 25
+        forbid_honeypot: true
+        # 零数据淘汰: how many of the five ranking factors must carry a number once every
+        # source has answered. 0 switches the rule off.
+        min_scored_fields: 1
+      safety:
+        require_verified_source: true
+        source_verification_mode: dual
+        lp_unjudged_passes: true
+        # 危险权限只留「真能卷走资产」的三条：隐藏所有者、可改持有人余额、可夺回所有权。
+        # mintable / blacklist / pausable / is_proxy 照常读、卡片上照常显示，只是不再当门槛：
+        # 发射台币的 mint 权大多在发射台合约手里，当门槛会连带误杀。
+        forbid_dangerous_perms: [hidden_owner, owner_change_balance, can_take_back_ownership]
+        honeypot_max_pct: 45
+      scoring:
+        onchain_weight: 55
+        offchain_weight: 45
+        onchain_factors: [liquidity, volume_24h, holders, top10_concentration, bundling]
+        onchain_factor_weights:
+          liquidity: 20
+          volume_24h: 20
+          holders: 20
+          top10_concentration: 20
+          bundling: 20
+        offchain_factor_weights:
+          f_completeness: 20
+          f_substance: 20
+          f_team: 20
+          f_narrative: 20
+          f_community: 20
+    report:
+      per_round: 5
+      push_target: telegram
+      push_content: [cards, table]
+    alerts:
+      rename_count_min: 2
+      rename_count: true
+      creator_token_count: true
+      duplicate_symbol: true
+      missing_socials: false

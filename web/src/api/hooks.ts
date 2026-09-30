@@ -132,3 +132,29 @@ export function useDeleteChainConfig(chainId: string) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["chains"] }),
   });
 }
+
+/** The shelf. One query for both readers of it: the 收藏 page draws the cards, and a report
+ *  page only needs to know which of its CAs are already on it - the same rows answer both, so
+ *  a star and the shelf can never disagree. */
+export function useFavorites() {
+  return useQuery({ queryKey: ["favorites"], queryFn: api.listFavorites, staleTime: 30_000 });
+}
+
+/** Keeping a card. Both writes invalidate the one list: the star on a report card and the
+ *  shelf are drawn from it. */
+export function useKeepFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ runId, ca }: { runId: string; ca: string }) => api.keepFavorite(runId, ca),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
+  });
+}
+
+export function useForgetFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chainId, ca }: { chainId: string; ca: string }) =>
+      api.forgetFavorite(chainId, ca),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
+  });
+}

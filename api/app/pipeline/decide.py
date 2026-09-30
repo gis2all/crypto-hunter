@@ -58,14 +58,18 @@ DEFAULT_ENRICH_LIMIT = 12
 #: ever needs one.
 GATE_ROUNDS = 0
 
-#: How many survivors the gate judges, by default. The reference implementation enriched
-#: twelve and stopped once it held twice the report count; judging the whole pool is what
-#: made our rounds take twenty minutes, because per-token reads are paced per host and that
-#: cap is serial - more workers cannot shorten it. Twenty is the operator's number: the
-#: pool is sorted by liquidity, so these are the twenty with the most standing depth behind
-#: them, and the rest are left 未判定 (neither passed nor dropped) rather than quietly
-#: judged on stale bulk numbers. 0 restores "judge the whole pool".
-GATE_LIMIT = 20
+#: How many survivors the gate judges. Zero - the whole pool - is the rule.
+#:
+#: The cap used to be twenty, and that number was doing two unrelated jobs: limiting the
+#: paid reads, and choosing who moved on. Sorting by liquidity *before* the paid read made
+#: the second job wrong. The deepest rows a chain lists are disproportionately the rows the
+#: chip and safety rules are about to reject (Robinhood 2026-09-30: the top twenty by depth
+#: were consumed by seventeen LP-unlocked / entrapment / drawdown rejects), so a healthy
+#: token below them was never asked about at all - 未判定, on the one question the round
+#: exists to ask. A filter that runs on a sample of the pool is not a filter, so it runs on
+#: all of it, and the cut moves to the off-chain research that follows (RESEARCH_LIMIT) -
+#: the pass that actually costs money. The knob stays: 0 means the whole pool.
+GATE_LIMIT = 0
 
 #: How many candidates are asked about at once. Every host paces itself, so this number
 #: changes no host's request rate - it only decides how much of the round is spent idle
@@ -107,10 +111,38 @@ MARKET_ENRICH: tuple[str, ...] = ("dexscreener", "gmgn")
 ENRICH_POOL_MULTIPLE = 3
 
 
+#: How many of the qualified pool gets an off-chain entry, deepest first. This is the one
+#: cap in the round that is about money: the chip and safety reads cost seconds per token and
+#: no tokens at all, while an entry costs a search, a handful of page reads and a model call
+#: (report/research.py) - it is the only pass that spends. So the cut belongs on the far
+#: side of the filter, where every row above it has already answered everything the round
+#: asks, and never on the near side, where it was choosing between rows nobody had read.
+#: Rows below it were rejected by nothing: they are 候选 and carry no score. 0 = all of them.
+RESEARCH_LIMIT = 20
+
+
 def _gate_cap(cfg: dict) -> int:
-    """How many survivors the gate judges: the operator's knob, or the module default."""
+    """How many survivors the gate judges: the operator's knob, or the whole pool.
+
+    A negative is read as 0 rather than compared against: the knob's own convention is that
+    0 means the whole pool, and an unreachable cap would turn _top_up's reach into a
+    negative slice - which drops the pool's *deepest* rows, the opposite of the intent.
+    """
     cap = cfg.get("gate_limit")
-    return GATE_LIMIT if cap is None else int(cap)
+    if cap is None:
+        return GATE_LIMIT
+    return max(0, int(cap))
+
+
+def _research_cap(cfg: dict) -> int:
+    """How many qualified tokens get an off-chain entry: the operator's knob.
+
+    Same convention as _gate_cap: 0 means all of them, and a negative is read as 0.
+    """
+    cap = cfg.get("research_limit")
+    if cap is None:
+        return RESEARCH_LIMIT
+    return max(0, int(cap))
 
 
 def _depth(row: Candidate) -> tuple[float, float]:
@@ -124,18 +156,27 @@ def _depth(row: Candidate) -> tuple[float, float]:
 
 
 def _needs_chips(metrics: TokenMetrics) -> bool:
-    """A row the bulk sweep left without one of the chip numbers the hard filter reads.
+    """A row the bulk sweep left without a number the hard filter reads.
 
-    GMGN is the only scan source that carries all three, so this is really the question "did
-    GMGN list this token" - and the read that answers it brings the honeypot flag back with
-    them, which is why that flag is not a fourth condition here. A row that already carries
-    the three carries its flag as well, and the gate re-reads the flag through `check_all`
-    for every candidate either way.
+    The three chip numbers are GMGN's: it is the only scan source that carries all three,
+    so asking for them is really the question "did GMGN list this token" - and the read
+    that answers brings the honeypot flag back with them, which is why that flag is not a
+    fourth condition here. A row that already carries the three carries its flag as well,
+    and the gate re-reads the flag through `check_all` for every candidate either way.
+
+    24h volume joins them for a different reason. The bulk sweep only has GMGN's rank row
+    for it, and that row answers in the window it ranked in - a short-window reading is
+    gated out at the source (`GmGn._metrics`), which leaves the row blank rather than
+    wrong. A blank is the one thing the volume floor cannot judge, so it has to be bought
+    here, where one per-token read settles it for good. Leaving it blank would be worse
+    than asking: 未判定 never rejects, so every short-window row would sail through the
+    floor that exists precisely to keep $6-a-day tokens out of the pool.
     """
     return (
         metrics.holders is None
         or metrics.top10_pct is None
         or metrics.bundling_pct is None
+        or metrics.volume_24h_usd is None
     )
 
 #: This round’s `targets` in, the off-chain judgement for each out, and told how far
@@ -199,20 +240,22 @@ class RoundResult:
     unjudged: int = 0
 
     @property
-    def prefilter_dropped(self) -> int:
-        """Tokens the pool-level rules rejected, on the run panel's 硬过滤 row.
+    def filter_dropped(self) -> int:
+        """Tokens the filter rejected, on the run panel's single 淘汰 row.
 
         Credited the way the settings page credits them - the first rule to reject a token
-        owns it - so the row equals the sum of its own per-rule numbers and the panel's
-        columns add up to the scan. A token that only failed a pool rule once enrichment
-        sharpened its numbers is a pool-rule drop too: it was never the safety gate's.
+        owns it - so the row equals the sum of its own per-rule numbers. Every rule is that
+        one row by design (`filters.FILTER_PRIORITY`): the pool rules, the safety gate, the
+        trap ceiling and 距高回撤 all reject a token before the round spends a token on it,
+        which is exactly what the panel's filter row means. Two rows made a funnel that did
+        not add up - 距高回撤 was credited to neither of them.
         """
-        pool_rules = {reason.value for reason in filters.PREFILTER_PRIORITY}
+        rules = {reason.value for reason in filters.FILTER_PRIORITY}
         return sum(
             1
             for item in self.items.values()
             if item.decision == "dropped"
-            and funnel.first_reason({"failed": item.failed}) in pool_rules
+            and funnel.first_reason({"failed": item.failed}) in rules
         )
 
     @property
@@ -428,16 +471,31 @@ class Engine:
         if not gated:
             notes.append("本轮没有标的通过安全判定，未产出报告")
 
-        # Every judged token is judged again this round. Nothing is carried over from the
+        # 调研上限. The filter is over, so what is left is the set the round would publish if
+        # it could afford to read all of it. The off-chain pass is the one that costs money
+        # and time (RESEARCH_LIMIT), so its budget is spent here - deepest first, the same
+        # key the gate sorted by when it was the pass holding the budget. A row below the cut
+        # was rejected by nothing: it stays 候选 with no score rather than being quietly
+        # dropped, and the note says so.
+        research_cap = _research_cap(cfg)
+        qualified = sorted(gated, key=_depth)
+        researched = qualified[:research_cap] if research_cap else qualified
+        if len(researched) < len(qualified):
+            notes.append(
+                "过关候选按流动性排序，本轮只调研前 %d 个；其余 %d 个未调研"
+                "（未判定，不参与排名）" % (len(researched), len(qualified) - len(researched))
+            )
+
+        # Every researched token is judged again this round. Nothing is carried over from the
         # round before, which is what makes the prose on a card and the score beside it the
         # same dossier by construction rather than by a refresh rule.
         targets = [
             {"ca": item.ca, "symbol": item.symbol, "metrics": item.metrics, "facts": item.facts}
-            for item in gated
+            for item in researched
         ]
         judged = self.drafts(targets, told("draft")) if targets else {}
         clock.mark("draft")
-        missing = [item for item in gated if not judged.get(item.ca)]
+        missing = [item for item in researched if not judged.get(item.ca)]
         if missing:
             notes.append(
                 "未判定：" + "、".join(item.symbol or item.ca[:10] for item in missing)
@@ -589,10 +647,10 @@ class Engine:
                 told(here, max(planned, here))
 
         while checked < len(survivors):
-            # The gate is three quarters of a round - twenty reads of twenty tokens - so it is
-            # the phase a stop is most likely to land in, and the candidate is the finest
-            # boundary the round already has. One `raise_if` per candidate keeps the answer
-            # honest to within one token's network wait.
+            # The gate asks every survivor of the chain, so it is the phase a stop is most
+            # likely to land in, and the candidate is the finest boundary the round already
+            # has. One `raise_if` per candidate keeps the answer honest to within one token's
+            # network wait.
             cancel.raise_if(run_id)
             if limit and rounds >= limit:
                 break

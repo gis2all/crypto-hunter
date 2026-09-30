@@ -1,4 +1,4 @@
-import { ChevronUp, Circle, CircleCheck, CircleX, LoaderCircle, Pause } from "lucide-react";
+import { Circle, CircleCheck, CircleX, LoaderCircle, Pause } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { Batch, Run } from "../../api/client";
@@ -16,8 +16,9 @@ import { Icon } from "../../components/Icon";
  * because the right column is where the round own timings are read, and folding it away the
  * moment the last stage ended is how the answer to "what took the time" got written and then
  * hidden. A round that is queued but not started yet keeps the bare `rst` markers and the
- * `本轮 · 待运行` header of the prototype pre-run state, and 收起 is the way out of any of
- * them.
+ * `本轮 · 待运行` header of the prototype pre-run state. The panel carries no 收起 of its
+ * own: folding is the 运行结果 switch in the topbar (8.3.7), which is the only control that
+ * ever needs to know where the panel is.
  *
  * A round the operator stopped (`cancelled`) says 已中止 in the header - the answer to the
  * button that was just pressed - and lists the phases that had already ended, so a round
@@ -35,7 +36,6 @@ const STAGES: { key: string; label: string }[] = [
   { key: "collect", label: "拉取扫描源" },
   { key: "dedupe", label: "去重" },
   { key: "prefilter", label: "硬过滤" },
-  { key: "safety", label: "安全判定" },
   { key: "score", label: "打分排序" },
   { key: "report", label: "生成报告" },
   { key: "push", label: "推送 Telegram" },
@@ -44,38 +44,42 @@ const STAGES: { key: string; label: string }[] = [
 const ACTIVE_STAGE: Record<string, number> = {
   pending: 0,
   collected: 2,
-  scored: 4,
-  selected: 5,
-  written: 6,
-  researched: 7,
+  scored: 3,
+  selected: 4,
+  written: 5,
+  researched: 6,
 };
 
 /** Which stopwatch phases each row is made of.
  *
  * 拉取 and 去重 are one network stretch, split where the last source has answered, so each
  * owns its own seconds. 生成报告 is the model writing: the reading pass that produces each
- * entry, and the write that stores the round. 硬过滤 carries the chip reads it needs to
- * judge a row (`topup`): they are part of that filter, not a stage of their own.
+ * entry, and the write that stores the round. 硬过滤 carries every read it needs to judge a
+ * row - the chip top-up (`topup`) and the per-token gate (`gate`) - because both are part of
+ * that filter, not stages of their own. There is one 淘汰 row for the same reason: the pool
+ * rules, the safety rules, the trap ceiling and 距高回撤 all reject a token before the round
+ * spends a token on it, so splitting them in two was a split of nothing.
  */
 const STAGE_PHASES: Record<string, string[]> = {
   collect: ["pull"],
   dedupe: ["dedupe"],
-  prefilter: ["prefilter", "topup"],
-  safety: ["gate"],
+  prefilter: ["prefilter", "topup", "gate"],
   score: ["score", "sharpen"],
   report: ["draft", "write"],
   push: [],
 };
 
+/** Every scanner the two chains run, so a Robinhood round names its own sources
+ *  (CoinBarrel / PEZ / Peeps) rather than printing the raw key. */
 const SOURCE_SHORT: Record<string, string> = {
   gmgn: "GMGN",
   radardex: "RadarDEX",
   tolly: "Tolly",
+  coinbarrel: "CoinBarrel",
+  pez: "PEZ",
+  peeps: "Peeps",
   geckoterminal: "GeckoTerminal",
 };
-
-/** The four safety rules, whose per-rule counts add up to what安全判定 removed. */
-const SAFETY_RULES = ["source_unverified", "lp_unlocked", "dangerous_perm", "entrapment"];
 
 function mmss(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -117,7 +121,6 @@ export function RunPanel({
   batch,
   onCancel,
   cancelling,
-  onClose,
 }: {
   run: Run | undefined;
   running: boolean;
@@ -125,7 +128,6 @@ export function RunPanel({
   batch: Batch | undefined;
   onCancel: () => void;
   cancelling: boolean;
-  onClose: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
   // 中止 is two presses: the first one arms it, the second one stops the round. A round is
@@ -165,8 +167,8 @@ export function RunPanel({
   const active = ACTIVE_STAGE[run.status] ?? 0;
   const reached = failed || queued ? 0 : running ? active : STAGES.length;
   // The pipeline's own percent, and the stage it belongs to. A status is a boundary, not a
-  // position: without this the bar would sit at one seventh for the twenty minutes the
-  // safety gate takes. The stage count stays as a floor so the bar cannot go backwards
+  // position: without this the bar would sit at one sixth for the minutes the filter spends
+  // reading the pool. The stage count stays as a floor so the bar cannot go backwards
   // against the state the round is already in.
   const reported = typeof run.progress === "number" ? run.progress : null;
   const stageProgress = Math.min(1, reached / STAGES.length);
@@ -177,13 +179,12 @@ export function RunPanel({
       : 1;
 
   const sources = batch?.sources ?? [];
-  const byRule = new Map((batch?.rule_counts ?? []).map((r) => [r.key, r.count ?? 0]));
-  const safetyDropped = SAFETY_RULES.reduce((total, key) => total + (byRule.get(key) ?? 0), 0);
-  // `run.dropped` is every token this round 淘汰 - the hard filter and the safety gate
-  // together - so the 硬过滤 row shows the hard filter's own share of it, which the
-  // round writes down as `dropped_hard`. Rounds that predate the split have none: there
-  // `run.dropped` was the hard filter's subtotal already, so it is used as it stands.
-  const hardDropped = batch?.dropped_hard ?? run.dropped ?? 0;
+  // One 淘汰 row, and it is the strip's own number: every rule that can reject a token does
+  // it before the round spends a token on it, so the filter's share and the total are one
+  // count. `run.dropped` is that count and it is the one the strip reads, so the two can
+  // never disagree - including on the rounds archived before the split was removed, whose
+  // `dropped_hard` is only the pool rules' share of their own total.
+  const hardDropped = run.dropped ?? batch?.dropped_hard ?? 0;
 
   const result = (key: string): string => {
     if (key === "collect") {
@@ -199,9 +200,6 @@ export function RunPanel({
     }
     if (key === "prefilter") {
       return hardDropped ? `→ 淘汰 ${hardDropped.toLocaleString()}` : "—";
-    }
-    if (key === "safety") {
-      return safetyDropped ? `→ 淘汰 ${safetyDropped}` : "—";
     }
     if (key === "score") {
       return run.candidates ? `→ 候选 ${run.candidates}` : "—";
@@ -302,12 +300,7 @@ export function RunPanel({
               {armed ? "确认中止" : "中止"}
             </button>
           )
-        ) : (
-          <button className="btn sec" onClick={onClose}>
-            <Icon as={ChevronUp} size={14} />
-            收起
-          </button>
-        )}
+        ) : null}
       </div>
       <div className="rp-bar">
         <i id="rp-fill" style={{ transform: `scaleX(${progress.toFixed(4)})` }} />

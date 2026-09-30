@@ -21,7 +21,7 @@ from uuid import uuid4
 from .. import cancel, config
 from ..core.models import RunStatus
 from ..sources import http
-from ..report import lexicon, research
+from ..report import assemble as report_assemble, lexicon, research
 from ..store import db
 from . import progress, states
 from .decide import Engine
@@ -101,42 +101,72 @@ def pending_runs() -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def busy_chains() -> list[str]:
-    """Chains with a round in flight. A queued round counts: it is about to read.
+def abandoned_runs() -> list[dict]:
+    """Rounds the process before this one stopped reading mid-flight.
 
-    A chain's sets of settings pull from the same sources, at the same rate limits, off
-    the same node, so the ticker starts one of them at a time. This is what it asks to
-    know which chain to leave alone this tick.
+    Everything that is neither `pending` nor terminal. `pending` has its own answer -
+    nobody ever read it, so it can simply be run - while these were being read and stopped
+    being read. The archive also still carries rows from the state machine before this one,
+    at statuses no worker will ever move on; they are the same shape and get the same
+    answer, which is the only way a row like that ever stops looking like it is running.
+
+    Liveness itself is not asked here: at startup nothing can be in flight, and while a
+    round is reading, the executor is the one that knows (`schedule`).
     """
     conn = db.connect()
     try:
         marks = ",".join("?" for _ in states.TERMINAL)
         rows = conn.execute(
-            "SELECT DISTINCT chain_id FROM runs WHERE status NOT IN (%s)" % marks,
-            tuple(states.TERMINAL),
+            "SELECT * FROM runs WHERE status NOT IN (%s) AND status != ?" % marks,
+            (*states.TERMINAL, RunStatus.PENDING.value),
         ).fetchall()
     finally:
         conn.close()
-    return [row["chain_id"] for row in rows]
+    return [dict(row) for row in rows]
 
 
-def busy_configs(chain_id: str) -> list[str]:
-    """The chain's sets of settings that have a round in flight right now.
+def close_abandoned(run_id: str) -> str:
+    """Put a leftover round where its own output says it belongs; return that status.
 
-    Asked before a set of settings is deleted: a round already reading is a run row that
-    would be deleted out from under the worker that owns it.
+    A round that stored reports did finish - the write is the last thing before the status
+    moves on - so it closes as `researched`, which is what a finished round is, and its
+    cards stay readable. One that stored none never got that far, so it closes as `failed`
+    with the reason on it. One answer for both would either call a finished round broken or
+    a broken round finished.
+
+    A status this state machine does not know (`sent`, from before the enum existed) has no
+    legal transition at all and is written straight (the note at the end says why). Leaving
+    it is the one thing that does not work: the row keeps reading as a round still running.
     """
+    row = _row(run_id)
     conn = db.connect()
     try:
-        marks = ",".join("?" for _ in states.TERMINAL)
-        rows = conn.execute(
-            "SELECT DISTINCT config_id FROM runs WHERE chain_id = ? AND status NOT IN (%s)"
-            % marks,
-            (chain_id, *states.TERMINAL),
-        ).fetchall()
+        stored = conn.execute(
+            "SELECT 1 FROM reports WHERE run_id = ? LIMIT 1", (run_id,)
+        ).fetchone()
     finally:
         conn.close()
-    return [row["config_id"] for row in rows]
+    target = RunStatus.RESEARCHED.value if stored is not None else RunStatus.FAILED.value
+    reason = None if stored is not None else (
+        "上一进程中途退出（进程重启），"
+        "这一轮已中断，未写出报告卡")
+    if states.can(row["status"], target):
+        _set_status(run_id, target, reason)
+        return target
+    # A status this machine does not have (`sent`, from the enum before this one). `can`
+    # guards rounds that are in flight - the machine must not be able to move one where it
+    # should not go - and a status it does not know cannot be in flight: no worker
+    # understands it, so nothing is holding this row. Written straight, or it stays
+    # non-terminal for good and reads as a round still running to anyone who scrolls back.
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE runs SET status = ?, error = ?, finished_at = ? WHERE id = ?",
+            (target, reason, db.now_iso(), run_id),
+        )
+    finally:
+        conn.close()
+    return target
 
 
 def scheduled_run(chain_id: str, config_id: str, slot: str) -> dict | None:
@@ -275,7 +305,7 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
 
 
 def _finish(run_id: str) -> None:
-    """The last two steps of a round, in one place so the rule can be read at once.
+    """The last steps of a round, in one place so the rule can be read at once.
 
     `written` is not the end of anything: it says the rows are in, and a round that stops
     there reads as still running. There is no outlet to wait for - the delivery is the
@@ -283,9 +313,19 @@ def _finish(run_id: str) -> None:
     to `researched`, which is also the state that writes `finished_at` and gives the page a
     stopwatch to stop. Without this the run panel would show 正在运行 and a growing 已用 on
     every round forever.
+
+    Then the shelf, which belongs to a token rather than to a round: a kept card is the card
+    for that token, so the tokens this round wrote again get this round's card put in place
+    of the one they were carrying (report/assemble.py `refresh_kept`). Guarded the way the
+    lexicon cleanup is - a shelf that failed to refresh is not a round that failed to
+    publish, and the round is already out the door by the time this runs.
     """
     _set_status(run_id, RunStatus.WRITTEN.value)
     _set_status(run_id, RunStatus.RESEARCHED.value)
+    try:
+        report_assemble.refresh_kept(run_id)
+    except Exception:
+        log.exception("round %s could not refresh the shelf", run_id)
 
 
 def stop_run(run_id: str) -> dict:

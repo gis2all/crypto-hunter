@@ -11,6 +11,7 @@ from app.report import assemble
 from app.store import db
 
 ARC = "arc"
+ROBINHOOD = "robinhood"
 
 
 def test_health_reports_environment(client):
@@ -22,7 +23,7 @@ def test_health_reports_environment(client):
 
 def test_chains_come_from_config(client):
     chains = client.get("/api/v1/chains").json()
-    assert {c["id"] for c in chains} == {"arc", "bsc"}
+    assert {c["id"] for c in chains} == {"arc", "bsc", "robinhood"}
     arc = next(c for c in chains if c["id"] == ARC)
     assert arc["enabled"] is True
     assert arc["report"]["per_round"] == 5
@@ -333,11 +334,19 @@ def test_settings_form_carries_both_ends_of_a_range(client):
 
 
 def test_scan_rows_list_scanners_only(client):
-    """GoPlus and Sourcify verify safety; offering them as scan sources would be a lie."""
-    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
-    field = _fields(form)["pipeline.scan_sources"]
-    assert [c["value"] for c in field["checks"]] == [
+    """GoPlus and Sourcify verify safety; offering them as scan sources would be a lie.
+
+    The row is also the chain's own list rather than a constant: Arc scans RadarDEX and
+    Tolly, Robinhood scans its launchpads, and neither page may offer the other's.
+    """
+    arc = _fields(client.get(f"/api/v1/chains/{ARC}/settings/form").json())
+    assert [c["value"] for c in arc["pipeline.scan_sources"]["checks"]] == [
         "gmgn", "radardex", "tolly", "geckoterminal",
+    ]
+
+    robinhood = _fields(client.get(f"/api/v1/chains/{ROBINHOOD}/settings/form").json())
+    assert [c["value"] for c in robinhood["pipeline.scan_sources"]["checks"]] == [
+        "gmgn", "coinbarrel", "pez", "peeps", "geckoterminal",
     ]
 
 

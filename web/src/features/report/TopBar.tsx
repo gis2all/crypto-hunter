@@ -1,4 +1,4 @@
-import { ChevronRight, Download, FileText, FoldVertical, Layers, LayoutGrid, Play, Save, Send, Settings2, SlidersHorizontal, UnfoldVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Download, FileText, FoldVertical, Layers, LayoutGrid, ListChecks, Play, Save, Send, Settings2, SlidersHorizontal, UnfoldVertical } from "lucide-react";
 
 import type { Batch, Chain } from "../../api/client";
 import { Icon } from "../../components/Icon";
@@ -16,6 +16,9 @@ export type View = "report" | "params";
 export function TopBar({
   view,
   onView,
+  runPanelOpen,
+  onToggleRunPanel,
+  hasRun,
   onOverview,
   onExport,
   settings,
@@ -28,6 +31,16 @@ export function TopBar({
 }: {
   view: View;
   onView: (view: View) => void;
+  /** Which way the round's own step list is folded, and the switch that folds it. The
+   *  panel rises from under this bar, so the switch stands at the left end of the same
+   *  bar: it acts on the page rather than on one tab, which is why it is not a tab.
+   *  Folding a round the operator stopped hands the page back to the newest round with
+   *  cards (9.2.8) - it is the callback's business, and the panel's only way out. */
+  runPanelOpen: boolean;
+  onToggleRunPanel: () => void;
+  /** No round in the library yet means no panel to fold. A switch that opens nothing
+   *  costs the reader a click, so this one is drawn dimmed and refuses it (8.3.4). */
+  hasRun: boolean;
   onOverview: () => void;
   onExport: () => void;
   settings: SettingsState;
@@ -60,6 +73,21 @@ export function TopBar({
         </span>
       </div>
       <div className="acts">
+        {/* 运行结果 folds the step list of the round, which stands under this bar. It is the
+            leftmost control in the actions row on purpose: it belongs to the round, like
+            默认配置 and 展开卡片 do, and not to the tab you are standing on. */}
+        <button
+          className="btn sec"
+          id="run-toggle"
+          aria-expanded={runPanelOpen}
+          disabled={!hasRun}
+          title={hasRun ? (runPanelOpen ? "收起运行结果" : "展开运行结果") : "本轮还没有运行记录"}
+          onClick={onToggleRunPanel}
+        >
+          <Icon as={ListChecks} size={14} />
+          运行结果
+          <Icon as={runPanelOpen ? ChevronUp : ChevronDown} size={14} />
+        </button>
         {view === "report" ? (
           <>
             {/* One label, two states: the same control opens every card or closes every
@@ -67,7 +95,7 @@ export function TopBar({
                 does. */}
             <button className="btn sec" onClick={onToggleCards}>
               <Icon as={openAll ? FoldVertical : UnfoldVertical} size={14} />
-              {openAll ? "全部收起" : "全部展开"}
+              {openAll ? "收起卡片" : "展开卡片"}
             </button>
             <button className="btn sec" onClick={onOverview}>
               <Icon as={LayoutGrid} size={14} />

@@ -5,9 +5,14 @@ The interesting failures here are silent: a branch that raises is caught, turned
 looks wrong until someone asks why the fact is missing.
 """
 
+import pytest
+
 from app.sources import onchain
 
 POOL = "0x" + "1" * 40
+#: The explorer row these tests use. Every real chain config carries one; a chain without
+#: one is an error now, not a fallback to Arc (see `onchain._own_address`).
+EXPLORER = "https://explorer.arc.io"
 FACTORY = "0x" + "2" * 40
 
 
@@ -89,13 +94,13 @@ def test_a_404_is_an_answer_and_a_timeout_is_not(monkeypatch):
         raise http_mod.SourceError("https://explorer.arc.io/api/v2/addresses/0x1 -> HTTP 404")
 
     monkeypatch.setattr(onchain, "json_get", four_oh_four)
-    assert onchain.blockscout_checked({"id": "arc"}, "addresses/0x1") == ({}, True)
+    assert onchain.blockscout_checked({"id": "arc", "explorer": EXPLORER}, "addresses/0x1") == ({}, True)
 
     def timeout(*_a, **_k):
         raise http_mod.SourceError("https://explorer.arc.io/api/v2/addresses/0x1 -> ConnectTimeout")
 
     monkeypatch.setattr(onchain, "json_get", timeout)
-    assert onchain.blockscout_checked({"id": "arc"}, "addresses/0x1") == ({}, False)
+    assert onchain.blockscout_checked({"id": "arc", "explorer": EXPLORER}, "addresses/0x1") == ({}, False)
 
 
 def test_an_explorer_that_never_answered_is_not_written_down_as_no_launch(monkeypatch):
@@ -172,6 +177,27 @@ def test_the_explorer_is_reached_on_the_browser_lane(monkeypatch):
     assert answered is True and body['creation_transaction_hash'] == '0xdead'
     assert captured["transport"] == onchain.BLOCKSCOUT_TRANSPORT == "browser"
     assert captured["url"] == "https://explorer.arc.io/api/v2/addresses/0x1"
+
+
+def test_the_referer_is_the_explorer_of_the_chain_in_hand(monkeypatch):
+    """A single hardcoded Arc referer used to be sent to whichever explorer the chain
+    config named. A site that checks the referer refuses the whole sweep, and a refused
+    sweep reads downstream as "this token is not in the explorer" - a wrong fact about the
+    token rather than a header problem. Arc reading is unchanged, byte for byte."""
+    seen = []
+
+    def fake(url, headers=None, **kw):
+        seen.append(headers)
+        return {}
+
+    monkeypatch.setattr(onchain, "json_get", fake)
+    onchain.blockscout_checked(
+        {"id": "arc", "explorer": "https://explorer.arc.io"}, "addresses/0x1")
+    onchain.blockscout_checked(
+        {"id": "robinhood", "explorer": "https://robinhoodchain.blockscout.com"},
+        "addresses/0x1")
+    assert seen[0]["Referer"] == "https://explorer.arc.io/"
+    assert seen[1]["Referer"] == "https://robinhoodchain.blockscout.com/"
 
 
 def test_a_rejected_query_is_not_asked_again(monkeypatch):
@@ -418,3 +444,14 @@ def test_a_table_covering_too_little_of_the_lp_says_nothing():
     assert onchain.lp_lock_from_holders([_lp(12.0, contract=True)]) == (None, "")
     assert onchain.lp_lock_from_holders([]) == (None, "")
     assert onchain.lp_lock_from_holders(None) == (None, "")
+
+
+def test_a_chain_without_a_node_is_an_error_not_arc():
+    """Both helpers used to fall back to Arc's node. A chain file that forgot `rpc`
+    would read Arc's chain and print the answer under its own name."""
+    with pytest.raises(KeyError) as rpc_error:
+        onchain.rpc_url({"id": "newchain"})
+    assert "newchain" in str(rpc_error.value)
+    with pytest.raises(KeyError) as explorer_error:
+        onchain.explorer_url({"id": "newchain"})
+    assert "newchain" in str(explorer_error.value)

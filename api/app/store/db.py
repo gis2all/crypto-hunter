@@ -31,7 +31,11 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 7 gave a chain more than one set of settings: runs and settings versions carry a
 #: config_id, and the two lexicon tables are keyed by it so one CA can hold one entry per
 #: set of settings instead of one entry for the chain.
-SCHEMA_VERSION = 7
+#: 8 added `favorites`: cards the reader kept. A kept card is a copy of the assembled card
+#: plus where it came from, keyed by (chain_id, ca) - the key carries no config_id, because a
+#: card can come from a search on a chain this app does not screen, and nothing cascades
+#: into it. Which set of settings the round ran under is kept as a value, not as a key.
+SCHEMA_VERSION = 8
 
 
 def now_iso() -> str:
@@ -66,13 +70,16 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("lexicon", "substance_text", "TEXT"),
                   ("lexicon", "team_text", "TEXT"),
                   ("tokens", "peak_market_cap_usd", "REAL"),
-                  ("tokens", "peak_market_cap_at", "TEXT"))
+                  ("tokens", "peak_market_cap_at", "TEXT"),
+                  ("favorites", "config_id", "TEXT"))
 
-#: Columns the previous lexicon carried. Nothing reads them, a fresh database never
-#: creates them, and leaving them behind on an old one is a table that lies about what
-#: the code uses - so they are dropped once, on the upgrade that removed their readers.
+#: Columns an earlier shape carried. Nothing reads them, a fresh database never creates
+#: them, and leaving them behind on an old one is a table that lies about what the code
+#: uses - so they are dropped once, on the upgrade that removed their readers. (Most are
+#: the previous lexicon's; `favorites.caliber` is a string the shelf no longer prints.)
 #: A SQLite too old to drop a column simply keeps them; nothing depends on either way.
 _DROPPED_COLUMNS = (("lexicon", "baseline_mcap"),
+                    ("favorites", "caliber"),
                     ("lexicon", "baseline_holders"),
                     ("lexicon", "baseline_at"),
                     ("lexicon", "baseline_safety"),
@@ -357,3 +364,112 @@ def forget_config(chain_id: str, config_id: str) -> dict[str, int]:
     finally:
         conn.close()
     return sizes
+
+
+
+def favorites() -> list[dict]:
+    """Every kept card, newest first, payload included.
+
+    The payload ships with the row because the shelf draws the card itself: a second request
+    per card would be the page stitching one screen out of many calls, which is the thing
+    this API does not do. A shelf is tens of rows.
+
+    Ordered by when the reader kept the thing rather than by when the payload last changed:
+    a round that writes a newer card for a token somebody kept replaces the payload in place
+    (`favorite_refresh`), and a shelf that re-sorted itself every round would move rows the
+    reader never touched.
+    """
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM favorites ORDER BY saved_at DESC, ca DESC").fetchall()]
+    finally:
+        conn.close()
+
+
+def favorite(chain_id: str, ca: str) -> dict | None:
+    """One kept card, or None. The chain is part of the key: two chains can hold one CA."""
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM favorites WHERE chain_id = ? AND ca = ?",
+                           (chain_id, ca)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def favorite_put(row: dict) -> dict:
+    """Keep a card, or replace the one already kept for that token.
+
+    Replacing is the whole of the update path. `saved_at` is deliberately left where it was
+    on an update - see `favorites` - and `updated_at` is what says the payload changed.
+    """
+    now = now_iso()
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT INTO favorites (chain_id, ca, symbol, origin, origin_run_id, origin_label,"
+            " score, rank, config_id, payload_json, saved_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (chain_id, ca) DO UPDATE SET"
+            " symbol = excluded.symbol, origin = excluded.origin,"
+            " origin_run_id = excluded.origin_run_id, origin_label = excluded.origin_label,"
+            " score = excluded.score, rank = excluded.rank, config_id = excluded.config_id,"
+            " payload_json = excluded.payload_json, updated_at = excluded.updated_at",
+            (row["chain_id"], row["ca"], row.get("symbol"), row.get("origin") or "round",
+             row.get("origin_run_id"), row.get("origin_label") or "", row.get("score"),
+             row.get("rank"), row.get("config_id"), row["payload_json"], now, now),
+        )
+        saved = conn.execute("SELECT * FROM favorites WHERE chain_id = ? AND ca = ?",
+                             (row["chain_id"], row["ca"])).fetchone()
+        return dict(saved)
+    finally:
+        conn.close()
+
+
+def favorite_refresh(rows: list[dict]) -> int:
+    """Put newer cards in place of the kept ones they supersede; how many rows moved.
+
+    This is the write a round makes to the shelf at its end, and it only ever *replaces*: a
+    card for a token nobody kept belongs to the round, not to the shelf, and adding it would
+    be the round deciding what the reader is following. Two guards keep a refresh from going
+    backwards or sideways - the row has to be under the same set of settings (a card read
+    under other settings is a different card, not a newer one), and the incoming card has to
+    be newer than the one it replaces, so a round re-run out of order cannot put an older
+    card back on the shelf.
+
+    `saved_at` is left where it is: that stamp is when the reader kept the token, and this
+    write is the round's. It is also why the shelf does not re-sort itself here.
+    """
+    if not rows:
+        return 0
+    now = now_iso()
+    moved = 0
+    conn = connect()
+    try:
+        for row in rows:
+            label = row.get("origin_label") or ""
+            cursor = conn.execute(
+                "UPDATE favorites SET symbol = ?, origin = ?, origin_run_id = ?,"
+                " origin_label = ?, score = ?, rank = ?, payload_json = ?, updated_at = ?"
+                " WHERE chain_id = ? AND ca = ? AND config_id IS ?"
+                " AND coalesce(origin_label, '') < ?",
+                (row.get("symbol"), row.get("origin") or "round", row.get("origin_run_id"),
+                 label, row.get("score"), row.get("rank"), row["payload_json"], now,
+                 row["chain_id"], row["ca"], row.get("config_id"), label),
+            )
+            moved += cursor.rowcount
+        return moved
+    finally:
+        conn.close()
+
+
+def favorite_remove(chain_id: str, ca: str) -> bool:
+    """Forget one kept card. Returns whether there was one: a second click is not an error."""
+    conn = connect()
+    try:
+        cursor = conn.execute("DELETE FROM favorites WHERE chain_id = ? AND ca = ?",
+                              (chain_id, ca))
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()

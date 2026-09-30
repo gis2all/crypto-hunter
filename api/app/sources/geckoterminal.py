@@ -58,9 +58,16 @@ def _num(value: Any) -> float | None:
     return number if number > 0 else None
 
 
-def _split_id(identifier: str | None, prefix: str = "arc_") -> str:
+def _split_id(identifier: str | None, chain_id: str) -> str:
+    """The address out of a GeckoTerminal id, which is spelled `<network>_<address>`.
+
+    The network is the same slug the endpoint is addressed by, so the prefix is the chain
+    rather than a constant: a hardcoded `arc_` answered "" for every other chain's ids,
+    which reads downstream as "this pool has no address" instead of "wrong prefix".
+    """
     text = str(identifier or "")
-    return text.split("_", 1)[1].lower() if text.startswith(prefix) else ""
+    prefix = "%s_" % chain_id
+    return text[len(prefix):].lower() if text.startswith(prefix) else ""
 
 
 def base_symbol(name: str | None) -> str | None:
@@ -77,7 +84,7 @@ def base_symbol(name: str | None) -> str | None:
     return head or None
 
 
-def pool_row(item: dict) -> dict:
+def pool_row(item: dict, chain_id: str) -> dict:
     """One pool, flattened. The pool address matters as much as the numbers: it is the
     handle every later per-token question is asked with."""
     attributes = item.get("attributes") or {}
@@ -87,8 +94,8 @@ def pool_row(item: dict) -> dict:
     volumes = attributes.get("volume_usd") or {}
     transactions = (attributes.get("transactions") or {}).get("h24") or {}
     return {
-        "base": _split_id(relation.get("id")) or str((attributes.get("base_token") or {}).get("address") or "").lower(),
-        "pool": _split_id(item.get("id")) or str(attributes.get("address") or "").lower(),
+        "base": _split_id(relation.get("id"), chain_id) or str((attributes.get("base_token") or {}).get("address") or "").lower(),
+        "pool": _split_id(item.get("id"), chain_id) or str(attributes.get("address") or "").lower(),
         "name": attributes.get("name"),
         "sym": base_symbol(attributes.get("name")),
         "fdv": _num(attributes.get("fdv_usd")),
@@ -105,7 +112,7 @@ def pool_row(item: dict) -> dict:
 
 class GeckoTerminal:
     name = "geckoterminal"
-    chains = ("arc",)
+    chains = ("arc", "robinhood")
 
     # ---------------------------------------------------------------- universe
 
@@ -128,7 +135,7 @@ class GeckoTerminal:
                 if empty >= 2:
                     break
                 continue
-            rows.extend(pool_row(item) for item in data)
+            rows.extend(pool_row(item, chain_id) for item in data)
         return rows
 
     def universe_pools(self, chain_id: str) -> list[dict]:
@@ -236,7 +243,7 @@ class GeckoTerminal:
                 attributes = item.get("attributes") or {}
                 rows.append({
                     "name": attributes.get("name"),
-                    "pool": _split_id(item.get("id")) or str(attributes.get("address") or "").lower(),
+                    "pool": _split_id(item.get("id"), chain_id) or str(attributes.get("address") or "").lower(),
                     "liq": _num(attributes.get("reserve_in_usd")),
                     "vol24": _num((attributes.get("volume_usd") or {}).get("h24")),
                 })

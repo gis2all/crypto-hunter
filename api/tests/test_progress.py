@@ -27,20 +27,20 @@ def test_the_bands_cover_the_bar_without_a_gap_or_a_backwards_step():
 
 
 def test_a_phase_fills_its_own_band_and_not_the_whole_bar():
-    """The gate is most of a round: it has to move inside its band, not jump from its own
-    low edge to its high one."""
-    assert progress.pct("gate", 0, 89) == 14
-    assert progress.pct("gate", 89, 89) == 82
-    assert 14 < progress.pct("gate", 45, 89) < 82
-    assert progress.pct("pull", 1, 4) == 2
+    """The writing is most of a round: it has to move inside its band, not jump from
+    its own low edge to its high one."""
+    assert progress.pct("draft", 0, 9) == 51
+    assert progress.pct("draft", 9, 9) == 96
+    assert 51 < progress.pct("draft", 4, 9) < 96
+    assert progress.pct("pull", 1, 4) == 5
     # 补齐链上数据 sits between the two: it starts where the pull band ends and hands its
     # own end to the gate.
-    assert progress.pct("topup", 0, 4) == 8
-    assert progress.pct("topup", 4, 4) == 14
+    assert progress.pct("topup", 0, 4) == 19
+    assert progress.pct("topup", 4, 4) == 30
 
 
 def test_a_phase_with_nothing_to_count_reads_as_done():
-    assert progress.pct("gate", 0, 0) == 82
+    assert progress.pct("gate", 0, 0) == 51
 
 
 def test_every_phase_has_words_for_the_page():
@@ -102,19 +102,21 @@ def test_a_database_from_before_the_bar_gains_the_columns(tmp_path, monkeypatch)
 
 
 def test_the_bar_never_walks_backwards(isolated_db):
-    """The bands are not in wall-clock order - the research band (86-100) fills before the
-    score band (82-86) - so a round that researched its entries used to knock the bar back."""
+    """The bands run in the order the round walks, but a report can still arrive late, so
+    the number is a high-water mark: `MAX`, never an assignment. The words are not - the
+    label says what the round is doing now, which is not a high-water mark."""
     chain_id = "arc"
     row = pipeline_run.create_run(chain_id)
     run_id = row["id"]
     try:
         pipeline_run._set_progress(run_id, progress.pct("draft", 1, 1), progress.label("draft"))
-        assert _row(run_id)["progress"] == 100
+        assert _row(run_id)["progress"] == progress.pct("draft", 1, 1)
+        assert _row(run_id)["progress"] < 100, "the writing band does not close the bar"
 
         pipeline_run._set_progress(run_id, progress.pct("score", 1, 1), progress.label("score"))
 
         after = _row(run_id)
-        assert after["progress"] == 100, "the number is a high-water mark"
+        assert after["progress"] == 100, "the score band is the one that closes the bar"
         assert after["progress_label"] == progress.label("score"), "the words still move"
     finally:
         conn = db.connect()
