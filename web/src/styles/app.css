@@ -241,36 +241,47 @@ html{scrollbar-gutter:stable}
    the round strip and the page padding - about 263px more than a 1440-tall window
    holds, which is the overrun that was allowed for. Chrome is the other 310.6.
 
-   What does not fit gets an ellipsis, and the full text is one hover away: the popover
-   below carries the same segments and is only built when the text is really cut
-   (`scrollHeight` still reports the full box under `-webkit-line-clamp`, so the test is
-   exact - a short conclusion opens nothing). Hover and keyboard focus open it, a click
-   does not, so dragging across the conclusion to copy it stays a plain selection. The
-   popover is the width of the card it sits in: wider would reach past the last column
-   and put a horizontal scrollbar on the page, which is the one thing this layout must
-   not do. */
+   What does not fit gets an ellipsis, and the rest is opened by the 展开 button in the
+   corner of that box (2026-09-30, user): the full text used to float over the card below on
+   hover, which could not be pinned open and covered the card it landed on. The button is
+   built only when the text is really cut (`scrollHeight` still reports the full box under
+   `-webkit-line-clamp`, so the test is exact - a short conclusion shows no button), and it
+   is measured with the clamp on, so opening the text cannot take the button away. */
 :root{--verdict-lines:10}
 .sec-verdict .verdict{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;
   -webkit-line-clamp:var(--verdict-lines);
   min-height:calc(var(--verdict-lines) * 1.72em)}
-/* 全部展开 drops the clamp on every conclusion (2026-09-26). The bulk action opens the
+/* 展开卡片 drops the clamp on every conclusion (2026-09-26). The bulk action opens the
    two <details> on all five cards; a conclusion left clamped under them is the one block
-   still asking for a hover, so the third thing it opens is the text itself. `display:block`
+   still asking for a click, so the third thing it opens is the text itself. `display:block`
    is what retires the clamp - `-webkit-line-clamp` only applies to a `-webkit-box`, and
    declaring the clamp `none` alone would leave the box in the way of the second line.
-   全部收起 takes the class off and the fixed 10 lines and the hover come back together. */
+   收起卡片 takes the class off and the fixed ten lines and the 展开 button come back
+   together. The reader's own 展开 on one card is the same class; 收起 takes it off. */
 .verdict-wrap.full .verdict{display:block;overflow:visible;-webkit-line-clamp:none}
 .verdict-wrap{position:relative}
-.verdict-pop{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;
-  max-height:60vh;overflow-x:hidden;overflow-y:auto;padding:8px 10px;border:1px solid var(--border);
-  background:var(--surface-warm);color:var(--fg);font-family:var(--serif);font-size:12.5px;
-  line-height:1.7;overflow-wrap:anywhere;scrollbar-width:none}
-/* `overflow-x:hidden` plus `anywhere` is what keeps this panel free of the bottom bar a
-   bare `overflow:auto` drew: one 42-character contract address is wider than the card
-   and cannot break on its own. The scrollbar itself stays hidden rather than absent -
-   a 60vh cap still has to be reachable on a short window. */
-.verdict-pop::-webkit-scrollbar{width:0;height:0}
-.verdict-wrap.open .verdict-pop{display:block}
+/* The button, in the bottom-right corner of the ten-line box: it sits on the last line, on
+   top of what the clamp cut, which is why it carries the card's own fill - the fade is what
+   makes the covered words read as deliberate rather than clipped. It is out of the flow, so
+   the box keeps the height it had before the button existed and the round keeps its 525.6px
+   cards; `1.72em` is the line the box is measured in, so the button and the line it covers
+   are the same height instead of each carrying a value that can drift from the other.
+
+   Opened, the button drops below the text instead - there is nothing left to sit on top of
+   - and stays at the right edge of the card, which is inside the last column: a wider
+   control would reach past it and put a horizontal scrollbar on the page, which is the one
+   thing this layout must not do. */
+.verdict-more{position:absolute;right:0;bottom:0;display:flex;align-items:center;height:1.72em;
+  padding-left:16px;background:linear-gradient(to right,transparent,var(--surface) 16px)}
+.verdict-wrap.full .verdict-more{position:static;justify-content:flex-end;height:auto;
+  padding:3px 0 0;background:none}
+.verdict-more button{display:inline-flex;align-items:center;gap:3px;padding:0 5px;border:0;
+  background:none;color:var(--accent-fg);font-family:var(--sans);font-size:11.5px;line-height:1;
+  cursor:pointer}
+.verdict-more button:hover{background:var(--surface-warm)}
+.verdict-more button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.verdict-more button>.ico{transition:transform .12s ease}
+.verdict-more button[aria-expanded=true]>.ico{transform:rotate(180deg)}
 
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all

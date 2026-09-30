@@ -100,8 +100,9 @@ export default function App() {
 
   // Which round the page opens on, answered once per chain by the first list that arrives.
   // A round the operator stopped - or one that died - has no cards in it, so the page opens
-  // on the newest round that either published cards or has not stopped moving. 收起 walks
-  // back to that round by hand, and a reload has to land where 收起 left the reader.
+  // on the newest round that either published cards or has not stopped moving. Stepping back
+  // to an older one is the pager's job, and that place lives only in this session: a reload
+  // re-answers and lands on the newest readable round again (8.3.8).
   // After this first answer the number belongs to the pager: no poll, and no reload of the
   // list, moves a reader who has stepped off it.
   const opened = useRef<string | null>(null);
@@ -151,20 +152,12 @@ export default function App() {
   // the round own timings are read - each row right column is that phase measured wall
   // clock - and folding the panel away the moment the last stage ended is how the answer to
   // "what took the time" was written and then hidden. A failed round, a stopped round and a
-  // finished one all behave the same way now: the panel stays until 收起 is pressed.
+  // finished one all behave the same way now: the panel stays until 运行结果 folds it.
 
-  useEffect(() => {
-    const fresh = liveRun.data;
-    if (fresh && run && fresh.status !== run.status) {
-      void queryClient.invalidateQueries({ queryKey: ["runs", chainId, configId] });
-      void queryClient.invalidateQueries({ queryKey: ["batch", run.id] });
-    }
-  }, [liveRun.data, run, chainId, configId, queryClient]);
-
-  // 收起 hands the page back, and a round the operator stopped has nothing to hand it: it
-  // produced no cards. Sending the reader to the newest round that did publish is where they
-  // were reading before they pressed 中止 - and the stopped round stays reachable through the
-  // pager, one step newer, for anyone who wants to look at it.
+  // Closing the panel hands the page back, and a round the operator stopped has nothing to
+  // hand it: it produced no cards. Sending the reader to the newest round that did publish is
+  // where they were reading before they pressed 中止 - and the stopped round stays reachable
+  // through the pager, one step newer, for anyone who wants to look at it.
   const closePanel = () => {
     setRunPanelOpen(false);
     if (run?.status !== "cancelled") {
@@ -175,6 +168,25 @@ export default function App() {
       setBatchIndex(published);
     }
   };
+
+  // The topbar switch is the only way to fold the panel (8.3.7), so 8.3.7's rule rides its
+  // closing half. Opening it must never move the reader: they pressed it to read the round
+  // they are already on.
+  const toggleRunPanel = () => {
+    if (runPanelOpen) {
+      closePanel();
+      return;
+    }
+    setRunPanelOpen(true);
+  };
+
+  useEffect(() => {
+    const fresh = liveRun.data;
+    if (fresh && run && fresh.status !== run.status) {
+      void queryClient.invalidateQueries({ queryKey: ["runs", chainId, configId] });
+      void queryClient.invalidateQueries({ queryKey: ["batch", run.id] });
+    }
+  }, [liveRun.data, run, chainId, configId, queryClient]);
 
   return (
     <div className="app">
@@ -192,6 +204,9 @@ export default function App() {
         <TopBar
           view={view}
           onView={setView}
+          runPanelOpen={runPanelOpen}
+          onToggleRunPanel={toggleRunPanel}
+          hasRun={Boolean(run)}
           onOverview={() => setOverviewOpen((open) => !open)}
           onExport={() => batch.data && download(batch.data)}
           settings={settings}
@@ -210,7 +225,6 @@ export default function App() {
             batch={batch.data}
             onCancel={() => run && cancel.mutate(run.id)}
             cancelling={cancel.isPending}
-            onClose={closePanel}
           />
         ) : null}
         <div hidden={view !== "report"}>
