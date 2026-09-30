@@ -70,8 +70,10 @@ AGGREGATORS = (
     # Another chain's launchpad, tool directories, and link hubs.
     'pump.fun', 'arctools.fun', 'linktr.ee', 'beacons.ai',
     # The chain itself. explorer.arc.io is the Arc explorer and arc.io is Arc's own site,
-    # and neither will ever be the project - on one run both were offered as one.
-    'arc.io', 'circle.com',
+    # and neither will ever be the project - on one run both were offered as one. Robinhood
+    # is here for the same reason on its own chain: the broker's site names the chain and
+    # hosts none of its tokens.
+    'arc.io', 'circle.com', 'robinhood.com',
     # Platforms and search engines, which are where a project is talked about.
     'x.com', 'twitter.com', 'github.com', 't.me', 'discord.gg', 'discord.com',
     'uniswap.org', 'grok.com', 'google.com', 't.co',

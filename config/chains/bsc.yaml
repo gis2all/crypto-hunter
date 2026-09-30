@@ -2,6 +2,8 @@
 # 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
 # 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
 id: bsc
+# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
+name: BSC
 label: BSC
 enabled: false
 explorer: https://bscscan.com

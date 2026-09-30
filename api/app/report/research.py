@@ -47,6 +47,7 @@ from html import unescape
 from typing import Any, Callable, Mapping, Sequence
 
 from .. import llm
+from ..config import chain_name
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
 from ..search.identify import fetch_page
@@ -59,7 +60,13 @@ from .schema import LexiconDraft, validate_lexicon
 
 log = logging.getLogger("crypto-hunter.pipeline")
 
-PROMPT_VERSION = "research.md@7"
+#: The chain's own name, spelled in the prompt as this token. The prompt is one file for
+#: every chain, so the name is substituted per call rather than written into it - an Arc
+#: prompt asking a Robinhood token 「和 Arc 什么关系」 is the radar answering the wrong
+#: question (user, 2026-09-30).
+CHAIN_TOKEN = "__CHAIN__"
+
+PROMPT_VERSION = "research.md@8"
 
 #: What a rejected answer is told before it is asked again. Its own JSON goes back with it
 #: along with the finding that rejected it, because the validator is the one thing here
@@ -221,7 +228,8 @@ def links_for(metrics: Mapping[str, Any]) -> list[tuple[str, str]]:
 
 
 def search_links(chain_id: str, ca: str, symbol: str | None,
-                 known: list[tuple[str, str]], *, search: bool = True) -> Discovery | None:
+                 known: list[tuple[str, str]], *, chain_name: str = "",
+                 search: bool = True) -> Discovery | None:
     """Read the round's links, and search for the ones the sources never listed.
 
     Never raises. This runs behind a publish, and a token whose search is unavailable is a
@@ -230,7 +238,7 @@ def search_links(chain_id: str, ca: str, symbol: str | None,
     else.
     """
     try:
-        return discover(chain_id, ca, symbol or "", known=known, search=search)
+        return discover(chain_name or chain_id, ca, symbol or "", known=known, search=search)
     except Exception as exc:
         log.info("search for %s unavailable: %r", ca, exc)
         return None
@@ -411,7 +419,7 @@ def talk_block(rows: Sequence[TweetRow], official: Sequence[str]) -> str:
 
 
 def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dict],
-        safety: Mapping[str, Any] | None = None, *,
+        safety: Mapping[str, Any] | None = None, *, chain: str = "",
         timeline: Sequence[TweetRow] = (), talk: Sequence[TweetRow] = (),
         official: Sequence[str] = (), run_id: str = "") -> dict:
     """One model call: the pages and the posts in, the entry out, the same contract.
@@ -434,7 +442,10 @@ def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dic
         blocks.append(TALK_HEAD + "\n" + discussion)
     blocks.append(_facts_line(ca, symbol, metrics, safety))
     messages = [
-        {"role": "system", "content": lexicon.read_prompt("research.md")},
+        # The prompt is one file for every chain; the chain name is substituted here so a
+        # Robinhood card is never asked what it has to do with Arc.
+        {"role": "system", "content": lexicon.read_prompt("research.md")
+                                        .replace(CHAIN_TOKEN, chain or "本链")},
         {"role": "user", "content": "\n\n".join(blocks)},
     ]
     raw = llm.complete_json(messages, purpose="research", prompt_version=PROMPT_VERSION,
@@ -470,7 +481,8 @@ def gather(row: Mapping[str, Any]) -> dict:
     try:
         metrics, safety = _latest_metrics(ca)
         known = links_for(metrics)
-        found = search_links(str(row["chain_id"]), ca, row.get("symbol"), known)
+        found = search_links(str(row["chain_id"]), ca, row.get("symbol"), known,
+                             chain_name=str(row.get("chain_name") or ""))
         # What the search layer decided is invisible from outside it, and a search that failed
         # and a search that found nothing are the two facts a card's author cannot tell apart.
         # Both are one line here, on the pass that paid for them.
@@ -521,7 +533,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None) -> di
     if not pages:
         raise SourceError("外链都打不开或读不到正文")
     read_s = time.monotonic() - started
-    raw = ask(ca, symbol, metrics, pages, safety,
+    raw = ask(ca, symbol, metrics, pages, safety, chain=str(row.get("chain_name") or ""),
               timeline=gathered.get("timeline") or (),
               talk=gathered.get("talk") or (),
               official=gathered.get("official") or (),
@@ -566,6 +578,7 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
         return {}
     config_id = str(chain.get("config_id") or "default")
     rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
+             "chain_name": chain_name(chain),
              "config_id": config_id, "symbol": target.get("symbol"),
              "run_id": run_id} for target in targets]
     total = len(rows)

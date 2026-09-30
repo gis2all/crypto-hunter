@@ -14,7 +14,7 @@ import os
 import secrets
 import shutil
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -182,6 +182,26 @@ def chain(chain_id: str, config_id: str | None = None) -> dict:
     merged["config_id"] = cfg["id"]
     merged["config_label"] = cfg["label"]
     return merged
+
+
+def chain_name(chain: Mapping[str, Any] | None) -> str:
+    """What the chain is called *in prose*: `Arc`, never `Arc 雷达`.
+
+    Two names, because they answer two questions. `label` is the radar's own name - what the
+    rail and the settings drawer print - and a sentence built from it reads as the radar
+    talking about itself: 「只回答和 Arc 雷达 什么关系」 is not what the card means. This is the
+    chain's own name, and it is what goes into the writing prompt, the search query and the
+    口径 line on the settings page.
+
+    A file that never set one falls back to the label, so a new chain still reads as
+    something rather than as a blank.
+    """
+    chain = chain or {}
+    for key in ("name", "label", "id"):
+        text = str(chain.get(key) or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def chain_entry(chain_id: str) -> dict:
