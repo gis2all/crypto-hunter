@@ -1031,6 +1031,173 @@
      }
     }
    }
+  },
+  "/api/v1/favorites": {
+   "get": {
+    "tags": [
+     "favorites"
+    ],
+    "summary": "List Favorites",
+    "description": "The shelf, newest kept first. Every row carries its card: the page draws cards.",
+    "operationId": "list_favorites_api_v1_favorites_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/FavoriteOut"
+         },
+         "type": "array",
+         "title": "Response List Favorites Api V1 Favorites Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "favorites"
+    ],
+    "summary": "Keep Favorite",
+    "description": "Keep the card this round wrote for this token, as the report page drew it.\n\nTaken from report.assemble.cards rather than from the raw report payload: the page is\nalready drawn from that assembly (the new/continuing flag, the deltas against the round\nbefore, the two weights), and freezing anything less would mean re-deriving those on\nread - against a later round. The row itself is shaped by that same module, so the card a\nreader keeps and the card a later round refreshes it with are one shape.",
+    "operationId": "keep_favorite_api_v1_favorites_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FavoriteIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FavoriteOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/favorites/{chain_id}/{ca}": {
+   "get": {
+    "tags": [
+     "favorites"
+    ],
+    "summary": "Get Favorite",
+    "operationId": "get_favorite_api_v1_favorites__chain_id___ca__get",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "ca",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Ca"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FavoriteOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "favorites"
+    ],
+    "summary": "Forget Favorite",
+    "description": "Take one card off the shelf. A card that was already gone is not an error.",
+    "operationId": "forget_favorite_api_v1_favorites__chain_id___ca__delete",
+    "parameters": [
+     {
+      "name": "chain_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chain Id"
+      }
+     },
+     {
+      "name": "ca",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Ca"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RemovedOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -1408,6 +1575,11 @@
       "type": "string",
       "title": "Label"
      },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
      "enabled": {
       "type": "boolean",
       "title": "Enabled"
@@ -1665,6 +1837,123 @@
      "body"
     ],
     "title": "DetailOut"
+   },
+   "FavoriteIn": {
+    "properties": {
+     "run_id": {
+      "type": "string",
+      "title": "Run Id"
+     },
+     "ca": {
+      "type": "string",
+      "title": "Ca"
+     }
+    },
+    "type": "object",
+    "required": [
+     "run_id",
+     "ca"
+    ],
+    "title": "FavoriteIn",
+    "description": "A card to keep: the round it came from, and which of that round cards."
+   },
+   "FavoriteOut": {
+    "properties": {
+     "chain_id": {
+      "type": "string",
+      "title": "Chain Id"
+     },
+     "ca": {
+      "type": "string",
+      "title": "Ca"
+     },
+     "symbol": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Symbol"
+     },
+     "origin": {
+      "type": "string",
+      "title": "Origin",
+      "default": "round"
+     },
+     "origin_run_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Origin Run Id"
+     },
+     "origin_label": {
+      "type": "string",
+      "title": "Origin Label",
+      "default": ""
+     },
+     "score": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Score"
+     },
+     "rank": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rank"
+     },
+     "config_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Config Id"
+     },
+     "saved_at": {
+      "type": "string",
+      "title": "Saved At"
+     },
+     "updated_at": {
+      "type": "string",
+      "title": "Updated At"
+     },
+     "card": {
+      "$ref": "#/components/schemas/CardOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "chain_id",
+     "ca",
+     "saved_at",
+     "updated_at",
+     "card"
+    ],
+    "title": "FavoriteOut",
+    "description": "One kept card: the reader is following the token, and this is that token's current card.\n\nA copy rather than a reference, on purpose: a report row is deleted with its round, and\na whole report library can be dropped, while a kept card has to stay readable. It is\nalso why `config_id` is not part of the key - a card can come from a chain this app does\nnot screen, so the shelf is keyed by (chain_id, ca) alone. It is a value: the set of\nsettings the round ran under, for the line the shelf prints under the card.\n\nA round that writes one of these tokens again replaces the payload in place\n(report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward\nwhile `saved_at` stays at the moment the reader kept it."
    },
    "FieldOptionOut": {
     "properties": {
@@ -2636,6 +2925,19 @@
     },
     "type": "object",
     "title": "RanksOut"
+   },
+   "RemovedOut": {
+    "properties": {
+     "removed": {
+      "type": "boolean",
+      "title": "Removed"
+     }
+    },
+    "type": "object",
+    "required": [
+     "removed"
+    ],
+    "title": "RemovedOut"
    },
    "RuleCountOut": {
     "properties": {
