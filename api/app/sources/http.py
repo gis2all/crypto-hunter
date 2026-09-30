@@ -45,7 +45,20 @@ UA_JSON = {
 }
 UA_HTML = {**UA_JSON, "Accept": "*/*"}
 UA_GMGN = {**UA_HTML, "Referer": "https://gmgn.ai/"}
-UA_BLOCKSCOUT = {**UA_JSON, "Referer": "https://explorer.arc.io/"}
+
+
+def explorer_headers(explorer: str | None) -> dict:
+    """The explorer own origin as the referer.
+
+    This used to be one hardcoded Arc referer, sent to whichever explorer the chain
+    config named. A site that checks the referer answers that headers set with a 403 or a
+    Cloudflare interstitial, and the refusal reads downstream as "this token is not in the
+    explorer" rather than as a header problem - the wrong kind of fact to write into a
+    report. The chain the caller already holds names its own explorer, so the header is
+    derived from it, and the result is byte-identical to the old constant on Arc.
+    """
+    base = str(explorer or "").rstrip("/")
+    return {**UA_JSON, "Referer": base + "/"} if base else UA_JSON
 
 #: Host -> minimum seconds between two requests. Not a rate limit someone published;
 #: a cadence the reference implementation ran for months without getting blocked.
@@ -58,6 +71,14 @@ MIN_INTERVAL: dict[str, float] = {
     "api.dexscreener.com": 0.25,
     "rpc.arc-scan.org": 0.15,
     "explorer.arc.io": 1.0,
+    # Robinhood: its own node and explorer first, then the three launchpad feeds. The feeds
+    # answer the whole chain in one or two pages, so the cadence only has to keep a second
+    # round from stacking on the first.
+    "rpc.mainnet.chain.robinhood.com": 0.15,
+    "robinhoodchain.blockscout.com": 1.0,
+    "coinbarrel.com": 0.5,
+    "api.pez.family": 0.5,
+    "peeps.wtf": 0.5,
 }
 DEFAULT_INTERVAL = 0.2
 

@@ -30,11 +30,24 @@ def test_reloading_one_env_file_keeps_what_the_other_put_in(tmp_path):
         os.environ.pop("CH_TEST_SEARCH_KEY", None)
 
 
-def test_both_chains_declared():
+def test_every_chain_declared():
     chains = config.load_chains()
-    assert set(chains) == {"arc", "bsc"}
+    assert set(chains) == {"arc", "bsc", "robinhood"}
     assert chains["arc"]["enabled"] is True
     assert chains["bsc"]["enabled"] is False
+    assert chains["robinhood"]["enabled"] is True
+
+
+def test_robinhood_scans_its_own_sources():
+    """The three launchpad feeds only exist for Robinhood, and the two Arc-only sources must
+    not be in the list: RadarDEX and Tolly answer about Robinhood with the Arc rollout, so a
+    config that named them would fill the pool with another chain's tokens."""
+    chain = config.chain("robinhood")
+    assert set(chain["pipeline"]["scan_sources"]) == {
+        "gmgn", "geckoterminal", "coinbarrel", "pez", "peeps",
+    }
+    for arc_only in ("radardex", "tolly"):
+        assert arc_only not in chain["sources"]
 
 
 def test_arc_keeps_the_established_cadence():
@@ -47,8 +60,9 @@ def test_arc_keeps_the_established_cadence():
 def test_the_universe_sweep_stops_below_the_holder_floor():
     """blockscout is the full-chain roster: the sweep floor has to stay under the rule it
     is there to serve, or the base table would silently exclude tokens the rule lets in."""
-    pipeline = config.chain("arc")["pipeline"]
-    assert pipeline["universe_holders_floor"] <= pipeline["prefilter"]["holders_min"]
+    for chain_id in ("arc", "robinhood"):
+        pipeline = config.chain(chain_id)["pipeline"]
+        assert pipeline["universe_holders_floor"] <= pipeline["prefilter"]["holders_min"]
 
 
 def test_arc_prefilter_matches_the_ui():

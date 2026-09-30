@@ -1,8 +1,16 @@
-"""Which sources a chain uses: declared in that chain's set of settings, resolved here."""
+"""Which sources a chain uses: declared in that chain's set of settings, resolved here.
+
+A source that answers for one chain lives in that chain's folder (`arc/`, `robinhood/`);
+anything that answers for more than one chain stays beside this file. The registry is the
+one place that knows both, so `for_chain` can resolve a chain config's `sources:` list
+without caring which kind it is asking for.
+"""
 
 from __future__ import annotations
 
-from . import blockscout, dexscreener, geckoterminal, gmgn, goplus, radardex, sourcify, tolly
+from . import blockscout, dexscreener, geckoterminal, gmgn, goplus, sourcify
+from .arc import radardex, tolly
+from .robinhood import coinbarrel, peeps, pez
 
 ALL = {
     s.name: s
@@ -14,6 +22,9 @@ ALL = {
         goplus.GoPlus(),
         sourcify.Sourcify(),
         tolly.Tolly(),
+        coinbarrel.CoinBarrel(),
+        pez.Pez(),
+        peeps.Peeps(),
     )
 }
 

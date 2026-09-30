@@ -6,7 +6,7 @@ Printed as they arrive they are text shaped like a link - the reference implemen
 the same line.
 """
 
-from app.sources import radardex, tolly
+from app.sources.arc import radardex, tolly
 from app.sources.base import social_url, web_url
 
 

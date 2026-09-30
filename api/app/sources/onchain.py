@@ -18,7 +18,7 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from .http import SourceError, UA_BLOCKSCOUT, get, json_get, pacer, pmap, tally
+from .http import SourceError, explorer_headers, get, json_get, pacer, pmap, tally
 
 #: ERC-20 Transfer, and the two Uniswap-v3 pool events that name an LP position owner.
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -33,9 +33,6 @@ POSITION_MANAGERS: dict[str, dict[str, str]] = {
         "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b": "v4",
     },
 }
-
-DEFAULT_RPC = "https://rpc.arc-scan.org"
-DEFAULT_EXPLORER = "https://explorer.arc.io"
 
 #: Function selectors that mean "the owner can hurt a holder". Presence in bytecode is
 #: evidence of capability, not of intent - the report says "链上有控制函数", not "危险".
@@ -88,7 +85,8 @@ def _bad_query(error: str) -> bool:
     return any(marker in lowered for marker in BAD_QUERY_MARKERS)
 
 #: explorer.arc.io sits behind Cloudflare, which reads the TLS fingerprint rather than
-#: the headers: the same URL with the same headers answers 200 to curl and 403 to httpx.
+#: the headers: the same URL with the same headers answers 200 to curl and 403 to httpx
+#: (the same exchange repeats on robinhoodchain.blockscout.com, measured 2026-09-30).
 #: The explorer therefore goes out on the browser lane, the same one GMGN needs.
 BLOCKSCOUT_TRANSPORT = "browser"
 
@@ -115,12 +113,31 @@ LAUNCH_BASIS: dict[str, str] = {
 }
 
 
+def _own_address(chain: dict, key: str, what: str) -> str:
+    """One of the chain's own addresses, and never another chain's.
+
+    Both used to fall back to Arc's node and Arc's explorer. A chain file that forgot
+    `rpc` would then read Arc's chain in silence and print the answer under its own
+    name - the worst kind of wrong, because it reads like a result. Missing is now an
+    error that names the chain, so the mistake surfaces where it is made.
+    """
+    value = chain.get(key)
+    if not value:
+        raise KeyError(
+            "%s: the chain config has no `%s`, so %s cannot be read. "
+            "There is deliberately no default: falling back to another chain's "
+            "endpoint would return its data under this chain's name."
+            % (chain.get("id"), key, what)
+        )
+    return str(value)
+
+
 def rpc_url(chain: dict) -> str:
-    return str(chain.get("rpc") or DEFAULT_RPC)
+    return _own_address(chain, "rpc", "the node (holders, LP positions, dev balances)")
 
 
 def explorer_url(chain: dict) -> str:
-    return str(chain.get("explorer") or DEFAULT_EXPLORER)
+    return _own_address(chain, "explorer", "the explorer (launch path, pool history)")
 
 
 def decimals(chain: dict) -> int:
@@ -238,7 +255,8 @@ def blockscout_checked(chain: dict, path: str, tries: int = 3) -> tuple[dict, bo
     url = "%s/api/v2/%s" % (explorer_url(chain).rstrip("/"), path)
     try:
         body = json_get(
-            url, UA_BLOCKSCOUT, transport=BLOCKSCOUT_TRANSPORT, tries=tries, sleep=2.0,
+            url, explorer_headers(explorer_url(chain)), transport=BLOCKSCOUT_TRANSPORT,
+            tries=tries, sleep=2.0,
             timeout=20.0,
         )
     except SourceError as exc:
