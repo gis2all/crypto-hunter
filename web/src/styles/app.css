@@ -504,7 +504,7 @@ div.pgroup>.pset{margin-top:auto}
    that gap reads looser than the brand line above it, so the rail's gap comes down to the 7
    the brand uses and the labels go uppercase, the case the wordmark right above them is in. */
 .nav-i{gap:7px;text-transform:uppercase}
-.nav-i .arc-mark{flex:0 0 auto}
+.nav-i .chain-mark{flex:0 0 auto}
 
 
 
@@ -556,10 +556,10 @@ div.pgroup>.pset{margin-top:auto}
   .pgroup.split .pcol>.prow>.field{grid-column:2}
 
   /* 推送与依赖 is the narrowest group and its longest reading overruns the column:
-     `数据源凭据` lists six sources. `.ro-v` ellipsizes by design (a long value must never
-     widen its track into a horizontal scrollbar), but here the value is the whole answer -
-     `GMGN · Rad…` is not a reading, and 500px is still not enough to hold the six sources
-     on one line. Let it wrap: the row grows by a line and the group stays under the
+     `数据源凭据` lists seven sources on Robinhood (Arc has six). `.ro-v` ellipsizes by
+     design (a long value must never widen its track into a horizontal scrollbar), but here
+     the value is the whole answer - `GMGN · Rad…` is not a reading, and 500px is still not
+     enough to hold them on one line. Let it wrap: the row grows by a line and the group stays under the
      block's height. */
   #card-push .ro-v{white-space:normal}
 }

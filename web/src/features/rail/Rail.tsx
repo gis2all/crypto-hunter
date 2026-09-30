@@ -2,17 +2,21 @@ import { Moon, Sun } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { ArcMark } from "../../components/ArcMark";
+import { RobinhoodMark } from "../../components/RobinhoodMark";
 import { Icon } from "../../components/Icon";
 import { Mark } from "../../components/Mark";
 import type { Theme } from "../../theme";
 
-/** Each chain can carry its own mark - the chain's own artwork, not one of ours. Only Arc has
- *  one wired so far; a chain without a mark is the label alone, which is what BSC will be
+/** Each chain can carry its own mark - the chain's own artwork, not one of ours. Arc and
+ *  Robinhood have one; a chain without a mark is the label alone, which is what BSC will be
  *  until its artwork is in. Kept here rather than in the chain payload: the API answers what a
  *  chain *is* (id, label, enabled), not how this screen draws it. */
 function chainIdMark(id: string) {
   if (id === "arc") {
     return <ArcMark size={14} />;
+  }
+  if (id === "robinhood") {
+    return <RobinhoodMark size={14} />;
   }
   return null;
 }

@@ -11,12 +11,20 @@ import { RunPanel } from "./features/run/RunPanel";
 import { ConfigManager } from "./features/settings/ConfigManager";
 import { SettingsView } from "./features/settings/SettingsView";
 import { useSettingsState } from "./features/settings/useSettingsState";
+import { readPref, savePref } from "./prefs";
 import { applyTheme, readTheme, saveTheme, type Theme } from "./theme";
 
 //: A round in one of these has stopped moving, so the page stops watching it. `cancelled` is
 //: one of them: a round the operator stopped is over, and a page that kept polling it would
 //: keep the 已中止 panel open on a round that will never move again.
 const TERMINAL = new Set(["researched", "cancelled", "failed"]);
+
+/** Where the page keeps the reader's place. One key per thing remembered, all under the
+ *  `ch.` prefix the theme already uses, so one search finds everything this app stores in
+ *  a browser. See `prefs.ts`. */
+const CHAIN_KEY = "ch.chain";
+const CONFIG_KEY = "ch.config";
+const VIEW_KEY = "ch.view";
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -31,17 +39,20 @@ function download(batch: Batch) {
 export default function App() {
   const queryClient = useQueryClient();
   const chains = useChains();
-  const [chainId, setChainId] = useState("arc");
+  // The page's own memory: which radar, which set of settings and which tab the reader was
+  // on. A reload has to land where they left, not back on Arc · 报告. The round index is
+  // deliberately not kept - see the note on `batchIndex` below.
+  const [chainId, setChainId] = useState(() => readPref(CHAIN_KEY) ?? "arc");
   // Which set of settings the page is reading. Empty until the chain list answers: the id
   // is the backend's and the list is the only place it is written, so the page never
   // invents one. Everything below the chain list is scoped by this as well as by the chain.
-  const [configId, setConfigId] = useState("");
+  const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
-  const [view, setView] = useState<View>("report");
+  const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [runPanelOpen, setRunPanelOpen] = useState(false);
-  // 全部展开 / 全部收起 is one bulk edit over five uncontrolled <details>. Bumping the
+  // 展开卡片 / 收起卡片 is one bulk edit over five uncontrolled <details>. Bumping the
   // tick remounts them with the new default, so the page never has to own each card's
   // open state to be able to open them all.
   const [bulk, setBulk] = useState({ open: false, tick: 0 });
@@ -49,6 +60,21 @@ export default function App() {
 
   const chain = chains.data?.find((item) => item.id === chainId);
   const configs = useMemo(() => chain?.configs ?? [], [chain]);
+
+  // A remembered radar that is no longer on the rail - dropped from the list, or turned off -
+  // is not a place the page can be: the rail draws only the enabled chains (8.3.1), so the
+  // page would sit on a chain with no row lit. It falls back to the first enabled chain, which
+  // is where a first visit opens anyway.
+  useEffect(() => {
+    const list = chains.data;
+    if (!list?.length || list.some((item) => item.id === chainId && item.enabled)) {
+      return;
+    }
+    const first = list.find((item) => item.enabled);
+    if (first) {
+      setChainId(first.id);
+    }
+  }, [chains.data, chainId]);
 
   // Which set of settings the page opens on, answered per chain by the list. The reader's
   // own pick wins while it is still there - a poll, a rename or a reload must not move them
@@ -96,6 +122,24 @@ export default function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Written on every change rather than on the way out: a tab closed by a crash keeps the
+  // last place it was at, and there is no `beforeunload` handler to keep in step.
+  useEffect(() => {
+    savePref(CHAIN_KEY, chainId);
+  }, [chainId]);
+
+  // An empty id is the page before the chain list has answered, not a choice: storing it
+  // would overwrite the remembered one with nothing on the first render of every reload.
+  useEffect(() => {
+    if (configId) {
+      savePref(CONFIG_KEY, configId);
+    }
+  }, [configId]);
+
+  useEffect(() => {
+    savePref(VIEW_KEY, view);
+  }, [view]);
 
   useEffect(() => {
     if (live) {
