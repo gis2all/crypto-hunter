@@ -29,6 +29,7 @@ export type RuleCount = components["schemas"]["RuleCountOut"];
 export type SourceCount = components["schemas"]["SourceCountOut"];
 export type PushInfo = components["schemas"]["PushOut"];
 export type Funnel = components["schemas"]["FunnelOut"];
+export type Favorite = components["schemas"]["FavoriteOut"];
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
@@ -173,3 +174,20 @@ export const deleteChainConfig = (chainId: string, configId: string, label: stri
     { method: "DELETE", body: JSON.stringify({ label }) },
   );
 
+/** Kept cards: the shelf. Keyed by chain + CA rather than by a round, and the row carries
+ *  the card itself - so a kept card still reads after the round that produced it, and its
+ *  whole report library, are gone. */
+export const listFavorites = () => request<Favorite[]>("/favorites");
+
+/** Keep the card one round wrote for one token. The backend copies the assembled card. */
+export const keepFavorite = (runId: string, ca: string) =>
+  request<Favorite>("/favorites", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId, ca }),
+  });
+
+export const forgetFavorite = (chainId: string, ca: string) =>
+  request<{ removed: boolean }>(
+    "/favorites/" + encodeURIComponent(chainId) + "/" + encodeURIComponent(ca),
+    { method: "DELETE" },
+  );
