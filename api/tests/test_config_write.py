@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from app import config
-from app.pipeline import run as pipeline_run, states
+from app.pipeline import run as pipeline_run, schedule
 from app.store import db
 
 ARC = "/api/v1/chains/arc"
@@ -288,17 +288,15 @@ def test_deleting_takes_the_whole_report_library(chain_file, client, isolated_db
     raw.mkdir(parents=True)
     (raw / "gmgn.json").write_text("{}", encoding="utf-8")
 
-    # A round of it in flight is a row a worker owns, so the delete waits for it.
+    # A round in flight is a round *this process is reading*, and the delete waits for it.
+    # The status in the table is not asked: a process that dies mid-round leaves a
+    # non-terminal row behind for good, so reading it would refuse this delete next week.
+    monkeypatch.setattr(schedule, "_live", {"in-flight": ("arc", made["id"])})
     busy = client.request("DELETE", f"{ARC}/configs/{made['id']}", json={"label": "Wide"})
     assert busy.status_code == 409
     assert "正在跑" in busy.json()["detail"]
 
-    conn = db.connect()
-    try:
-        conn.execute("UPDATE runs SET status = ? WHERE id = ?",
-                     (states.S.RESEARCHED.value, run["id"]))
-    finally:
-        conn.close()
+    monkeypatch.setattr(schedule, "_live", {})
 
     gone = client.request("DELETE", f"{ARC}/configs/{made['id']}", json={"label": "Wide"})
     assert gone.status_code == 200
@@ -319,14 +317,9 @@ def test_deleting_takes_the_whole_report_library(chain_file, client, isolated_db
 
 def test_a_delete_takes_only_its_own_report_library(two_sets_file, client, isolated_db):
     pipeline_run.create_run("arc", config_id="default")
+    # Never submitted, so nothing is reading it: a round in flight is the gate that
+    # answers first, and a row in the table is not a round in flight (`schedule._live`).
     doomed = pipeline_run.create_run("arc", config_id="wide")
-    # Finished, or the round in flight is the gate that answers first.
-    conn = db.connect()
-    try:
-        conn.execute("UPDATE runs SET status = ? WHERE id = ?",
-                     (states.S.RESEARCHED.value, doomed["id"]))
-    finally:
-        conn.close()
     assert client.request("DELETE", f"{ARC}/configs/wide",
                           json={"label": "Wide"}).status_code == 200
     assert db.library_size("arc", "default")["runs"] == 1

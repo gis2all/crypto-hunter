@@ -33,6 +33,17 @@ _executor: ThreadPoolExecutor | None = None
 _thread: threading.Thread | None = None
 _stopping = threading.Event()
 
+#: The rounds this process is reading right now: run id -> (chain id, set of settings).
+#:
+#: Liveness is the executor's to know, and a row in the table is not evidence of it. It used
+#: to be asked of the table - "any run not in a terminal state" - which is a question with
+#: no true answer: a process that dies mid-round leaves a non-terminal row behind for good,
+#: and the archive still carries rows from the state machine before this one that no worker
+#: will ever move on. Measured 2026-09-30: both chains read as busy, and no scheduled round
+#: had started since the check went in the evening before. Production is one process on one
+#: port (see `main.py`), so this process's own rounds are the whole truth.
+_live: dict[str, tuple[str, str | None]] = {}
+
 
 def executor() -> ThreadPoolExecutor:
     """The round worker. One thread: every source paces itself per host anyway, and a
@@ -44,9 +55,50 @@ def executor() -> ThreadPoolExecutor:
     return _executor
 
 
+def _forget(run_id: str) -> None:
+    with _lock:
+        _live.pop(run_id, None)
+
+
+def busy_chains() -> set[str]:
+    """The chains with a round in flight. A queued one counts: it is about to read.
+
+    A chain's sets of settings pull from the same sources, at the same rate limits, off the
+    same node, so the ticker starts one of them at a time. This is what it asks to know
+    which chain to leave alone this tick.
+    """
+    with _lock:
+        return {chain_id for chain_id, _config_id in _live.values()}
+
+
+def live_configs(chain_id: str) -> list[str]:
+    """The chain's sets of settings that have a round in flight right now.
+
+    Asked before a set of settings is deleted: a round already reading is a run row that
+    would be deleted out from under the worker that owns it. Only this process reads, so
+    only this process's rounds can be in the way.
+    """
+    with _lock:
+        return sorted({config_id for owner, config_id in _live.values()
+                       if owner == chain_id and config_id})
+
+
 def submit(chain_id: str, run_id: str, config_id: str | None = None) -> Future:
-    """Queue one round. Returns the future so a caller can wait on it."""
-    return executor().submit(_work, chain_id, run_id, config_id)
+    """Queue one round. Returns the future so a caller can wait on it.
+
+    The round is marked live before it is queued, not after: the worker starts the moment
+    it is submitted, and a tick landing in between has to see it.
+    """
+    pool = executor()
+    with _lock:
+        _live[run_id] = (chain_id, config_id)
+    try:
+        future = pool.submit(_work, chain_id, run_id, config_id)
+    except BaseException:
+        _forget(run_id)
+        raise
+    future.add_done_callback(lambda _future: _forget(run_id))
+    return future
 
 
 def _work(chain_id: str, run_id: str, config_id: str | None = None) -> dict:
@@ -136,7 +188,7 @@ def tick(now: datetime | None = None) -> list[str]:
     once would only make the first one slower.
     """
     started: list[str] = []
-    busy = set(pipeline_run.busy_chains())
+    busy = busy_chains()
     for chain in config.enabled_configs():
         if chain["id"] in busy:
             continue
@@ -155,17 +207,18 @@ def tick(now: datetime | None = None) -> list[str]:
 
 
 def recover() -> list[str]:
-    """Start the rounds a previous process left at `pending`.
+    """Take on the rounds the process before this one left behind.
 
-    The ticker looks at the clock, not at the table: a slot it has already claimed is
-    never claimed again, in this process or the next one. So a process that is restarted
-    between the tick that created a round and the worker that would have run it leaves a
-    round nobody will ever start - and a page that reads "待运行" until someone looks at
-    the database. Re-submitting is safe: `run_key` is unique per slot, so the row cannot
-    be doubled, and a round that cannot start a second time is failed by `_work` rather
-    than left looking like it is still waiting.
+    Two kinds are left behind and they want opposite answers. A round still at `pending`
+    was never read: the ticker looks at the clock rather than the table, so that slot is
+    never claimed again and the round would wait forever for a worker nobody will send.
+    Re-submitting is safe - `run_key` is unique per slot, so the row cannot be doubled, and
+    a round that cannot start a second time is failed by `_work` rather than left looking
+    like it is still waiting. A round at any other non-terminal status *was* being read and
+    stopped being read; after this restart nothing owns it, so it is closed out instead of
+    being counted up on the page for the rest of the week.
 
-    Returns the run ids it took on.
+    Returns the run ids it started again.
     """
     taken: list[str] = []
     for row in pipeline_run.pending_runs():
@@ -173,6 +226,10 @@ def recover() -> list[str]:
         taken.append(row["id"])
         log.warning("round %s on %s was left pending by a previous process: started again",
                     row["id"], row["chain_id"])
+    for row in pipeline_run.abandoned_runs():
+        closed = pipeline_run.close_abandoned(row["id"])
+        log.warning("round %s on %s was left at %s by a previous process: closed as %s",
+                    row["id"], row["chain_id"], row["status"], closed)
     return taken
 
 

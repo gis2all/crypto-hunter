@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 
 from ... import config
 from ...pipeline import run as pipeline_run
+from ...pipeline import schedule
 from ...store import db
 from .schemas import (ChainConfigDetailOut, ChainConfigIn, ChainOut, DeleteIn, LabelIn,
                       LibraryOut)
@@ -142,7 +143,7 @@ def delete_chain_config(chain_id: str, config_id: str, body: DeleteIn) -> dict:
         raise HTTPException(
             status_code=409,
             detail=f"要删的是「{entry['label']}」，把名字原样打一遍才会删")
-    if entry["id"] in pipeline_run.busy_configs(chain_id):
+    if entry["id"] in schedule.live_configs(chain_id):
         raise HTTPException(
             status_code=409,
             detail=f"「{entry['label']}」有一轮正在跑，等这一轮结束再删")
