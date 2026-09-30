@@ -1,14 +1,15 @@
 """How full the bar is.
 
-A round is not seven equal steps. On this chain the source pull is about two minutes, the
-safety gate (every survivor asked of the chain) is three quarters of the round, scoring is
-arithmetic, and writing is the model answering. A bar that counted phases equally would sit
-still for twenty minutes and then jump - which is the same thing as no bar.
+A round is not five equal steps. The source pull is seconds to a minute, the per-token
+top-up and the safety gate are network waits, and the writing is the model answering - so
+the writing is about half a round and the gate about a fifth. A bar that counted phases
+equally would sit still and then jump - which is the same thing as no bar.
 
 So each phase owns a band of the bar, and inside a phase the band fills with the work
-actually finished (sources pulled, candidates judged, batches written). The bands are shares
-of a round's wall clock measured on this chain; `decide` logs the real split every round, so
-the next change to these numbers can cite a measurement instead of a feeling.
+actually finished (sources pulled, candidates judged, entries written). The bands are
+shares of a round's wall clock measured on both chains (12.27), and they run in the order
+the round walks, so the bar never has to walk backwards. `decide` logs the real split every
+round, so the next change to these numbers can cite a measurement instead of a feeling.
 """
 
 from __future__ import annotations
@@ -21,15 +22,18 @@ log = logging.getLogger("crypto-hunter.pipeline")
 
 #: phase -> (low, high) percent, and the words the run panel already uses for that row.
 PHASES: dict[str, tuple[int, int, str]] = {
-    "pull": (0, 8, "拉取扫描源"),
+    "pull": (0, 19, "拉取扫描源"),
     # Between the two halves of the hard filter: the per-token reads that fill the chip
     # numbers the bulk pull left blank. A real phase on this chain - minutes of network
     # wait that used to be absorbed into the gate - so it gets its own band rather than
     # letting the bar sit still and then jump.
-    "topup": (8, 14, "补齐链上数据"),
-    "gate": (14, 82, "安全判定"),
-    "score": (82, 86, "打分排序"),
-    "draft": (86, 100, "生成报告")
+    "topup": (19, 30, "补齐链上数据"),
+    "gate": (30, 51, "安全判定"),
+    # The writing owns the biggest band: it is the only pass that waits on a search plus a
+    # model answer per token, and it runs after the filter, so its band has to be wide or
+    # the bar sits on one number for minutes.
+    "draft": (51, 96, "生成报告"),
+    "score": (96, 100, "打分排序")
 }
 
 
