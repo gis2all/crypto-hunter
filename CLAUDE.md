@@ -103,7 +103,7 @@ cd web; npm install; npm run dev
 
 | 改了什么 | 跑什么 | 通过标准 |
 | --- | --- | --- |
-| `.py` | `cd api; uv run python -m pytest -q` | 基线 **555 绿**；然后**重启 API**（常驻进程，不重启跑的还是旧代码） |
+| `.py` | `cd api; uv run python -m pytest -q` | 基线 **565 绿**；然后**重启 API**（常驻进程，不重启跑的还是旧代码） |
 | 前端 | `cd web; npm run build` | exit 0（内含 `tsc -b`） |
 | `prompts/*.md` | `pytest tests/test_prompts.py` | prompt 里的 JSON 示例与 `NewTokenEntry` 一致 |
 | 视觉 | 1726 视口深 / 浅各截一遍 | 覆盖报告页（卡片折叠 ＋ 卡片展开）、设定页（含链下调研块）、本轮总览；坐标与计算值用 `getComputedStyle` 验，不靠肉眼 |
@@ -137,6 +137,7 @@ cd web; npm install; npm run dev
 | 改视觉（颜色 / 字号 / 主题） | 8.4.1 – 8.6.7 | `web/src/styles/tokens.css`（先改这里，再动 proto / app） |
 | 改一轮的阶段或顺序 | 2.4 | `api/app/pipeline/decide.py` ＋ `progress.py` |
 | 加 / 改数据表 | 7.2.1 | `api/app/store/schema.sql` ＋ `store/db.py` |
+| 改收藏（书架） | 8.7.1 – 8.7.7 | `api/app/api/v1/favorites.py` ＋ `report/assemble.py` 的 `refresh_kept` ＋ `web/src/features/favorites/` |
 | 改搜索（挖链） | 6.4.3 / 6.4.4 | `api/app/search/`（配置 `config/search.env`） |
 | 查「这个数字哪来的」 | 12 | — |
 | 想知道为什么这么设计 | 11 | — |
@@ -167,13 +168,14 @@ cd web; npm install; npm run dev
 | sharpen | 入选之后补读 GeckoTerminal 那一段 |
 | `0` | **是答案，不是缺失**：判空用 `is not None` 而不是 `if value:`，见 6.6.2 |
 | 空列表 | 集合类的 `[]` 算「没答」，不赢走字段，见 6.6.3 |
+| 收藏 | 书架上的一张卡：组装好的卡片的一份**拷贝**，主键 `(chain_id, ca)`，链名 / 配置 / 轮次都只是跟着走的**值**、不是键，什么都不级联；拷贝**跟着币走** —— 谁又写了这个币，就把新的那张换上来，见 8.7 |
 | 市场口径 | 一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` / `h24`），不是榜单或发射台自报的那一个，见 6.1.3 |
 
 # 5. 代码地图
 
 | 路径 | 责任 |
 | --- | --- |
-| `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `health` |
+| `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `health` |
 | `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models`（**不许有 IO**） |
 | `api/app/pipeline/` | 一轮的编排：`collect` / `decide` / `states` / `progress` / `run` / `schedule` / `write` |
 | `api/app/report/` | 报告：`facts`（唯一事实表）/ `cards` / `assemble` / `lexicon` / `research` / `prompts` |
@@ -181,7 +183,7 @@ cd web; npm install; npm run dev
 | `api/app/sources/` | 一个源一个适配器：**跨链的放根目录，只服务一条链的放 `<chain>/`**（`arc/`、`robinhood/`）；两者都从 `registry.ALL` 取 ＋ `http`（缓存与节流）＋ 各自 `SOURCES.md` |
 | `api/app/store/` | SQLite：`schema.sql` ＋ `db.py` |
 | `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
-| `web/src/features/` | `report` / `settings` / `run` / `rail` / `overview` |
+| `web/src/features/` | `report` / `settings` / `run` / `rail` / `favorites` / `overview` |
 | `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
 | `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `Pick` |
 | `config/` | `chains/*.yaml`（出厂设定，一条链一个文件）/ `llm.env`（写手）/ `search.env`（X 会话）/ 各自 `.example` 模板 |
@@ -351,8 +353,8 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 7.1.3 | 记账要覆盖最贵的那台主机：`http.tally()` 是公开的记账入口，`onchain.rpc_checked` 按同一套计数（ok / retry / fail ＋ 耗时）记账，所以链节点会出现在每轮的主机行里。 | 漏记链节点，每轮最慢的那台就看不见。 |
 | 7.1.4 | 日志是唯一的耗时真相：`app/logging_setup.py` 在 `python -m app` 启动时给 `crypto-hunter` 命名空间挂 stderr handler（`CH_LOG_LEVEL` 可调，默认 INFO，`propagate = False` 不污染 uvicorn）；秒表由 `run_chain` 持有、按 `run(clock=...)` 传入，引擎只填不打印（`owns_clock`），所以写词条与落库的耗时也在内。 | 不挂 handler，`logging.lastResort` 只写 WARNING 及以上，`progress.Timer` 算出的阶段耗时会被静默丢弃。 |
 | 7.1.5 | 不要拿单轮数字下结论：节点延迟轮间 2.2–4s 波动，`eth_getLogs` 的调用次数也轮间不可比（9.1.4）。 | 见 12.20。 |
-| 7.2.1 · 7.2.2 | 数据模型共 **11 张表**，以 `api/app/store/schema.sql` 为准：`chains` · `settings_versions`（不可变，一次改动一行 JSON）· `tokens`（CA 主档，含 `peak_market_cap_usd`）· `runs` · `run_items`（每币进出原因）· `snapshots`（不可变，每轮每币）· `run_summary`（含 `dropped_hard`）· `reports`（已发布的卡片文字，冻结）· `lexicon`（**本轮的链下调研**：五项分 ＋ 卡片文字，带 `run_id`）· `lexicon_sources`（这一轮调研读过的页面）· `llm_calls`（模型 / 耗时 / 成本 / prompt 版本）。加列走 `db.init_db` 的 `_ADDED_COLUMNS`（配 `SCHEMA_VERSION`），老库靠它补齐并回填。 | **别手改 `.db`** —— 老库不会自动长出这一列。 |
-| 7.2.3 | 三种表不许改写：`settings_versions`（不可变，改设定 = 追加一行）、`snapshots`（每轮每币一写）、`reports`（落库即冻结）。 | 就地 UPDATE 已发布报告，历史轮次与当时的卡片就对不上。 |
+| 7.2.1 · 7.2.2 | 数据模型共 **12 张表**，以 `api/app/store/schema.sql` 为准：`chains` · `settings_versions`（不可变，一次改动一行 JSON）· `tokens`（CA 主档，含 `peak_market_cap_usd`）· `runs` · `run_items`（每币进出原因）· `snapshots`（不可变，每轮每币）· `run_summary`（含 `dropped_hard`）· `reports`（已发布的卡片文字，冻结）· `lexicon`（**本轮的链下调研**：五项分 ＋ 卡片文字，带 `run_id`）· `lexicon_sources`（这一轮调研读过的页面）· `llm_calls`（模型 / 耗时 / 成本 / prompt 版本）· `favorites`（收藏：卡片的一份拷贝，PK `(chain_id, ca)`，与轮次 / 配置无关 —— 但**跟着币更新**，不是快照，见 8.7）。加列走 `db.init_db` 的 `_ADDED_COLUMNS`（配 `SCHEMA_VERSION`），老库靠它补齐并回填。 | **别手改 `.db`** —— 老库不会自动长出这一列。 |
+| 7.2.3 | 三种表不许改写：`settings_versions`（不可变，改设定 = 追加一行）、`snapshots`（每轮每币一写）、`reports`（落库即冻结）。`favorites` **不在此列** —— 那一行说的是「这个币现在该看哪张卡」，不是某一轮说了什么（8.7.7）。 | 就地 UPDATE 已发布报告，历史轮次与当时的卡片就对不上。 |
 
 # 8. 界面
 
@@ -409,7 +411,8 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 8.3.5 | 中止按钮要**两次按压**（第一下变 `确认中止`，4 秒后自解除 —— 一次误触不能留下「下一轮上来第二下就停」的按钮）；请求在飞时换成 `正在中止`（转圈、不可点），图标 `Square`、颜色 `currentColor`。 | 一次按压就中止误触代价太大；图标用 `Pause` 与「正在中止」语义不符（9.2.6）。 |
 | 8.3.6 | 主题切换在侧栏下方（黑 / 白两态，见 8.6.1）。 | 放到顶栏会与「当前页面的动作」抢位置。 |
 | 8.3.7 | 动作行**最左端**是「运行结果」开关（`TopBar.tsx`）：它折的是整条顶栏**下面**那层面板（`RunPanel`），属于这一轮（和 `默认配置` / `展开卡片` 一样），不属于你正站着的那个 tab，所以排在动作行**第一个**、在 `默认配置` 左边；开着时 chevron 朝上、收起时朝下，`title` 写清下一步；这是**唯一**的折叠处 —— 面板自己没有关闭按钮，所以 9.2.8「停止的一轮把页面交回去」搭在它的**收起**那一半上（展开不挪人）；库里一轮都还没有时**灰显不可点**（与 8.3.4 同一条规矩）。 | 塞回 tab 组旁边，读者会以为它换的是右边那片内容 —— 它折的是整页下面那条。 |
-| 8.3.8 | 刷新要落在原来那一页：链 / 配置 / tab 三个选择写 `ch.chain` / `ch.config` / `ch.view`（`prefs.ts`，与 `ch.theme` 同前缀），读法就是 `useState` 的初值，没有 `beforeunload`；记着的链已不在 `enabled` 列表里就回落到第一条 `enabled`（8.3.1）。报告**轮次下标不存** —— 它由开页那一次列表回答（9.2.8），存下来会和那份回答打架。 | 反例：把轮次下标一起存了 —— 下一轮跑完后刷新会翻开一个旧批次，而不是最新那轮。 |
+| 8.3.8 | 刷新要落在原来那一页：链 / 配置 / tab / 地方四个选择写 `ch.chain` / `ch.config` / `ch.view` / `ch.place`（`prefs.ts`，与 `ch.theme` 同前缀），读法就是 `useState` 的初值，没有 `beforeunload`；记着的链已不在 `enabled` 列表里就回落到第一条 `enabled`（8.3.1）。报告**轮次下标不存** —— 它由开页那一次列表回答（9.2.8），存下来会和那份回答打架。 | 反例：把轮次下标一起存了 —— 下一轮跑完后刷新会翻开一个旧批次，而不是最新那轮。 |
+| 8.3.9 | 链列表**下面**另一组是 `收藏`（`.nav-shelf`，一条分隔线隔开，在主题切换上方）。这一行切的是地方（`Place`），不是链：`.nav-shelf` 有意不叫 `.nav` —— `.nav` 是 `flex:1`，两组都带上就把整列对半分了。**同一时刻只有一行是亮的**：链行亮 = `place === "radar"` 且是当前链；在书架上链行全灭。 | 两行同时亮，读者会以为书架是那条链底下的东西；把书架混进链列表，读者会以为还有一条叫「收藏」的链。 |
 
 ## 8.4 字体、字号、字重、颜色
 
@@ -442,6 +445,19 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 8.6.6 | `tokens.css` 里 `button,input,select,textarea{font-family:inherit}` 是必需的兜底。 | UA 样式给控件直接设了字体族，不兜底输入框里就会冒出一个不是全站字族的字体。 |
 | 8.6.7 | 已知残留：深色状态边框（貔貅三态框 / pill / chip）是 2.29 / 2.37 / 1.63:1，低于非文字元素 3:1 的建议线，**没有为了对齐浅色去改它**（见 10.6）。 | 悄悄改深色 token 去凑 3:1 会让三块「有值」的底变得抢眼。 |
 
+## 8.7 收藏（书架）
+
+收藏是**那份组装好的卡片的一份拷贝**，不是指针：报告行随轮次消失，报告库还会被整套删掉（8.2.2），指针留着就只剩一条断链。主键 `(chain_id, ca)`，**不带 `config_id`** —— 以后 CA 搜索能收藏任何链的币（`origin` = `search`），包括本程序根本没在筛的链。什么都不级联：删一轮、删一套设定都不动书架（`config.forget_library` 有意不碰它）。但它不是快照：书架跟着**币**走，谁又写了这个币就把新的那张换上来（8.7.7），`生成时间` 因此可以晚于 `收藏时间`。
+
+| 编号 | 规则 | 说明 / 反例 |
+| --- | --- | --- |
+| 8.7.1 | 收藏是**第二个地方**，不是雷达底下的一个 tab：左栏 `收藏` 那一行切的是 `Place`（`rail/Rail.tsx`），切过去 `TopBar` / 运行结果 / 报告 / 设定整块不渲染，链与配置的选择**不跟着变**；点任一链名回到 `radar`。 | 挂在报告 / 设定之间，读者会以为它跟着当前链走 —— 书架里的卡可以来自另一条链。 |
+| 8.7.2 | 卡片右上角的星**单击即反转**、不弹确认；已收藏画实心（`.fav.on` 把同一个字形填 `currentColor`，不换第二个图标）；报告页的星只认**当前链**的收藏（`favCas` 按 `chain_id` 收窄），书架页的星都认。 | 换图标会出现两套星形对不齐；按 CA 不分链，另一条链上的同名 CA 会在这页显示成已收藏。 |
+| 8.7.3 | 写入口只有两个：报告页的星 `POST /favorites` `{run_id, ca}`，服务端从 `report/assemble.cards(run_id)` 拷一份（所以拷贝与报告页画的一模一样，含涨跌与 `is_new`）；书架自己的星 `DELETE`。**行形状只有一处**：`report/assemble.py` 的 `kept_row`，读者这条路和 8.7.7 那条路都走它。轮次或卡片不在 → 404。 | 让前端把卡片 POST 上来，就是让前端造数据（2.3.4）；两条写入各自拼一遍行，迟早在 `origin_label` 上长出两个格式。 |
+| 8.7.4 | 书架自己的条（`.fav-bar`，站顶栏的位置、sticky）上只有标题一个词，不印张数、不印「最近于」；右侧依次：链 chips（**固定一条**：左栏画出来的那几条链、同样的顺序，全部 / Arc / Robinhood —— 书架里没有这条链的卡也照画，选中它就是「这条链上一张都没收」；只有左栏不认识的链才追加在最后，因为那时它必须有得筛。写链自己的 `name` 而不是雷达的 `label`，**不挂计数**）→ `过滤 symbol / CA`（宽到装得下整条 CA，placeholder 用 `--muted` —— 与卡片身份行同一个灰，不是引擎自己那个灰）→ 排序下拉（`Pick`，**固定 106px**）→ `导出`。默认顺序 = 收藏时间倒序，也就是 API 的顺序；筛选与排序是页面状态，不落库、不进 `ch.*`。 | 会随书架内容出现 / 消失 / 换位的控件，读者每次都得重新找一遍；两个 label 宽度不同的按钮会让旁边那颗来回挪。 |
+| 8.7.5 | 卡片的**第二条页脚**（`Card` 的 `foot`，只有书架传、报告页不传就不画）：第一行 `链: 链名 ｜ 配置: 配置名`，第二行 `生成时间: x ｜ 收藏时间: x`，两行同字号同色、用链接行那一根竖线分隔、靠 `--hair` 与链接行分开。时间只到分钟、不带 `+08`（`report/assemble.py` 的 `_kept_label` 写入，页面的 `stamp()` 也吃老格式）。**一个字段的值缺了就连标签一起不画**，不留破折号（`FavoritesView` 的 `field()`）。 | 放进卡里才跟卡是一体的：框外那一行是页面注脚，框内这一行才是这张卡的出处。 |
+| 8.7.6 | `导出` 照顶栏那颗的做法锁着（`.demo` ＋ `disabled` ＋ `title`，handler 留着，见 9.5.1）：将来接上时导的是**当前筛选与排序后的那些**，不是书架全部。 | 筛完再导出拿到别的币，是最容易被当成 bug 的那种不一致。 |
+| 8.7.7 | 一轮写完就把书架补上：`pipeline/run.py` 的 `_finish` 调 `report/assemble.py` 的 `refresh_kept`，把这一轮写过、而且书架上正好有的那几张卡换成本轮的新卡（`db.favorite_refresh`）。三条边界：**只换不增**（没人收藏的币不进书架 —— 那是程序替读者决定跟不跟）、**只同链同设定**、**只往新的方向走**（`origin_label` 必须比手上这张晚，所以某一轮被重跑也不会把旧卡塞回去）。`saved_at` **不动**：那是读者收藏的时刻，这一笔不是读者写的，书架因此不因一轮跑完而重排。 | 收藏是跟**币**不是跟某一刻：读者点了星，之后每一轮自动就是当前答案，才不会出现「这页显示旧卡而页面上没有一句话说」。`收藏时间` 一旦跟着刷新走，就和 `生成时间` 变成同一个数，两栏白占地方。`refresh_kept` 像词条清理一样被 try 包住：书架没刷上不算这一轮没发布。 |
 # 9. 运行与验证
 
 ## 9.1 读路径
