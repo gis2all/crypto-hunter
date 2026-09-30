@@ -112,7 +112,7 @@ def _symbol(raw: Any) -> str | None:
 
 class GmGn:
     name = "gmgn"
-    chains = ("arc",)
+    chains = ("arc", "robinhood")
 
     # ---------------------------------------------------------------- universe
 

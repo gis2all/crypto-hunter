@@ -74,7 +74,7 @@ def _numbers(metrics: TokenMetrics, pools: list[dict], best: dict) -> None:
 
 class DexScreener:
     name = "dexscreener"
-    chains = ("arc",)
+    chains = ("arc", "robinhood")
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         """Nothing to sweep: this host is asked about a CA, not about a chain."""

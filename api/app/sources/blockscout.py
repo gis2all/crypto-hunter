@@ -23,7 +23,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..core.models import SafetyFacts, TokenMetrics
-from .http import SourceError, UA_BLOCKSCOUT, cached, json_get
+from .http import SourceError, cached, explorer_headers, json_get
 from .onchain import BLOCKSCOUT_TRANSPORT, explorer_url
 
 #: The endpoint's own page size. A different one (`items_count`) is a 422, not a bigger
@@ -93,7 +93,7 @@ def _metrics(ca: str, row: dict) -> dict:
 
 class Blockscout:
     name = "blockscout"
-    chains = ("arc",)
+    chains = ("arc", "robinhood")
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         rows = cached("bs:tokens:%s" % chain_id, UNIVERSE_TTL, lambda: self._sweep(chain_id))
@@ -113,7 +113,7 @@ class Blockscout:
         for _attempt in range(MAX_PAGES):
             try:
                 body = json_get(
-                    "%s?%s" % (url, urlencode(params)), UA_BLOCKSCOUT,
+                    "%s?%s" % (url, urlencode(params)), explorer_headers(explorer_url(chain)),
                     transport=BLOCKSCOUT_TRANSPORT, tries=2, sleep=2.0, timeout=30.0,
                 )
             except SourceError:
@@ -146,9 +146,11 @@ class Blockscout:
             return TokenMetrics(ca=ca), SafetyFacts()
         from .. import config
 
-        url = "%s/api/v2/tokens/%s" % (explorer_url(config.chain(chain_id)).rstrip("/"), ca)
+        chain = config.chain(chain_id)
+        url = "%s/api/v2/tokens/%s" % (explorer_url(chain).rstrip("/"), ca)
         try:
-            body = json_get(url, UA_BLOCKSCOUT, transport=BLOCKSCOUT_TRANSPORT,
+            body = json_get(url, explorer_headers(explorer_url(chain)),
+                            transport=BLOCKSCOUT_TRANSPORT,
                             tries=2, sleep=2.0, timeout=20.0)
         except SourceError:
             return TokenMetrics(ca=ca), SafetyFacts()
