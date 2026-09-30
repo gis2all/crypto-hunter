@@ -70,6 +70,7 @@ def _public(chain_id: str) -> ChainOut:
     entry = _chain_or_404(chain_id)
     cfg = config.chain(chain_id)
     values = {k: cfg.get(k) for k in PUBLIC_FIELDS}
+    values["name"] = config.chain_name(cfg)
     values["sources"] = values.get("sources") or []
     values["configs"] = [
         {"id": c["id"], "label": c["label"],

@@ -55,6 +55,10 @@ class ChainConfigOut(BaseModel):
 class ChainOut(BaseModel):
     id: str
     label: str
+    #: The chain's own name (config.chain_name), never the radar's: the rail and the drawer
+    #: print `label`, and a sentence about the chain itself - a search query, a kept card's
+    #: provenance line - wants "Arc", not "Arc 雷达".
+    name: str = ""
     enabled: bool
     explorer: str | None = None
     sources: list[str]
