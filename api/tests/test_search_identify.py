@@ -10,10 +10,10 @@ from __future__ import annotations
 from app.search import identify as identify_mod
 from app.search.base import SearchHit
 from app.sources import http
-from app.search.identify import (CARRIES, NONE, OWN, SHELL_WORDS, check_website,
-                                 classify, description_of, identify, is_shell, mentions,
-                                 names_token, pick_website, promote_by_site, read_profiles,
-                                 website_candidates)
+from app.search.identify import (CARRIES, NONE, OWN, SHELL_WORDS, check_sites,
+                                 check_website, classify, description_of, identify,
+                                 is_shell, mentions, names_token, pick_website,
+                                 promote_by_site, read_profiles, website_candidates)
 
 CA = "0xd8d51e2a23fb82fa4b50de3898c7352f108f2246"
 
@@ -130,6 +130,7 @@ def test_the_exchanges_and_other_chains_launchpads_are_never_the_projects_site()
 
 
 
+def test_the_chains_own_sites_are_never_the_projects_site():
     """One live run offered the Arc explorer, Uniswap and the chain's own blog as the
     token's website, because all three carried the address. Carrying it is their job."""
     hits = [_hit("https://explorer.arc.io/token/" + CA, kind="web"),
@@ -349,3 +350,20 @@ def test_an_account_page_is_read_without_drawing_it(monkeypatch):
 
     assert profiles[0].tier == OWN
     assert pages, "and the page comes back with the answer for the site to agree with"
+
+
+def test_a_site_the_projects_own_page_named_is_read_before_the_models_hits():
+    """The candidate a caller found on the project's own pages - a bio that names the site -
+    is the better lead, and it shares the cap with the search's own hits."""
+    hits = [_hit("https://arcstudio.fun", kind="web")]
+    assert website_candidates(hits, extra=["https://from-the-bio.example"]) == [
+        "https://from-the-bio.example", "https://arcstudio.fun"]
+
+
+def test_an_extra_candidate_is_read_like_any_other_site():
+    """Nothing about an extra is trusted: it is fetched, and the page decides its tier."""
+    pages = {"https://from-the-bio.example": "<p>token %s</p>" % CA}
+    sites = check_sites([], CA, [], fetch=pages.__getitem__,
+                        extra=["https://from-the-bio.example"])
+    assert [(site.url, site.tier) for site in sites] == [
+        ("https://from-the-bio.example", CARRIES)]

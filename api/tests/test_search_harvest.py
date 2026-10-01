@@ -9,7 +9,8 @@ a project's list of channels.
 
 from __future__ import annotations
 
-from app.search.harvest import HARVEST_ACCOUNTS, candidates
+from app.search.harvest import (HARVEST_ACCOUNTS, SITE_CANDIDATES, candidates,
+                                site_candidates)
 
 SITE = 'https://solonpad.fun'
 
@@ -75,3 +76,34 @@ def test_the_caps_are_what_the_page_does_not_get_to_spend():
 def test_a_page_does_not_harvest_itself():
     """A site linking its own host is not a second site, and a profile is not its own account."""
     assert candidates(_page('<a href="https://solonpad.fun/">home</a>')) == []
+
+
+def test_the_site_a_profile_names_is_a_candidate():
+    """The one place a project's site is written down when no engine has indexed it: its own
+    X profile, where the link arrives as X's expansion of a t.co anchor."""
+    body = ('<a href="https://t.co/EL3srb2Tbk">mosh.trade</a>'
+            '{"expanded_url":"https://aurumonmosh.com"}')
+    assert site_candidates(_page(body, 'https://x.com/aurumonmosh', 'x'), 'AUR') == [
+        'https://aurumonmosh.com/']
+
+
+def test_one_site_candidate_per_host():
+    """Two links into one site are one candidate, and the page's own host is not one."""
+    body = ('<a href="https://aurumonmosh.com/">home</a>'
+            '<a href="https://aurumonmosh.com/roadmap">r</a>'
+            '<a href="https://solonpad.fun/elsewhere">own</a>')
+    assert site_candidates(_page(body)) == ['https://aurumonmosh.com/']
+
+
+def test_a_listing_and_a_channel_are_never_site_candidates():
+    """A screener is where a token is listed and a channel is not a home page."""
+    body = ('<a href="https://gmgn.ai/arc/token/0xabc">gmgn</a>'
+            '<a href="https://x.com/solonlabs">x</a>'
+            '<a href="https://t.me/solonpad">tg</a>')
+    assert site_candidates(_page(body)) == []
+
+
+def test_only_the_cap_of_candidate_sites_is_offered():
+    """A footer's worth of partner links must not spend the page reads a round has."""
+    body = ''.join('<a href="https://site%d.example/">s</a>' % index for index in range(10))
+    assert len(site_candidates(_page(body))) == SITE_CANDIDATES

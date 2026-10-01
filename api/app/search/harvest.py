@@ -13,9 +13,13 @@ own links. Every one of them would have been inherited as the project's own acco
 candidate found here is proved the same way every other candidate is - by reading it - and
 the page decides what to look at, never what to believe.
 
-Only accounts, channels and repositories are offered. A website found this way is not: the
-footer of a project's own site is a wall of partner links, the card prints exactly one site,
-and the one it prints is the site that was proved rather than one a proved page mentioned.
+`candidates` offers accounts, channels and repositories and never a site: the footer of
+a project's own site is a wall of partner links, the card prints exactly one site, and the
+one it prints is the site that was proved rather than one a proved page mentioned.
+`site_candidates` is the same reading pointed the other way. A project whose own X
+profile names its site is a project an engine may never have indexed, and the only place that
+site is written down is the page that was read for its bio - so those links are offered as
+site candidates, and every one of them is read and has to earn its tier like any other.
 """
 
 from __future__ import annotations
@@ -38,6 +42,11 @@ HARVEST_LIMIT = 6
 #: that the project's own account needs.
 HARVEST_ACCOUNTS = 2
 HARVEST_REPOS = 2
+
+#: How many candidate sites one token's own pages may offer. The same tighter-of-two rule as
+#: HARVEST_LIMIT: a project has one home page, and a footer's worth of partner links must not
+#: spend the page reads a round has.
+SITE_CANDIDATES = 6
 
 #: Which kinds are worth taking, and what they are called downstream. `kind_of` answers with
 #: the family a URL belongs to; the reading stage files pages under these names.
@@ -172,3 +181,34 @@ def candidates(pages: Sequence[tuple[str, str, str]],
                + [(k, u) for k, u, _ in channels[:1]]
                + [(k, u) for k, u, _ in repos[:HARVEST_REPOS]])
     return ordered[:HARVEST_LIMIT]
+
+
+def site_candidates(pages: Sequence[tuple[str, str, str]], ticker: str = '') -> list[str]:
+    """The sites a token's own pages point at, one per host, best first.
+
+    `pages` is (kind, url, body) of the pages a round has read and proved belong to this
+    token - the same list `candidates` is handed, read the same way, the X profile the bio
+    came from included.
+
+    A candidate is not a verdict. Every one of these is read and has to tie back to the
+    token, the same as a search hit, so a partner link in a footer costs one fetch and
+    nothing else - see the module docstring. The host is the unit: two links into one site
+    are one candidate, and the link that looks most like the ticker is the one kept.
+    """
+    best: dict[str, tuple[int, str]] = {}
+    for kind, url, body in pages:
+        own_host = host_of(url)
+        for target in _urls(body, shorteners=(kind == 'x')):
+            if kind_of(target) != 'web':
+                continue
+            host = host_of(target)
+            if not host or host == own_host or listed(host):
+                continue
+            clean = normalize_url(target)
+            if not clean:
+                continue
+            worth = score(clean, ticker)
+            if host not in best or worth > best[host][0]:
+                best[host] = (worth, clean)
+    ordered = sorted(best.values(), key=lambda row: -row[0])
+    return [clean for _, clean in ordered[:SITE_CANDIDATES]]

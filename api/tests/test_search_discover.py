@@ -226,3 +226,65 @@ def test_a_blank_site_is_drawn_while_the_accounts_are_read_as_they_arrive(monkey
 
     assert drawn == ["https://memespad.com"], "the browser is opened for the site alone"
     assert found.site is not None and found.site.tier == CARRIES
+
+
+def test_a_site_only_the_projects_own_bio_names_is_still_read():
+    """The case an engine cannot reach: it offered no site at all, and the only place the
+    project's address is written down is the link on the profile that was read for its bio.
+    The candidate is read and earned like any other - it is never inherited from the page."""
+    body = ('<a href="https://t.co/EL3srb2Tbk">site</a>'
+            '{"expanded_url":"https://arcstudio.fun"}')
+    pages = {
+        "https://x.com/arcstudio_ai": _page("AI studio on Arc " + CA, body),
+        "https://arcstudio.fun/": '<a href="https://x.com/arcstudio_ai">X</a>',
+    }
+    hits = [SearchHit("https://x.com/arcstudio_ai", "fake", "x")]
+    found = discover("Arc", CA, "STUDIO", service=_service(hits), fetch=pages.__getitem__)
+
+    assert found.website == "https://arcstudio.fun/"
+    assert found.site.tier == OWN
+
+
+def test_the_round_s_own_record_earns_a_tierless_page_a_read():
+    """The shape most projects have: the bio is the name and nothing else, so the account
+    earns no tier, and its page is where the site is written down all the same. The round's
+    own record naming the handle is what makes that page readable."""
+    body = ('<a href="https://t.co/EL3srb2Tbk">site</a>'
+            '{"expanded_url":"https://ping.observer"}')
+    pages = {
+        "https://x.com/pingobserver": _page("PING", body),
+        "https://ping.observer/": '<meta name="description" content="$PING on Arc %s">' % CA,
+    }
+    engine = FakeEngine([])
+    found = discover("Arc", CA, "PING", service=SearchService([engine]),
+                     fetch=pages.__getitem__,
+                     known=[("twitter", "https://x.com/pingobserver")], search=False)
+
+    assert found.profiles[0].tier == NONE
+    assert found.website == "https://ping.observer/"
+    assert found.site.tier == OWN
+    assert found.site.evidence == "its own description calls the token $PING"
+
+
+def test_a_page_the_round_never_named_is_skipped_even_when_it_links_a_site():
+    """The other half of the rule: a stranger an engine offered is not made readable by
+    having a link on it. Only the round's own record opens that door. The site here would
+    earn `own` if it were read - which is what makes reading it a failure."""
+    body = ('<a href="https://t.co/EL3srb2Tbk">site</a>'
+            '{"expanded_url":"https://stranger.fun"}')
+    pages = {
+        "https://x.com/stranger": _page("gm", body),
+        "https://stranger.fun/": '<meta name="description" content="$STUDIO on Arc %s">' % CA,
+    }
+    asked: list[str] = []
+
+    def fetch(url: str) -> str:
+        asked.append(url)
+        return pages[url]
+
+    hits = [SearchHit("https://x.com/stranger", "fake", "x")]
+    found = discover("Arc", CA, "STUDIO", service=_service(hits), fetch=fetch)
+
+    assert found.profiles[0].tier == NONE
+    assert "https://stranger.fun/" not in asked
+    assert found.website is None
