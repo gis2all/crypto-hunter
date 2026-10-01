@@ -70,6 +70,11 @@ def _shelf(client):
     return resp.json()
 
 
+def _search_card(ca=CA, symbol="ABC"):
+    """A card the way `lookup.read` writes it: no pool, so no rank and no score (8.8.2)."""
+    return {"ca": ca, "sym": symbol, "score": None, "rank": 0}
+
+
 def test_keeping_a_card_copies_it_and_says_where_it_came_from(isolated_db, client):
     """The shelf answers with the card itself, not a pointer to the round it came from."""
     conn = db.connect()
@@ -272,3 +277,47 @@ def test_a_token_this_round_did_not_write_keeps_its_card(isolated_db, client):
     report_assemble.refresh_kept("run-2")
 
     assert _shelf(client)[0]["origin_run_id"] == "run-1"
+
+
+def test_a_round_takes_over_a_searched_card_without_taking_it_off_the_search_list(
+        isolated_db, client):
+    """10.10: the round's card is the more informed one, so it replaces the search record's
+    - but the record is still a record, and 最近搜索 finds it by `origin`.
+
+    A searched row nobody kept is on that list by `origin = 'search'` and on the shelf by
+    nothing, so a takeover that flipped the origin would leave the row on neither page -
+    searched once, then invisible until the reader searched it again."""
+    conn = db.connect()
+    try:
+        _seed(conn, "run-1", score=88.4, at=LATER)
+    finally:
+        conn.close()
+    db.favorite_put(report_assemble.lookup_row(ARC, CA, "ABC", _search_card(), NOW))
+
+    assert report_assemble.refresh_kept("run-1") == 1
+
+    after = db.lookups()[0]
+    assert after["origin"] == "search", "the row is still the search list's"
+    assert after["score"] == 88.4, "and it is the round's card"
+    assert json.loads(after["payload_json"])["score"] == 88.4
+    assert _shelf(client) == [], "still not on the shelf - the round did not collect it"
+
+
+def test_a_round_still_takes_over_a_searched_card_the_reader_kept(isolated_db, client):
+    """The star does not change what a takeover is: a searched card the reader collected is
+    refreshed the same way, and it reads on both lists at once - the shelf by `kept`, 最近搜索
+    by `origin`."""
+    conn = db.connect()
+    try:
+        _seed(conn, "run-1", score=88.4, at=LATER)
+    finally:
+        conn.close()
+    db.favorite_put(report_assemble.lookup_row(ARC, CA, "ABC", _search_card(), NOW))
+    db.favorite_set_kept(ARC, CA, True)
+
+    assert report_assemble.refresh_kept("run-1") == 1
+
+    shelf = _shelf(client)
+    assert shelf[0]["origin_run_id"] == "run-1"
+    assert shelf[0]["card"]["score"] == 88.4
+    assert [row["ca"] for row in db.lookups()] == [CA]

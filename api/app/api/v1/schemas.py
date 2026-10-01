@@ -274,6 +274,10 @@ class CardOut(BaseModel):
     rank: int
     ca: str
     sym: str
+    #: The token's square mark, as a URL - empty when no source had one. The card draws the
+    #: slot either way, so a card with no picture is the same card with nothing in that box
+    #: rather than a card of a different height.
+    logo: str = ""
     tag: str = ""
     is_new: bool = False
     score: float | None = None
@@ -289,6 +293,11 @@ class CardOut(BaseModel):
     safety: SafetyOut
     details: list[DetailOut]
     links: list[LinkOut]
+    #: Why the off-chain half is empty, when it is. A round's card never carries one - a token
+    #: with no readable link is not written as a card at all there - but a CA search answers
+    #: with whatever the token does have, so the card says which half it could not read
+    #: instead of leaving the 结论 block looking broken (app/lookup.py).
+    research_note: str = ""
 
 
 class DeclineRowOut(BaseModel):
@@ -334,17 +343,20 @@ class BatchOut(BaseModel):
 
 
 class FavoriteOut(BaseModel):
-    """One kept card: the reader is following the token, and this is that token's current card.
+    """One card on file for a token: collected, or a record of a CA search for it.
 
     A copy rather than a reference, on purpose: a report row is deleted with its round, and
-    a whole report library can be dropped, while a kept card has to stay readable. It is
-    also why `config_id` is not part of the key - a card can come from a chain this app does
-    not screen, so the shelf is keyed by (chain_id, ca) alone. It is a value: the set of
-    settings the round ran under, for the line the shelf prints under the card.
+    a whole report library can be dropped, while a card the reader holds on to has to stay
+    readable. It is also why `config_id` is not part of the key - a card can come from a
+    chain this app does not screen, so the table is keyed by (chain_id, ca) alone. It is a
+    value: the set of settings the round ran under, for the line the card's foot prints.
 
-    A round that writes one of these tokens again replaces the payload in place
+    Two kinds of row answer to this, and the reader only sees the difference on the card's
+    foot: a round's card carries `origin_run_id` and `config_id`, and a CA search's carries
+    neither (`origin = 'search'`, no score - there is no pool to rank in, app/lookup.py). A
+    round that writes one of these tokens again replaces the payload in place
     (report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward
-    while `saved_at` stays at the moment the reader kept it.
+    while `saved_at` stays at the moment the row was first put here.
     """
 
     chain_id: str
@@ -359,6 +371,41 @@ class FavoriteOut(BaseModel):
     saved_at: str
     updated_at: str
     card: CardOut
+
+
+class JobStageOut(BaseModel):
+    """One row of a search's step list: what the stage is called and where it has got to.
+
+    The four states are the ones a round's step list draws too (pending / run / done /
+    failed), so the two panels cannot disagree about what a stopped stage looks like.
+    `seconds` is filled the moment the stage ends and stays empty until then.
+    """
+
+    key: str
+    label: str
+    state: str                       # pending | run | done | failed
+    seconds: float | None = None
+
+
+class JobOut(BaseModel):
+    """One CA search, as the page polls it.
+
+    A job rather than a synchronous answer, because the search is minutes long and a page
+    that shows which stage it is on needs somewhere to read that from. `row` is the stored
+    card once the status is `done` - the same row the shelf and the recent list read, so a
+    searched card cannot be two different cards depending on how the page got it.
+    """
+
+    id: str
+    ca: str
+    chain_id: str | None = None
+    status: str                       # running | done | failed
+    stage: str | None = None          # the stage running now; a finished job carries none
+    stages: list[JobStageOut] = []    # in order, first to last
+    error: str | None = None
+    row: FavoriteOut | None = None
+    started_at: str
+    finished_at: str | None = None
 
 
 class RemovedOut(BaseModel):
