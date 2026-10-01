@@ -1,4 +1,4 @@
-import { Moon, Star, Sun } from "lucide-react";
+import { Moon, Search, Star, Sun } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { ArcMark } from "../../components/ArcMark";
@@ -21,10 +21,11 @@ function chainIdMark(id: string) {
   return null;
 }
 
-/** The two places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is
- *  one shelf for every chain, so it is not a row in the chain list - the shelf can hold a
- *  card from a chain this app does not screen at all. */
-export type Place = "radar" | "favorites";
+/** The three places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is one
+ *  shelf for every chain, and 搜索 reads one address from any chain. Neither of the last
+ *  two is a row in the chain list: a kept card, and a searched one, can both come from a
+ *  chain this app does not screen at all. */
+export type Place = "radar" | "favorites" | "lookup";
 
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
  *  chain, not a menu, and a row nobody can open is not a menu item. Settings is a tab in
@@ -75,16 +76,26 @@ export function Rail({
             </div>
           );
         })}
-      </nav>
-      {/* The shelf, under the radars and separated from them: a kept card belongs to no
-          single chain, so it is not a row in a list of chains - it is the other place. */}
-      <nav className="nav-shelf">
-        <div
-          className={"nav-i" + (place === "favorites" ? " on" : "")}
-          onClick={() => onSelectPlace("favorites")}
-        >
-          <Icon as={Star} size={14} />
-          收藏
+        {/* The two places that are not a radar, right under the radars: a kept card and a
+            searched one both belong to no single chain, so neither is a row in a list of
+            chains - but they sit in the radars' own list, not on a shelf apart from it.
+            搜索 leads: looking a CA up is the way in, and the shelf is what it leaves behind
+            (user, 2026-10-01). */}
+        <div className="nav-shelf">
+          <div
+            className={"nav-i" + (place === "lookup" ? " on" : "")}
+            onClick={() => onSelectPlace("lookup")}
+          >
+            <Icon as={Search} size={14} />
+            搜索
+          </div>
+          <div
+            className={"nav-i" + (place === "favorites" ? " on" : "")}
+            onClick={() => onSelectPlace("favorites")}
+          >
+            <Icon as={Star} size={14} />
+            收藏
+          </div>
         </div>
       </nav>
       {/* Two segments, not one toggle: with two states a reader should see which one they
