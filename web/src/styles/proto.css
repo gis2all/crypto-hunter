@@ -78,19 +78,35 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(356px,1fr));gap:12px;padding:14px 16px 40px;
   align-items:stretch}
 .card{background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column}
-.card-head{display:flex;align-items:baseline;gap:8px;padding:10px 12px 8px}
-.head-l{display:flex;align-items:baseline;gap:8px;min-width:0}
+.card-head{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.head-l{display:flex;align-items:center;gap:8px;min-width:0}
 .rank{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
-.sym{font-size:19px;font-weight:600;letter-spacing:-.015em}
-.flag{font-family:var(--mono);font-size:9.5px;border:1px solid var(--hair);color:var(--muted);padding:0 4px}
+.head-id{display:flex;flex-direction:column;gap:2px;min-width:0}
+.head-name{display:flex;align-items:baseline;gap:6px;min-width:0}
+.sym{font-size:19px;font-weight:600;letter-spacing:-.015em;line-height:1.15;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+/* line-height:1 because the flag stands on the symbol's line: at the body's 1.55 its box reaches
+   1.19px below the 19px symbol's own line box, the baseline-aligned row grows, and a searched
+   card (which has no 新进 / 续榜) comes out shorter than a round card beside it on the shelf. */
+.flag{font-family:var(--mono);font-size:9.5px;border:1px solid var(--hair);color:var(--muted);padding:0 4px;
+  line-height:1}
 .flag-new{border-color:var(--ok-border);color:var(--ok-fg)}
 .head-r{margin-left:auto;flex:0 0 auto;text-align:right;display:flex;align-items:baseline;gap:5px}
 .score{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.02em}
 .score-label{font-size:10.5px;color:var(--muted);white-space:nowrap}
-.card-id{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-family:var(--mono);font-size:10.5px;
+/* margin-left is an optical nudge (2026-10-01, user): the 19px symbol's first glyph starts a
+   hair right of the mono address's, so the two left edges read as two, not one. The boxes are
+   already flush at 0; the 1px is against the ink, and it shifts the copy button with the row. */
+.card-id{display:flex;align-items:center;gap:8px;margin-left:1px;font-family:var(--mono);font-size:10.5px;
   color:var(--muted);min-width:0}
-.ca{border:1px solid var(--hair);padding:2px 6px;color:var(--fg)}
-.ranks{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The address on a card head carries no box (2026-10-01, user): it is the second line of the
+   card's identity, and a bordered pill under a name reads as a form field. */
+.ca{color:var(--fg)}
+/* min-height is the line this row prints plus the 8px under it, so the row a searched card leaves
+   empty is the same row a round card fills (8.8.2). */
+.card-ranks{display:flex;align-items:center;justify-content:flex-end;padding:0 12px 8px;
+  min-height:calc(10.5px * 1.55 + 8px);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.ranks{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-spark{display:flex;align-items:center;gap:8px;padding:0 12px 10px}
 .card-spark svg{width:128px;height:26px}
 .card-spark svg path{fill:none;stroke-width:1.4;vector-effect:non-scaling-stroke}
