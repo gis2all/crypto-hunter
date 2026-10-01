@@ -16,8 +16,9 @@ import { Icon } from "./Icon";
  *
  *  One button for both places on purpose: the overview table and the report card say the same
  *  thing, so they should look the same and fail the same way. The two sizes it is drawn at
- *  (12 in the table, 14 beside the card's CA box) are a rule in app.css rather than a prop,
- *  because it is the same button either way. */
+ *  (12 in the table, 14 beside the card's address) are a rule in app.css rather than a prop,
+ *  because it is the same button either way. The card's is the bare one (2026-10-01, user):
+ *  no box around it, and no box around the address beside it either (proto.css .ca). */
 export function CopyCa({ ca }: { ca: string }) {
   const [done, setDone] = useState(false);
 

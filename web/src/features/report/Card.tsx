@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, ChevronRight, ShieldCheck, Star } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, RotateCw, ShieldCheck, Star } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Card as CardModel } from "../../api/client";
@@ -80,6 +80,33 @@ function rank(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `#${value}`;
 }
 
+/** The token's own mark, in the box the head keeps for it.
+ *
+ *  The box is drawn whether or not there is a picture in it: a card with no mark is the same
+ *  card with nothing in that box, not a card of a different height - the same reason the
+ *  shelf reserves the score's corner (8.8.2). It is a square because the whole screen is, and
+ *  the fill when it is empty is the theme's own black or white (--logo-empty) rather than
+ *  nothing at all, so an empty box reads as empty. The box is drawn in the accent at 2px, and
+ *  with a 6px radius (2026-10-01, user): the fill says which box it is, and the ring says
+ *  there is a box at all - a hairline in --border was too quiet on the light theme, where the
+ *  empty fill is white on a near-white card.
+ *
+ *  It is the height of the two lines beside it - the symbol and the address, which the head
+ *  is - so the head stands or falls on the text, and a mark can be any shape it likes inside
+ *  the square without moving anything.
+ *
+ *  A mark that will not load leaves the box as it stands instead of putting a broken-image
+ *  glyph in the middle of a card: the box already says "no picture", and a failed fetch has
+ *  nothing to add to it. */
+function Logo({ url }: { url: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="logo">
+      {url && !broken ? <img src={url} alt="" onError={() => setBroken(true)} /> : null}
+    </span>
+  );
+}
+
 /** `openAll` + `bulkTick` are the topbar's 展开卡片 / 收起卡片 reaching every card at
  *  once. The two <details> and the 展开 button under the conclusion are uncontrolled - the
  *  reader owns them - so a bulk action remounts them under a new key rather than trying to
@@ -92,7 +119,10 @@ export function Card({
   bulkTick,
   favorited = false,
   onFavorite,
+  onRescan,
+  rescanBusy = false,
   foot,
+  listed = card.rank >= 1,
 }: {
   card: CardModel;
   openAll: boolean;
@@ -101,14 +131,36 @@ export function Card({
   favorited?: boolean;
   /** Keep this card, or take it off. Absent where there is no shelf to act on. */
   onFavorite?: () => void;
+  /** Run this same address again from scratch, replacing the card. Only 搜索 passes one:
+   *  a card that came out of a round is already that round's answer, and has nothing to run
+   *  again. */
+  onRescan?: () => void;
+  /** A search for this card is in flight, so the control is spent until it lands. */
+  rescanBusy?: boolean;
   /** A second footer band, under the links. Only the shelf passes one: it is where a kept
    *  card says which round and which set of settings it was read as, and a card drawn from
    *  the round it is standing in has nothing to say there. */
   foot?: ReactNode;
+  /** Whether this card is standing in a round's list right now. It defaults to what the card
+   *  itself says (`rank`), and 最近搜索 is the one page that answers no: a searched token the
+   *  next round picked up carries that round's rank, score and flag in its payload (10.10),
+   *  while that page is not the round's list - see the note on rank below. */
+  listed?: boolean;
 }) {
   const short = `${card.ca.slice(0, 6)}…${card.ca.slice(-4)}`;
   // Ranks 1-3 carry the podium strip; the colours live in app.css.
-  const podium = card.rank >= 1 && card.rank <= 3 ? " podium-" + card.rank : "";
+  const podium = listed && card.rank >= 1 && card.rank <= 3 ? " podium-" + card.rank : "";
+  // A card with no rank is not a card that came last - it is a card no round put in a list at
+  // all, which is what a CA search produces. Rank is where that shows: the ordinal, the 新进 /
+  // 续榜 flag (there was no previous round to be 续 of) and the three pool ranks all read off
+  // it, so the head is the card's own name and nothing else. The score block reads off the
+  // same rank, for the same reason: a score is a position inside a round's pool, so a card
+  // with no pool has no score to print - not a blank one waiting to be explained, and no two
+  // halves to split a bar between.
+  // That rank is what `listed` defaults to. A caller that knows this card is not standing in
+  // any list says so itself, and then none of it is drawn.
+  const ranked = listed && [card.ranks.liquidity, card.ranks.volume, card.ranks.holders]
+    .some((value) => value !== null && value !== undefined);
   // The size of the thing, beside the shape of its price: the two numbers a reader checks
   // before opening a card. Read off the table the card already carries rather than sent a
   // second time, so the line above and the row below it cannot disagree.
@@ -117,16 +169,44 @@ export function Card({
     <article className={"card" + podium}>
       <header className="card-head">
         <div className="head-l">
-          <span className="rank">{String(card.rank).padStart(2, "0")}</span>
-          <span className="sym">{card.sym}</span>
-          <span className={card.is_new ? "flag flag-new" : "flag"}>
-            {card.is_new ? "新进" : "续榜"}
-          </span>
+          {listed ? <span className="rank">{String(card.rank).padStart(2, "0")}</span> : null}
+          <Logo url={card.logo} />
+          <div className="head-id">
+            <div className="head-name">
+              <span className="sym">{card.sym}</span>
+              {listed ? (
+                <span className={card.is_new ? "flag flag-new" : "flag"}>
+                  {card.is_new ? "新进" : "续榜"}
+                </span>
+              ) : null}
+            </div>
+            <div className="card-id">
+              <code className="ca">{short}</code>
+              <CopyCa ca={card.ca} />
+            </div>
+          </div>
         </div>
         <div className="head-r">
-          {/* The star stands beside the score because it acts on this card: it is the one
-              control on a card that keeps it rather than opens it, and it is drawn filled
-              once the shelf holds this CA. */}
+          {/* 重新搜索 is the second control a card can carry, and it is icon-only: the corner
+              has room for one glyph beside the star, and a word here would weigh more than the
+              card's own name. The word it gives up is the tooltip, and it turns while the
+              search it started is in flight - an icon-only control that has gone quiet has
+              nothing else to say. */}
+          {onRescan ? (
+            <button
+              type="button"
+              className="rescan"
+              aria-label="重新搜索"
+              title="重新搜索"
+              disabled={rescanBusy}
+              onClick={onRescan}
+            >
+              <Icon as={RotateCw} size={14} className={rescanBusy ? "spin" : undefined} />
+            </button>
+          ) : null}
+          {/* The one control on a card that keeps it rather than opens it, drawn filled once
+              the shelf holds this CA. It stands in the corner the score would own; on a
+              searched card the 重新搜索 glyph is the only thing beside it. */}
           {onFavorite ? (
             <button
               type="button"
@@ -139,41 +219,59 @@ export function Card({
               <Icon as={Star} size={14} />
             </button>
           ) : null}
-          <span className="score">{whole(card.score)}</span>
-          <span className="score-label">综合分</span>
+          {listed ? (
+            <>
+              <span className="score">{whole(card.score)}</span>
+              <span className="score-label">综合分</span>
+            </>
+          ) : null}
         </div>
       </header>
 
-      <div className="scorebar">
-        <div className="sb">
-          <div className="sb-seg" style={{ flex: `${card.onchain_weight} 1 0` }}>
-            <div className="sb-fill" style={{ width: `${card.onchain ?? 0}%` }} />
+      {listed ? (
+        <div className="scorebar">
+          <div className="sb">
+            <div className="sb-seg" style={{ flex: `${card.onchain_weight} 1 0` }}>
+              <div className="sb-fill" style={{ width: `${card.onchain ?? 0}%` }} />
+            </div>
+            <div className="sb-seg" style={{ flex: `${card.offchain_weight} 1 0` }}>
+              <div className="sb-fill alt" style={{ width: `${card.product ?? 0}%` }} />
+            </div>
           </div>
-          <div className="sb-seg" style={{ flex: `${card.offchain_weight} 1 0` }}>
-            <div className="sb-fill alt" style={{ width: `${card.product ?? 0}%` }} />
+          <div className="sb-lab">
+            <span>
+              <Icon as={ShieldCheck} />
+              <b>链上质量</b>
+              <i>{whole(card.onchain)}</i>
+            </span>
+            <span className="r">
+              <Icon as={Boxes} />
+              <b>链下调研</b>
+              <i>{whole(card.product)}</i>
+            </span>
           </div>
         </div>
-        <div className="sb-lab">
-          <span>
-            <Icon as={ShieldCheck} />
-            <b>链上质量</b>
-            <i>{whole(card.onchain)}</i>
-          </span>
-          <span className="r">
-            <Icon as={Boxes} />
-            <b>链下调研</b>
-            <i>{whole(card.product)}</i>
-          </span>
-        </div>
-      </div>
+      ) : (
+        /* A searched card has no score to print (8.8.2), but the shelf mixes it with round
+           cards, and this card's own rule is that only one block is variable. The score
+           block holds its place so this card's conclusion, its two folds and its footer
+           still land on the same line as the round card beside it. */
+        <div className="scorebar blank" aria-hidden="true" />
+      )}
 
-      <div className="card-id">
-        <code className="ca">{short}</code>
-        <CopyCa ca={card.ca} />
-        <span className="ranks">
-          流动性 {rank(card.ranks.liquidity)} · 成交 {rank(card.ranks.volume)} · 持有人{" "}
-          {rank(card.ranks.holders)}
-        </span>
+      {/* The pool's own ranking of this token. It used to share the address row and now has
+          that row to itself: the address moved up beside the name, and these three numbers
+          are a reading of the round rather than of the token, so they sit under the head.
+          A card with no round keeps the row and prints nothing in it - the shelf stands
+          searched cards and round cards in one grid (8.8.2), and a row present on one and
+          missing on the other would move every block under it. */}
+      <div className="card-ranks">
+        {ranked ? (
+          <span className="ranks">
+            流动性 {rank(card.ranks.liquidity)} · 成交 {rank(card.ranks.volume)} · 持有人{" "}
+            {rank(card.ranks.holders)}
+          </span>
+        ) : null}
       </div>
 
       <div className="card-spark">
@@ -293,23 +391,34 @@ export function Card({
         </div>
       </details>
 
-      <details key={`detail-${bulkTick}`} className="card-sec sec-detail" open={openAll}>
-        <summary className="det-sum">
-          <Icon as={ChevronRight} />
-          链下调研
-        </summary>
-        {card.details.map((detail) => (
-          <section key={detail.title} className="dsec">
-            <h4 className="dsec-h">
-              {detail.title}
-              {detail.badge ? <span className="dsec-badge">{detail.badge}</span> : null}
-            </h4>
-            <div className="dsec-b">
-              <Rich segments={detail.body} />
-            </div>
-          </section>
-        ))}
-      </details>
+      {/* A round writes a card only when it has words for it, so an empty block never reaches
+          the page from there. A searched token is answered with whatever it does have, and
+          when that is nothing the block says why rather than disappearing - the 结论 above it
+          is then the market and chain reading alone, and the card should not look broken. */}
+      {card.details.length || card.research_note ? (
+        <details key={`detail-${bulkTick}`} className="card-sec sec-detail" open={openAll}>
+          <summary className="det-sum">
+            <Icon as={ChevronRight} />
+            链下调研
+          </summary>
+          {card.details.map((detail) => (
+            <section key={detail.title} className="dsec">
+              <h4 className="dsec-h">
+                {detail.title}
+                {detail.badge ? <span className="dsec-badge">{detail.badge}</span> : null}
+              </h4>
+              <div className="dsec-b">
+                <Rich segments={detail.body} />
+              </div>
+            </section>
+          ))}
+          {card.research_note ? (
+            <section className="dsec">
+              <div className="dsec-b">{card.research_note}</div>
+            </section>
+          ) : null}
+        </details>
+      ) : null}
 
       <footer className="card-foot">
         {card.links.map((link, index) => (
