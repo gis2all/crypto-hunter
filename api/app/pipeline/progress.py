@@ -7,7 +7,8 @@ equally would sit still and then jump - which is the same thing as no bar.
 
 So each phase owns a band of the bar, and inside a phase the band fills with the work
 actually finished (sources pulled, candidates judged, entries written). The bands are
-shares of a round's wall clock measured on both chains (12.27), and they run in the order
+shares of a round's wall clock measured on both chains (the "round <id> phase timings"
+line `decide` logs every round), and they run in the order
 the round walks, so the bar never has to walk backwards. `decide` logs the real split every
 round, so the next change to these numbers can cite a measurement instead of a feeling.
 """
