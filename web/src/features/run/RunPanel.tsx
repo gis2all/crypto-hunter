@@ -81,7 +81,9 @@ const SOURCE_SHORT: Record<string, string> = {
   geckoterminal: "GeckoTerminal",
 };
 
-function mmss(seconds: number): string {
+/** A stage's own wall clock, as the panel prints it. Shared with the CA search panel
+ *  (features/lookup), so the two step lists spell a duration the same way. */
+export function mmss(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -107,7 +109,9 @@ function elapsed(run: Run, running: boolean, now: number): string {
  *  answer the question the panel was left open for.
  *
  *  Only 正在 moves, and it is the only thing on the panel that does. */
-function Marker({ state }: { state: "pending" | "run" | "done" | "failed" }) {
+/** The marker in front of a stage, shared with the CA search panel for the same reason:
+ *  four states, one drawing of each. */
+export function Marker({ state }: { state: "pending" | "run" | "done" | "failed" }) {
   if (state === "done") return <Icon as={CircleCheck} />;
   if (state === "run") return <Icon as={LoaderCircle} className="spin" />;
   if (state === "failed") return <Icon as={CircleX} />;

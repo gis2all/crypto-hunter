@@ -56,6 +56,11 @@ class TokenMetrics(BaseModel):
 
     ca: str
     symbol: str | None = None
+    #: The token own square mark, as a URL. A link rather than the bytes: a card is copied
+    #: around and archived, and an image would be one more thing to store, expire and clean
+    #: up, while the picture itself is something the browser already knows how to fetch. Empty
+    #: means no source had one, and the card draws its empty slot rather than nothing.
+    logo_url: str | None = None
     #: The project own blurb, off its listing page. No scanner on Arc carries one, so it
     #: arrives - when it arrives at all - from the per-token link read; the writer is the
     #: only reader that wants it, and "no source had a blurb" is itself worth printing.

@@ -10,7 +10,7 @@ trusting the answer that produced them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Callable, Collection, Sequence
 
 from .base import SearchHit, TweetRow, handle_of, host_of, kind_of, normalize_url
 from . import harvest
@@ -79,6 +79,18 @@ class Discovery:
         return self.site.url if self.site is not None and self.site.confirmed else None
 
     @property
+    def proven_site(self) -> str:
+        """The project's own site, and only when it earned the top tier.
+
+        `website` is the site the reading stage should fetch, so a page that merely carries
+        the address counts. The card prints one site as the project's own, and that is a
+        stronger claim: it is made only when the page tied back to the token.
+        """
+        if self.site is not None and self.site.tier == OWN:
+            return self.site.url
+        return ''
+
+    @property
     def found(self) -> bool:
         return bool(self.official_handles or self.website)
 
@@ -123,7 +135,8 @@ class Discovery:
 
 
 def token_pages(profiles: Sequence[Profile], pages: dict[str, str], sites: Sequence[Site],
-                fetch: Callable[[str], str]) -> list[tuple[str, str, str]]:
+                fetch: Callable[[str], str], *,
+                named: Collection[str] = ()) -> list[tuple[str, str, str]]:
     """The pages this round read that it knows are about this token, as (kind, url, body).
 
     Both site tiers, and not only `own`: what these pages feed is a list of candidates, and
@@ -133,9 +146,11 @@ def token_pages(profiles: Sequence[Profile], pages: dict[str, str], sites: Seque
 
     A site is fetched again through the same memorised fetch its tier came from, so the
     second read costs no traffic, and it comes first because a footer is where a project
-    writes its channels down. An account is taken only when it is `own`: an account that
-    merely quotes the address is a stranger with the address, and a stranger's page is not
-    this token's index. Its body is the one that earned its bio.
+    writes its channels down. An account is taken when it earned `own` or when the round's
+    own record names it; one that merely quotes the address is a stranger with the address,
+    and a stranger's page is not this token's index. A project whose bio is its own name and
+    its own site never quotes the address, and that page is still where its site is written
+    down. Its body is the one that earned its bio.
     """
     out: list[tuple[str, str, str]] = []
     for site in sites:
@@ -147,7 +162,7 @@ def token_pages(profiles: Sequence[Profile], pages: dict[str, str], sites: Seque
             continue
         out.append(('web', site.url, body))
     for profile in profiles:
-        if profile.tier != OWN:
+        if profile.tier != OWN and profile.handle.lower() not in named:
             continue
         body = pages.get(profile.url)
         if body:
@@ -169,6 +184,19 @@ def channel_hits(hits: Sequence[SearchHit], *, limit: int = CHANNEL_CANDIDATES) 
     return found
 
 
+def named_handles(known: Sequence[tuple[str, str]]) -> set[str]:
+    """The handles the round's own record names, lowercased, empty ones dropped.
+
+    A source stores a token's socials as (kind, url) rows, and the same rows arrive here
+    from a search's own links and from a round's snapshot. Both readers of them want the
+    same set, so the reading happens once.
+    """
+    named = {(handle_of(url) or '').lower() for kind, url in known
+             if str(kind).lower() in ('twitter', 'x')}
+    named.discard('')
+    return named
+
+
 def named_by_source(profiles: Sequence[Profile],
                     known: Sequence[tuple[str, str]]) -> list[str]:
     """The account the round's own metadata names, when the search named it as well.
@@ -182,11 +210,10 @@ def named_by_source(profiles: Sequence[Profile],
     names an account; an independent search offered the same account for the same token; and
     two sources agreeing on one handle is the evidence a site and an account agree by. It
     decides which timeline to read and nothing else - no tier moves, and an account that
-    merely quoted the address is still not the project's.
+    merely quoted the address is still not the project's. `token_pages` reads the same
+    handles for its own reason: which account pages are worth reading at all.
     """
-    named = {(handle_of(url) or '').lower() for kind, url in known
-             if str(kind).lower() in ('twitter', 'x')}
-    named.discard('')
+    named = named_handles(known)
     if not named:
         return []
     return [profile.handle for profile in profiles if profile.handle.lower() in named]
@@ -341,13 +368,29 @@ def discover(chain: str, ca: str, symbol: str = '', *, service: SearchService | 
     if confirmed:
         found = promote_by_site(found, pages, confirmed)
 
+    # The handles the round's own record names, kept for `token_pages`: a project whose bio
+    # never quotes the address earns no tier, and its page is still where its site and its
+    # channels are written down.
+    named = named_handles(known)
+
+    # The project's own pages say where its site is, and an engine that never indexed it is
+    # the reason this is read rather than searched: an X profile whose bio is the address
+    # names the site in the one place it appears. Read before the second site pass so the
+    # candidates go in with the handles, and read like every other candidate - see
+    # `harvest.site_candidates`.
+    extra = harvest.site_candidates(token_pages(found, pages, sites, site, named=named),
+                                    symbol)
+
     handles = [profile.handle for profile in found if profile.tier != NONE]
-    if handles:
-        sites = check_sites(hits, ca, handles, fetch=site, symbol=symbol)
+    # `extra` is read even when no account earned a tier: the pages a source named are still
+    # where the site is written down, and the first pass could not have seen them.
+    if handles or extra:
+        sites = check_sites(hits, ca, handles, fetch=site, symbol=symbol, extra=extra)
     # The second half of step one: the channels the project's own pages point at, and the
     # ones a search offered as a channel rather than a site. Both are candidates, and both
     # are read before they are believed - see `harvest` for why inheritance stops there.
-    picked = list(harvest.candidates(token_pages(found, pages, sites, site), symbol))
+    picked = list(harvest.candidates(token_pages(found, pages, sites, site, named=named),
+                                     symbol))
     picked.extend((kind_of(url), url) for url in channel_hits(hits))
     proven = prove_channels(picked, ca, handles, profile_fetch=read, site_fetch=site,
                             symbol=symbol,

@@ -271,13 +271,20 @@ def check_website(url: str, ca: str, handles: Iterable[str],
     return Site(url, NONE, 'neither the address nor the account appears on it')
 
 
-def website_candidates(hits: Sequence[SearchHit], *, limit: int = 6) -> list[str]:
-    """The hit URLs that could be the project's own site, in the order they arrived."""
+def website_candidates(hits: Sequence[SearchHit], *, limit: int = 6,
+                       extra: Sequence[str] = ()) -> list[str]:
+    """The URLs that could be the project's own site, in the order they arrived.
+
+    `extra` is the candidates a caller found on the project's own pages - see
+    `harvest.site_candidates` - and they come first: a project writing its own address
+    down is a better lead than a model's hit list. The two share the cap, so a footer's worth
+    of partner links cannot spend every reading slot.
+    """
     found: list[str] = []
-    for hit in hits:
-        if hit.kind != 'web' or _is_aggregator(hit.url) or hit.url in found:
+    for url in list(extra) + [hit.url for hit in hits if hit.kind == 'web']:
+        if not url or _is_aggregator(url) or url in found:
             continue
-        found.append(hit.url)
+        found.append(url)
         if len(found) >= limit:
             break
     return found
@@ -285,21 +292,22 @@ def website_candidates(hits: Sequence[SearchHit], *, limit: int = 6) -> list[str
 
 def check_sites(hits: Sequence[SearchHit], ca: str, handles: Iterable[str],
                 *, fetch: Callable[[str], str] | None = None,
-                symbol: str = '') -> list[Site]:
+                symbol: str = '', extra: Sequence[str] = ()) -> list[Site]:
     """Read every candidate site, in the order the search offered them.
 
     All of them, including the ones that turn out to be nothing: a round that silently read
     six domains and kept one has no way to say what it ruled out, and the ruled-out list is
-    what makes a wrong answer visible next time.
+    what makes a wrong answer visible next time. `extra` is passed straight to
+    `website_candidates` and is read the same way as anything else.
     """
     handles = list(handles)
     return [check_website(url, ca, handles, fetch=fetch, symbol=symbol)
-            for url in website_candidates(hits)]
+            for url in website_candidates(hits, extra=extra)]
 
 
 def pick_website(hits: Sequence[SearchHit], ca: str, handles: Iterable[str],
                  *, fetch: Callable[[str], str] | None = None,
-                 symbol: str = '') -> Site | None:
+                 symbol: str = '', extra: Sequence[str] = ()) -> Site | None:
     """The best candidate site, preferring one that ties back to the token.
 
     An account we verified is the strongest thing a page can point at, so a site that links
@@ -307,7 +315,7 @@ def pick_website(hits: Sequence[SearchHit], ca: str, handles: Iterable[str],
     nothing better showed up.
     """
     best: Site | None = None
-    for site in check_sites(hits, ca, handles, fetch=fetch, symbol=symbol):
+    for site in check_sites(hits, ca, handles, fetch=fetch, symbol=symbol, extra=extra):
         if site.tier == OWN:
             return site
         if site.tier == CARRIES and best is None:

@@ -30,6 +30,8 @@ export type SourceCount = components["schemas"]["SourceCountOut"];
 export type PushInfo = components["schemas"]["PushOut"];
 export type Funnel = components["schemas"]["FunnelOut"];
 export type Favorite = components["schemas"]["FavoriteOut"];
+export type Job = components["schemas"]["JobOut"];
+export type JobStage = components["schemas"]["JobStageOut"];
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
@@ -190,4 +192,52 @@ export const forgetFavorite = (chainId: string, ca: string) =>
   request<{ removed: boolean }>(
     "/favorites/" + encodeURIComponent(chainId) + "/" + encodeURIComponent(ca),
     { method: "DELETE" },
+  );
+
+/** Ask for one address to be read, on any chain. The answer is a **job**, not a card.
+ *
+ *  The work is minutes of network and a model call, so the backend queues it and the page
+ *  watches it with `getLookupJob` - which is what lets the panel name the stage it is
+ *  on and time each one. A 404 comes back before anything is queued (that string is not an
+ *  address); an address the feed has never seen fails the job's own 认链 stage instead.
+ *
+ *  The card is left on the record the moment it is read, collected or not, which is what
+ *  makes opening a past search instant and free (`listLookupRecent`). */
+export const searchCa = (ca: string) =>
+  request<Job>("/lookup", { method: "POST", body: JSON.stringify({ ca }) });
+
+/** Where a queued search has got to, and the card once it has one. */
+export const getLookupJob = (jobId: string) =>
+  request<Job>("/lookup/jobs/" + encodeURIComponent(jobId));
+
+/** The last search on record, whoever queued it. A page that has just opened holds no job id
+ *  of its own but still has a 运行结果 worth folding, and "the newest one" is a question the
+ *  server can answer without the page having remembered anything. null means nothing has been
+ *  searched yet - a state, not an error. */
+export const getLatestLookupJob = () => request<Job | null>("/lookup/jobs/latest");
+
+/** The cards past searches left behind, newest first. Each row already carries its card, so
+ *  opening one is a read of this list rather than a second search. */
+export const listLookupRecent = () => request<Favorite[]>("/lookup/recent");
+
+/** Drop one record off 最近搜索, and the card that came with it. Only a record: a row the
+ *  reader starred is a card on the shelf and stays (see the route's own note). */
+export const forgetLookup = (chainId: string, ca: string) =>
+  request<{ removed: boolean }>(
+    "/lookup/recent/" + encodeURIComponent(chainId) + "/" + encodeURIComponent(ca),
+    { method: "DELETE" },
+  );
+
+/** Empty 最近搜索 of the records that are only records. `removed: false` when there was
+ *  nothing to drop, which is one answer rather than an error. */
+export const clearLookups = () =>
+  request<{ removed: boolean }>("/lookup/recent", { method: "DELETE" });
+
+/** Collect a card that is already on file. A searched token has no round to copy one from -
+ *  the search wrote the card itself - so this is the star on a row that exists, and 404 is
+ *  a page holding a row the database does not. */
+export const collectFavorite = (chainId: string, ca: string) =>
+  request<Favorite>(
+    "/favorites/" + encodeURIComponent(chainId) + "/" + encodeURIComponent(ca),
+    { method: "POST" },
   );

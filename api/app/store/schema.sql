@@ -179,25 +179,48 @@ CREATE INDEX IF NOT EXISTS idx_run_items_run ON run_items(run_id, decision);
 CREATE INDEX IF NOT EXISTS idx_runs_chain_time ON runs(chain_id, scheduled_at DESC);
 CREATE INDEX IF NOT EXISTS idx_lexicon_chain ON lexicon(chain_id, symbol);
 
--- Cards the reader kept. A favourite is a copy, not a pointer: a report row lives and dies
--- with its round, and a whole report library can be dropped, while a kept card has to stay
--- readable - so the assembled card is copied in whole and where it came from is recorded
--- beside it. Keyed by (chain_id, ca), and by the chain alone: a searched token has no round
--- and no set of settings to belong to, and a shelf that emptied when the reader switched
--- settings would not be theirs. Nothing here cascades - deleting a round, or a whole report
--- library, leaves it alone on purpose.
+-- Cards the reader has seen for a token: either one they collected (`kept` = 1) or one a CA
+-- search wrote (`kept` = 0, origin = 'search'). A card is a copy, not a pointer: a report row
+-- lives and dies with its round, and a whole report library can be dropped, while a card the
+-- reader holds on to has to stay readable - so the assembled card is copied in whole and
+-- where it came from is recorded beside it. Keyed by (chain_id, ca), and by the chain alone:
+-- a searched token has no round and no set of settings to belong to, and a shelf that emptied
+-- when the reader switched settings would not be theirs. Nothing here cascades - deleting a
+-- round, or a whole report library, leaves it alone on purpose.
 CREATE TABLE IF NOT EXISTS favorites (
   chain_id      TEXT NOT NULL,
   ca            TEXT NOT NULL,
   symbol        TEXT,
   origin        TEXT NOT NULL DEFAULT 'round',   -- round | search
   origin_run_id TEXT,                            -- only a round has one
-  origin_label  TEXT,                            -- what the shelf prints beside the card
+  origin_label  TEXT,                            -- what the card's foot prints as 生成时间
   score         REAL,
   rank          INTEGER,
   config_id     TEXT,                            -- the set of settings the round ran under
+  kept          INTEGER NOT NULL DEFAULT 1,      -- 1 = the reader collected it; 0 = a search record
   payload_json  TEXT NOT NULL,                   -- the card, verbatim
   saved_at      TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (chain_id, ca)
+);
+
+-- One CA search, as the page that started it watches it.
+--
+-- Deliberately not a runs row. A search belongs to no set of settings, no round and no
+-- report library, and a chain's round list that showed one would read as that chain having
+-- run again. It is also shorter-lived for a different reason: a round is a fact about a
+-- chain that is kept forever, while this is the progress of two minutes of work plus the
+-- answer it produced - and the answer itself lands in favorites (origin = 'search'), which
+-- is what the recent list reads. A finished job is a receipt, not a record.
+CREATE TABLE IF NOT EXISTS search_jobs (
+  id          TEXT PRIMARY KEY,
+  ca          TEXT NOT NULL,
+  chain_id    TEXT,                             -- filled once the search read which chain
+  status      TEXT NOT NULL,                    -- running | done | failed
+  stage       TEXT,                             -- the stage running now: a key of lookup.STAGES
+  stages_json TEXT NOT NULL,                    -- [{key, label, state, seconds}] in order
+  error       TEXT,                             -- why a failed search stopped
+  row_json    TEXT,                             -- the stored card row, once it answered
+  started_at  TEXT NOT NULL,
+  finished_at TEXT
 );

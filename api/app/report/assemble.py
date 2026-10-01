@@ -103,11 +103,16 @@ def cards(run_id: str) -> list[dict]:
     return out
 
 
+def _stamp(value: str) -> str:
+    """A moment, in the shape the shelf prints it: to the minute and without the offset. The
+    offset is real, but it is the same +08:00 on every row of one machine, so on a card it
+    buys the reader nothing and costs the line its width."""
+    return str(value or "")[:16].replace("T", " ")
+
+
 def _kept_label(run: dict) -> str:
-    """When a round ran, in the shape the shelf prints it: to the minute and without the
-    offset. The offset is real, but it is the same +08:00 on every row of one machine, so on
-    a card it buys the reader nothing and costs the line its width."""
-    return str(run.get("started_at") or run.get("scheduled_at") or "")[:16].replace("T", " ")
+    """When a round ran, as the card's foot prints it."""
+    return _stamp(run.get("started_at") or run.get("scheduled_at") or "")
 
 
 def kept_row(run: dict, card: dict) -> dict:
@@ -150,6 +155,43 @@ def refresh_kept(run_id: str) -> int:
         return 0
     run = dict(run)
     return db.favorite_refresh([kept_row(run, card) for card in cards(run_id)])
+
+
+def lookup_row(chain_id: str, ca: str, symbol: str | None, card: dict, at: str) -> dict:
+    """One card a CA search wrote, as a row for the table the shelf reads.
+
+    Deliberately not a `kept_row`: there is no round here to take a settings id, a run id or
+    a label from, and it says so with `origin = 'search'` and `kept = 0` - the row is a record
+    of what the reader looked up, not something they follow. `kept_row` stays the single
+    shape for round rows; merging the two would mean one function guessing which of its
+    callers it is serving. `at` is the search's own clock, and it becomes the card's
+    生成时间 - which is the honest reading of a card nothing else will refresh.
+    """
+    return {
+        "chain_id": chain_id,
+        "ca": ca,
+        "symbol": symbol,
+        "origin": "search",
+        "origin_run_id": None,
+        "origin_label": _stamp(at),
+        "score": card.get("score"),
+        "rank": None,
+        "config_id": None,
+        "kept": 0,
+        "payload_json": json.dumps(card, ensure_ascii=False),
+    }
+
+
+def row_card(row: dict) -> dict:
+    """A stored row as the API answers it: the payload comes back as the card it was.
+
+    One function because the shelf and 最近搜索 answer the same shape - the same row, in fact,
+    differing only in `kept` - and a card decoded differently in the two places would be the
+    same card twice.
+    """
+    row = dict(row)
+    row["card"] = json.loads(row.pop("payload_json") or "{}")
+    return row
 
 
 def decline(run_id: str, per_round: int = 5) -> list[dict]:

@@ -35,7 +35,10 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: plus where it came from, keyed by (chain_id, ca) - the key carries no config_id, because a
 #: card can come from a search on a chain this app does not screen, and nothing cascades
 #: into it. Which set of settings the round ran under is kept as a value, not as a key.
-SCHEMA_VERSION = 8
+#: 9 added `favorites.kept`: the row is now either a card the reader collected or a record a
+#: CA search left behind. A search writes its card with kept = 0, so a token can be searched
+#: and then collected without a second row for it; the shelf reads `kept = 1` only.
+SCHEMA_VERSION = 10
 
 
 def now_iso() -> str:
@@ -71,7 +74,8 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("lexicon", "team_text", "TEXT"),
                   ("tokens", "peak_market_cap_usd", "REAL"),
                   ("tokens", "peak_market_cap_at", "TEXT"),
-                  ("favorites", "config_id", "TEXT"))
+                  ("favorites", "config_id", "TEXT"),
+                  ("favorites", "kept", "INTEGER NOT NULL DEFAULT 1"))
 
 #: Columns an earlier shape carried. Nothing reads them, a fresh database never creates
 #: them, and leaving them behind on an old one is a table that lies about what the code
@@ -368,7 +372,7 @@ def forget_config(chain_id: str, config_id: str) -> dict[str, int]:
 
 
 def favorites() -> list[dict]:
-    """Every kept card, newest first, payload included.
+    """Every collected card, newest first, payload included.
 
     The payload ships with the row because the shelf draws the card itself: a second request
     per card would be the page stitching one screen out of many calls, which is the thing
@@ -378,11 +382,16 @@ def favorites() -> list[dict]:
     a round that writes a newer card for a token somebody kept replaces the payload in place
     (`favorite_refresh`), and a shelf that re-sorted itself every round would move rows the
     reader never touched.
+
+    `kept = 1` is the whole of the shelf's filter. The same table also holds the cards a CA
+    search left behind (kept = 0), which are nobody's collection - they are the reader's own
+    `最近搜索`, and they must not appear here.
     """
     conn = connect()
     try:
         return [dict(row) for row in conn.execute(
-            "SELECT * FROM favorites ORDER BY saved_at DESC, ca DESC").fetchall()]
+            "SELECT * FROM favorites WHERE kept = 1"
+            " ORDER BY saved_at DESC, ca DESC").fetchall()]
     finally:
         conn.close()
 
@@ -399,18 +408,24 @@ def favorite(chain_id: str, ca: str) -> dict | None:
 
 
 def favorite_put(row: dict) -> dict:
-    """Keep a card, or replace the one already kept for that token.
+    """Put a card here for a token: collect it, or leave a search record.
 
     Replacing is the whole of the update path. `saved_at` is deliberately left where it was
     on an update - see `favorites` - and `updated_at` is what says the payload changed.
+
+    `kept` comes from the caller: the reader's star passes 1 (and the default is 1), a CA
+    search passes 0. The update deliberately does not carry it - re-searching a token that is
+    on the shelf must not quietly take it off, and the only write allowed to change that
+    column is `favorite_set_kept`, which is the reader saying so.
     """
     now = now_iso()
+    kept = 1 if row.get("kept") is None else int(row["kept"])
     conn = connect()
     try:
         conn.execute(
             "INSERT INTO favorites (chain_id, ca, symbol, origin, origin_run_id, origin_label,"
-            " score, rank, config_id, payload_json, saved_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " score, rank, config_id, kept, payload_json, saved_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (chain_id, ca) DO UPDATE SET"
             " symbol = excluded.symbol, origin = excluded.origin,"
             " origin_run_id = excluded.origin_run_id, origin_label = excluded.origin_label,"
@@ -418,7 +433,7 @@ def favorite_put(row: dict) -> dict:
             " payload_json = excluded.payload_json, updated_at = excluded.updated_at",
             (row["chain_id"], row["ca"], row.get("symbol"), row.get("origin") or "round",
              row.get("origin_run_id"), row.get("origin_label") or "", row.get("score"),
-             row.get("rank"), row.get("config_id"), row["payload_json"], now, now),
+             row.get("rank"), row.get("config_id"), kept, row["payload_json"], now, now),
         )
         saved = conn.execute("SELECT * FROM favorites WHERE chain_id = ? AND ca = ?",
                              (row["chain_id"], row["ca"])).fetchone()
@@ -438,6 +453,14 @@ def favorite_refresh(rows: list[dict]) -> int:
     be newer than the one it replaces, so a round re-run out of order cannot put an older
     card back on the shelf.
 
+    A card a CA search left behind has no set of settings at all (`config_id` is NULL), and
+    a round may take it over whatever settings it ran under: the search read the token
+    without a settings context, so the round's card is strictly the more informed one. The
+    row takes that card - run, config and body - but not its `origin`: a searched row stays a
+    searched row, because 最近搜索 reads that column and the shelf reads `kept`, so a row that
+    flipped to `origin = 'round'` without being kept was on neither page - searched once, then
+    invisible until the reader searched it again (10.10). `kept` is left alone either way.
+
     `saved_at` is left where it is: that stamp is when the reader kept the token, and this
     write is the round's. It is also why the shelf does not re-sort itself here.
     """
@@ -450,12 +473,14 @@ def favorite_refresh(rows: list[dict]) -> int:
         for row in rows:
             label = row.get("origin_label") or ""
             cursor = conn.execute(
-                "UPDATE favorites SET symbol = ?, origin = ?, origin_run_id = ?,"
-                " origin_label = ?, score = ?, rank = ?, payload_json = ?, updated_at = ?"
-                " WHERE chain_id = ? AND ca = ? AND config_id IS ?"
+                "UPDATE favorites SET symbol = ?, origin_run_id = ?,"
+                " origin_label = ?, score = ?, rank = ?, config_id = ?, payload_json = ?,"
+                " updated_at = ?"
+                " WHERE chain_id = ? AND ca = ? AND (config_id IS NULL OR config_id IS ?)"
                 " AND coalesce(origin_label, '') < ?",
-                (row.get("symbol"), row.get("origin") or "round", row.get("origin_run_id"),
-                 label, row.get("score"), row.get("rank"), row["payload_json"], now,
+                (row.get("symbol"), row.get("origin_run_id"), label, row.get("score"),
+                 row.get("rank"), row.get("config_id"),
+                 row["payload_json"], now,
                  row["chain_id"], row["ca"], row.get("config_id"), label),
             )
             moved += cursor.rowcount
@@ -473,3 +498,139 @@ def favorite_remove(chain_id: str, ca: str) -> bool:
         return bool(cursor.rowcount)
     finally:
         conn.close()
+
+
+def favorite_set_kept(chain_id: str, ca: str, kept: bool) -> bool:
+    """Collect a card that is already on file, or put it back to a search record.
+
+    The star on a searched token has no round to copy a card from - the card is already here,
+    because the search wrote it - so collecting that one is this write and nothing else.
+    Answers whether there was a row to change.
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE favorites SET kept = ?, updated_at = ? WHERE chain_id = ? AND ca = ?",
+            (1 if kept else 0, now_iso(), chain_id, ca),
+        )
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
+def lookups(limit: int = 50) -> list[dict]:
+    """The cards CA searches left behind, newest first, payload included.
+
+    `origin = 'search'`, not `kept = 0`: a searched token the reader then collected stays on
+    this list - it is what they looked up, which does not stop being true - and it also shows
+    up on the shelf. Ordered by `origin_label`, which is the stamp every row here prints as
+    its 生成时间: the list then runs in the order of the times it shows.
+
+    Deliberately not `saved_at`. That one is frozen at a row's first write, so a token searched
+    twice stays where the first search left it while printing the second one's time - the list
+    reads as unsorted, an older stamp above a newer one, with neither number wrong. And
+    `saved_at` is the shelf's 收藏时间: a search may not move it.
+    """
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM favorites WHERE origin = 'search'"
+            " ORDER BY coalesce(origin_label, '') DESC, ca DESC LIMIT ?", (limit,)).fetchall()]
+    finally:
+        conn.close()
+
+
+def lookup_forget(chain_id: str, ca: str) -> bool:
+    """Drop one search record and the card that came with it.
+
+    Only a record: `origin = 'search'` and `kept = 0` are both in the WHERE, so this is not
+    a second way to take a card off the shelf. A row the reader starred is a favourite, and
+    the only write that ends that is the star itself - `favorite_set_kept` says so for the
+    other direction of this pair. The manager greys those rows out rather than letting the
+    press be made to be told why (ConfigManager does the same for 默认 / 生效).
+
+    Answers whether there was a record to drop: a second press is not an error.
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM favorites WHERE chain_id = ? AND ca = ?"
+            " AND origin = 'search' AND kept = 0", (chain_id, ca))
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
+def lookups_clear() -> int:
+    """Drop every record that is not also a card on the shelf. Says how many went.
+
+    The same WHERE as `lookup_forget` without the key: one write for the whole list, so a
+    reader emptying 最近搜索 is not one round trip per row.
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute("DELETE FROM favorites WHERE origin = 'search' AND kept = 0")
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def job_put(job: dict) -> dict:
+    """Write one CA search down: the stages it has reached, and what it answered.
+
+    The whole row every time, the same way favorite_put works: the runner holds the job in
+    memory while it runs - it owns the stage clock - and this is the seam where that state
+    becomes readable to the page polling for it. The stage list goes in as JSON because it
+    is a list the page draws, not something anything here queries by.
+    """
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT INTO search_jobs (id, ca, chain_id, status, stage, stages_json, error,"
+            " row_json, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (id) DO UPDATE SET"
+            " chain_id = excluded.chain_id, status = excluded.status, stage = excluded.stage,"
+            " stages_json = excluded.stages_json, error = excluded.error,"
+            " row_json = excluded.row_json, finished_at = excluded.finished_at",
+            (job["id"], job["ca"], job.get("chain_id"), job["status"], job.get("stage"),
+             json.dumps(job.get("stages") or [], ensure_ascii=False), job.get("error"),
+             json.dumps(job["row"], ensure_ascii=False) if job.get("row") else None,
+             job["started_at"], job.get("finished_at")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return job
+
+
+def _job_out(row) -> dict:
+    """One stored job as the page reads it: the stage list and the card, decoded."""
+    job = dict(row)
+    job["stages"] = json.loads(job.pop("stages_json") or "[]")
+    job["row"] = json.loads(job.pop("row_json") or "null")
+    return job
+
+
+def job_get(job_id: str) -> dict | None:
+    """One search job, as the page polls it."""
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _job_out(row)
+
+
+def job_latest() -> dict | None:
+    """The newest search job this app ran, or None when it never ran one.
+
+    `started_at` is the search's own clock and every row carries the same offset, so ordering
+    by it as text is ordering by time; the id breaks a tie inside one second.
+    """
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM search_jobs ORDER BY started_at DESC, id DESC LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _job_out(row)

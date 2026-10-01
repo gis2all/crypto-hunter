@@ -782,7 +782,7 @@ class Engine:
                 if answer is None:
                     continue
                 views[name], safety = answer
-                facts = _absorb(facts, safety)
+                facts = absorb(facts, safety)
             views = {**item.views, **views}
             item.views = views
             merged_sources: dict[str, TokenMetrics] = {}
@@ -818,40 +818,12 @@ class Engine:
         pmap(one, shortlist, workers=ENRICH_WORKERS)
 
     def _lock_facts(self, item: Candidate) -> None:
-        """The LP question. GMGN answers it, and its answer is the one of record.
-
-        `lock_summary.is_locked` is the verdict the settings page means by 已锁, and it is
-        the only one of the readings that covers the v4 shape: a v4 pool has no LP token
-        and no pool contract, so a chain read can only guess from position NFTs. The chain
-        read stays as the fallback for the tokens GMGN has no sheet for, and the GoPlus LP
-        holder table after it.
-        """
-        creator = item.facts.creator or item.metrics.creator or ""
-        if item.facts.lp_source == "gmgn" and item.facts.lp_locked is not None:
-            item.evidence = {"creator": creator, "lp_from": "gmgn"}
-            return
-        try:
-            locked, basis, evidence = self.reader.lock_facts(
-                self.chain,
-                ca=item.ca,
-                pair=item.metrics.dex_pair,
-                creator=creator,
-                launchpad=item.metrics.launchpad,
-            )
-        except Exception as exc:
-            locked, basis, evidence = None, "链上查询失败：%r" % (exc,), {}
-        if locked is None:
-            # The chain read cannot see a v4 position - the pool has no contract to ask -
-            # and GoPlus answers the same question from the LP holder table. Two states, so
-            # a token the chain could not judge either gets a verdict from the holder table
-            # or stays 未判定 because that table covered too little of the LP to say.
-            locked, sourced = onchain.lp_lock_from_holders(item.metrics.lp_holders)
-            if locked is not None:
-                basis = sourced
+        """Fill in the LP verdict for one candidate - see `lp_verdict`."""
+        locked, basis, evidence = lp_verdict(self.chain, item.metrics, item.facts,
+                                            reader=self.reader)
         item.facts.lp_locked = locked
         item.facts.lp_note = basis
-        item.evidence = dict(evidence or {})
-        item.evidence["creator"] = creator
+        item.evidence = evidence
 
     def _pool_ranks(self, pool: list[Candidate], picked: list[Candidate]) -> None:
         """Where each pick sits inside this round's pool, for the card's three ranks."""
@@ -970,7 +942,47 @@ class Engine:
             return "本轮未判定（按流动性排序，判定名额之外）"
         return "本期无综合分"
 
-def _absorb(base: SafetyFacts, extra: SafetyFacts) -> SafetyFacts:
+
+def lp_verdict(chain: dict, metrics: TokenMetrics, facts: SafetyFacts,
+               reader=onchain) -> tuple[bool | None, str, dict]:
+    """The LP question for one token: which reading of 已锁 is the one of record.
+
+    GMGN answers it, and its answer wins: `lock_summary.is_locked` is the verdict the
+    settings page means by 已锁, and it is the only one of the readings that covers the v4
+    shape - a v4 pool has no LP token and no pool contract, so a chain read can only guess
+    from position NFTs. The chain read stays as the fallback for the tokens GMGN has no sheet
+    for, and the GoPlus LP holder table after it.
+
+    (GoPlus's table is the last word for the same reason in reverse: two states, so a token
+    the chain could not judge either gets a verdict from the holder table or stays 未判定
+    because that table covered too little of the LP to say.)
+
+    Module-level rather than a method because a CA search asks the same question about a
+    token that is in no round. Two copies of this order would be two opinions about 已锁.
+    """
+    creator = facts.creator or metrics.creator or ""
+    if facts.lp_source == "gmgn" and facts.lp_locked is not None:
+        return facts.lp_locked, facts.lp_note or "", {"creator": creator, "lp_from": "gmgn"}
+    try:
+        locked, basis, evidence = reader.lock_facts(
+            chain,
+            ca=metrics.ca,
+            pair=metrics.dex_pair,
+            creator=creator,
+            launchpad=metrics.launchpad,
+        )
+    except Exception as exc:
+        locked, basis, evidence = None, "链上查询失败：%r" % (exc,), {}
+    if locked is None:
+        locked, sourced = onchain.lp_lock_from_holders(metrics.lp_holders)
+        if locked is not None:
+            basis = sourced
+    out = dict(evidence or {})
+    out["creator"] = creator
+    return locked, basis, out
+
+
+def absorb(base: SafetyFacts, extra: SafetyFacts) -> SafetyFacts:
     """Fill `base`'s blanks from `extra`, merging the two evidence lists.
 
     Neither source is asked twice about the same fact, so a value already present is not

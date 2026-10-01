@@ -106,7 +106,8 @@ def _page(monkeypatch, body: str = "real copy " * 30):
 def _instant_gather(monkeypatch):
     monkeypatch.setattr(
         research, "gather",
-        lambda row: {"ca": row["ca"], "links": [], "metrics": {}, "safety": {}, "error": ""},
+        lambda row, **kwargs: {"ca": row["ca"], "links": [], "metrics": {}, "safety": {},
+                               "error": ""},
     )
 
 
@@ -539,3 +540,27 @@ def test_the_prompt_names_the_chain_the_round_is_about(isolated_db, monkeypatch)
     assert "Robinhood" in seen["prompt"]
     assert "Arc" not in seen["prompt"], "the prompt is one file for every chain"
     assert research.CHAIN_TOKEN not in seen["prompt"], "the placeholder is filled in"
+
+
+def test_the_site_the_search_proved_lands_on_the_rounds_own_metrics(isolated_db, monkeypatch):
+    """The snapshot a card is drawn from is written from the pool decide is holding, so the
+    site has to reach that row: put anywhere else, it is a site nobody prints."""
+    from app.core.models import TokenMetrics
+
+    _snapshot(CA, websites=["https://t.xyz"])
+    _page(monkeypatch)
+    _model_answering(monkeypatch, {})
+    monkeypatch.setattr(
+        research, "gather",
+        lambda row, **kwargs: {"ca": row["ca"], "links": [("website", "https://t.xyz")],
+                               "metrics": {}, "safety": {}, "site": "https://proved.example/",
+                               "error": ""},
+    )
+    metrics = TokenMetrics(ca=CA, symbol="T")
+
+    out = research.research_entries(
+        {"id": "arc"}, [{"ca": CA, "symbol": "T", "metrics": metrics}], "run1")
+
+    assert out, "the entry still has to be written"
+    assert metrics.websites == ["https://proved.example/"]
+    assert metrics.provenance["websites"] == "search"

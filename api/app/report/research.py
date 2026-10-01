@@ -48,6 +48,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .. import llm
 from ..config import chain_name
+from ..pipeline import collect
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
 from ..search.identify import fetch_page
@@ -466,7 +467,8 @@ def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dic
     )
 
 
-def gather(row: Mapping[str, Any]) -> dict:
+def gather(row: Mapping[str, Any], *,
+           known: Sequence[tuple[str, str]] | None = None) -> dict:
     """The links one token will be read from, found and merged. Never raises.
 
     Split out of `one` so it can run at its own width. Finding the links is a search and a
@@ -474,13 +476,30 @@ def gather(row: Mapping[str, Any]) -> dict:
     each other and one of them is thirty times more expensive, so they are not paced the
     same way - see `SEARCH_WORKERS`.
 
+    `known` is the links the caller already has, and it replaces the ones the snapshots
+    table would have handed in. A round leaves it out - collect has just written this round's
+    snapshot, so the table holds the links it wants. A CA search hands in what the sources
+    answered this time: a token no round has enriched has no row there, and reading the table
+    is how a card whose footer carried an X handle came back saying it had no page to read.
+    Only that starting list differs; the digging after it is the same work either way, the
+    engine included - a search asks it exactly as a round does.
+
     A failure is carried rather than raised: the token still reaches `one`, and fails there
     with the same message it always did, on its own row.
+
+    The answer carries the site the search proved, when it proved one. That is not another
+    page to read - it is the one address a card prints, and this pass is the only one that
+    knows which candidate earned it, so it is handed on rather than looked up again.
     """
     ca = str(row["ca"]).lower()
     try:
+        # The numbers are still the newest snapshot's when the caller handed in none of its
+        # own; only the links are replaced. A search passes both, so this read answers nothing
+        # there - it is kept because `gathered` is also the answer for a caller that did not.
         metrics, safety = _latest_metrics(ca)
-        known = links_for(metrics)
+        if known is None:
+            known = links_for(metrics)
+        known = list(known)
         found = search_links(str(row["chain_id"]), ca, row.get("symbol"), known,
                              chain_name=str(row.get("chain_name") or ""))
         # What the search layer decided is invisible from outside it, and a search that failed
@@ -489,36 +508,59 @@ def gather(row: Mapping[str, Any]) -> dict:
         if found is not None and found.errors:
             log.info("search for %s: %s", ca, " | ".join(found.errors)[:200])
         merged = merge_links(found, known)
+        site = found.proven_site if found is not None else ""
         log.info("links for %s: %d to read, handle %r, %d posts, %d harvested", ca,
                  len(merged), found.timeline_handle if found else "",
                  len(found.timeline) if found else 0, len(found.harvested) if found else 0)
         # The posts travel beside the links rather than inside them: a timeline is not a page
         # to read, it is the account the pages proved, asked what it has been saying.
-        return {"ca": ca, "links": merged, "metrics": metrics,
+        # The site the search proved travels the same way, for the same reason: it is not
+        # another page to fetch, it is the one page whose address the card prints. Only the
+        # top tier counts here - `website` is anything worth reading, and a page that
+        # merely carries the address is not the project's own.
+        return {"ca": ca, "links": merged, "metrics": metrics, "site": site,
                 "safety": safety, "timeline": list(found.timeline) if found else [],
                 "talk": list(found.tweets) if found else [],
                 "official": found.mine if found else [], "error": ""}
     except Exception as exc:
         log.info("links for %s unavailable: %r", ca, exc)
-        return {"ca": ca, "links": [], "metrics": {}, "safety": {}, "timeline": [],
-                "talk": [], "official": [], "error": repr(exc)[:200]}
+        return {"ca": ca, "links": [], "metrics": {}, "site": "", "safety": {},
+                "timeline": [], "talk": [], "official": [], "error": repr(exc)[:200]}
 
 
-def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None) -> dict:
-    """Read, ask, store - for one entry. Raises; `research_entries` keeps it to itself.
+def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
+        metrics: Mapping[str, Any] | None = None,
+        safety: Mapping[str, Any] | None = None, store: bool = True,
+        known: Sequence[tuple[str, str]] | None = None) -> dict:
+    """Read, ask, write - for one entry. Raises; `research_entries` keeps it to itself.
 
     `gathered` is the earlier pass's answer for this token; without it this reads the links
     itself, which is what a caller driving one token wants.
+
+    `metrics` / `safety` are the caller's own fresh reading, and they win over the ones
+    `gather` pulls out of the snapshots table. A caller that has just paid for the token's
+    numbers hands them in, so the writer describes the token the card is about instead of
+    whatever an older round last recorded. `store` is for the same kind of caller: a CA
+    search is not a round, so its reading must not overwrite the 词条 a round wrote for that
+    CA under its own settings (`lexicon` is keyed by (chain, CA, settings)), and the card it
+    keeps carries everything the reader needs anyway.
+
+    `known` goes the other way - to `gather`, on a call that has to find the links itself.
+    The same caller hands in the links it just read, so they are not looked up in a table it
+    has no row in.
     """
     started = time.monotonic()
     ca = str(row["ca"]).lower()
-    chain_id = str(row["chain_id"])
     symbol = row.get("symbol")
     if gathered is None:
-        gathered = gather(row)
+        gathered = gather(row, known=known)
     if gathered.get("error"):
         raise SourceError(str(gathered["error"]))
-    metrics, safety, links = gathered["metrics"], gathered["safety"], gathered["links"]
+    if metrics is None:
+        metrics = gathered["metrics"]
+    if safety is None:
+        safety = gathered["safety"]
+    links = gathered["links"]
     if not links:
         raise SourceError("没有可读的外链（官网 / X / GitHub 都没有）")
     budget = max(1200, MAX_CHARS // len(links))
@@ -547,10 +589,12 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None) -> di
     payload = lexicon.entry_payload(entry, symbol)
     # The pages are stored before the text: evidence is worth keeping even when the write
     # that follows it is refused, and the card can then show what was read either way.
-    config_id = str(row.get("config_id") or "default")
-    save_sources(chain_id, ca, pages, config_id=config_id)
-    lexicon.store_entries(chain_id, str(row.get("run_id") or ""), {ca: payload},
-                          config_id=config_id)
+    if store:
+        chain_id = str(row["chain_id"])
+        config_id = str(row.get("config_id") or "default")
+        save_sources(chain_id, ca, pages, config_id=config_id)
+        lexicon.store_entries(chain_id, str(row.get("run_id") or ""), {ca: payload},
+                              config_id=config_id)
     log.info("research %s: %d/%d pages, %d posts, handle %s, model %.1fs, total %.1fs",
              ca, len(pages), len(links), len(gathered.get("timeline") or ()),
              gathered.get("official") or "-", model_s, time.monotonic() - started)
@@ -596,12 +640,22 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
                 http.pmap(gather, rows, workers=min(SEARCH_WORKERS, total))}
 
     failed: list[str] = []
+    # The round's own rows, by CA, and this is where the two halves of one token meet: the
+    # pool decide is holding, and the site a search just proved for it.
+    targets_by_ca = {str(target.get("ca") or "").lower(): target for target in targets}
 
     def entry_for(row: dict) -> tuple[str, dict] | None:
         """One token, and every way it can fail kept to itself. Raises nothing."""
         ca = row["ca"]
         try:
-            return ca, one(row, gathered.get(ca))
+            payload = one(row, gathered.get(ca))
+            # The site goes onto the round's own numbers, not onto a copy of them: the
+            # snapshot a card is drawn from is written from the pool decide holds, so the
+            # card's 官网 line is decided here or nowhere. A caller whose target carries no
+            # metrics - a test's stub - is left alone.
+            collect.share_site((targets_by_ca.get(ca) or {}).get("metrics"),
+                               (gathered.get(ca) or {}).get("site"))
+            return ca, payload
         except Exception as exc:
             reason = str(exc) or repr(exc)
             log.info("research on %s failed: %s", ca, reason)

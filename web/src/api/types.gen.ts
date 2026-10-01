@@ -385,12 +385,140 @@ export interface paths {
         /** Get Favorite */
         get: operations["get_favorite_api_v1_favorites__chain_id___ca__get"];
         put?: never;
-        post?: never;
+        /**
+         * Collect Favorite
+         * @description Collect a card that is already on file - the star on a searched token.
+         *
+         *     A searched card has no round to copy one from: the CA search already wrote it
+         *     (app/lookup.py). So this is the reader's star on a row that exists, and it only ever
+         *     turns that row's `kept` on. 404 when there is no row to collect, which is a stale page
+         *     rather than something worth inventing a card for.
+         */
+        post: operations["collect_favorite_api_v1_favorites__chain_id___ca__post"];
         /**
          * Forget Favorite
-         * @description Take one card off the shelf. A card that was already gone is not an error.
+         * @description Take one card off the shelf. A card that was already off it is not an error.
+         *
+         *     What "off the shelf" means depends on where the card came from. A round's card exists
+         *     only because it was collected, so unstarring it deletes the row. A searched card is also
+         *     the reader's own record of looking that address up - unstarring it puts the row back to
+         *     `kept = 0` instead, so it stays on 最近搜索 and can be collected again without paying for
+         *     the search twice.
          */
         delete: operations["forget_favorite_api_v1_favorites__chain_id___ca__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Search
+         * @description Queue one CA search. Answers with the job to poll, not with the card.
+         */
+        post: operations["start_search_api_v1_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/jobs/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Latest Job
+         * @description The newest search this app ran, so 运行结果 has something to fold on a first visit.
+         *
+         *     Declared above `/jobs/{job_id}` on purpose: FastAPI matches routes in the order they are
+         *     written, and the other one would read "latest" as a job id and answer 404.
+         */
+        get: operations["read_latest_job_api_v1_lookup_jobs_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Job
+         * @description Where a queued search has got to, and the card once it has one.
+         */
+        get: operations["read_job_api_v1_lookup_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Lookups
+         * @description What has been searched lately, newest first, cards and all - the page's own list.
+         */
+        get: operations["recent_lookups_api_v1_lookup_recent_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear Recent Lookups
+         * @description Empty 最近搜索 of the records that are only records.
+         *
+         *     Never a card on the shelf: a row the reader starred is a favourite, and the star is the
+         *     only write that ends that (8.8.4). A list that had nothing to drop answers false, which
+         *     is one answer rather than an error - the same way forgetting a card twice is not one.
+         */
+        delete: operations["clear_recent_lookups_api_v1_lookup_recent_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/recent/{chain_id}/{ca}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Forget Recent Lookup
+         * @description Drop one record. A row that is not there is not an error, and neither is one the reader
+         *     starred - that row is a card on the shelf, and 搜索管理 greys it out rather than offering
+         *     a button that would silently do nothing.
+         */
+        delete: operations["forget_recent_lookup_api_v1_lookup_recent__chain_id___ca__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -455,6 +583,11 @@ export interface components {
             /** Sym */
             sym: string;
             /**
+             * Logo
+             * @default
+             */
+            logo: string;
+            /**
              * Tag
              * @default
              */
@@ -493,6 +626,11 @@ export interface components {
             details: components["schemas"]["DetailOut"][];
             /** Links */
             links: components["schemas"]["LinkOut"][];
+            /**
+             * Research Note
+             * @default
+             */
+            research_note: string;
         };
         /**
          * ChainConfigDetailOut
@@ -691,17 +829,20 @@ export interface components {
         };
         /**
          * FavoriteOut
-         * @description One kept card: the reader is following the token, and this is that token's current card.
+         * @description One card on file for a token: collected, or a record of a CA search for it.
          *
          *     A copy rather than a reference, on purpose: a report row is deleted with its round, and
-         *     a whole report library can be dropped, while a kept card has to stay readable. It is
-         *     also why `config_id` is not part of the key - a card can come from a chain this app does
-         *     not screen, so the shelf is keyed by (chain_id, ca) alone. It is a value: the set of
-         *     settings the round ran under, for the line the shelf prints under the card.
+         *     a whole report library can be dropped, while a card the reader holds on to has to stay
+         *     readable. It is also why `config_id` is not part of the key - a card can come from a
+         *     chain this app does not screen, so the table is keyed by (chain_id, ca) alone. It is a
+         *     value: the set of settings the round ran under, for the line the card's foot prints.
          *
-         *     A round that writes one of these tokens again replaces the payload in place
+         *     Two kinds of row answer to this, and the reader only sees the difference on the card's
+         *     foot: a round's card carries `origin_run_id` and `config_id`, and a CA search's carries
+         *     neither (`origin = 'search'`, no score - there is no pool to rank in, app/lookup.py). A
+         *     round that writes one of these tokens again replaces the payload in place
          *     (report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward
-         *     while `saved_at` stays at the moment the reader kept it.
+         *     while `saved_at` stays at the moment the row was first put here.
          */
         FavoriteOut: {
             /** Chain Id */
@@ -954,6 +1095,57 @@ export interface components {
             note: string;
         };
         /**
+         * JobOut
+         * @description One CA search, as the page polls it.
+         *
+         *     A job rather than a synchronous answer, because the search is minutes long and a page
+         *     that shows which stage it is on needs somewhere to read that from. `row` is the stored
+         *     card once the status is `done` - the same row the shelf and the recent list read, so a
+         *     searched card cannot be two different cards depending on how the page got it.
+         */
+        JobOut: {
+            /** Id */
+            id: string;
+            /** Ca */
+            ca: string;
+            /** Chain Id */
+            chain_id?: string | null;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage?: string | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["JobStageOut"][];
+            /** Error */
+            error?: string | null;
+            row?: components["schemas"]["FavoriteOut"] | null;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /**
+         * JobStageOut
+         * @description One row of a search's step list: what the stage is called and where it has got to.
+         *
+         *     The four states are the ones a round's step list draws too (pending / run / done /
+         *     failed), so the two panels cannot disagree about what a stopped stage looks like.
+         *     `seconds` is filled the moment the stage ends and stays empty until then.
+         */
+        JobStageOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** State */
+            state: string;
+            /** Seconds */
+            seconds?: number | null;
+        };
+        /**
          * LabelIn
          * @description The new name for a set of settings. Only the label moves; the id never does.
          */
@@ -1052,6 +1244,16 @@ export interface components {
             label: string;
             /** Url */
             url: string;
+        };
+        /**
+         * LookupIn
+         * @description An address to search. The chain is not part of the ask: an address implies it, and the
+         *     reader typing one does not necessarily know which chain it is on (`app/lookup.py`
+         *     `resolve` answers that from the feed, deepest chain first).
+         */
+        LookupIn: {
+            /** Ca */
+            ca: string;
         };
         /** MetricOut */
         MetricOut: {
@@ -2075,7 +2277,195 @@ export interface operations {
             };
         };
     };
+    collect_favorite_api_v1_favorites__chain_id___ca__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                ca: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     forget_favorite_api_v1_favorites__chain_id___ca__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chain_id: string;
+                ca: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_search_api_v1_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_latest_job_api_v1_lookup_jobs_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"] | null;
+                };
+            };
+        };
+    };
+    read_job_api_v1_lookup_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_lookups_api_v1_lookup_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoriteOut"][];
+                };
+            };
+        };
+    };
+    clear_recent_lookups_api_v1_lookup_recent_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedOut"];
+                };
+            };
+        };
+    };
+    forget_recent_lookup_api_v1_lookup_recent__chain_id___ca__delete: {
         parameters: {
             query?: never;
             header?: never;

@@ -8,6 +8,11 @@ import { Icon } from "../../components/Icon";
 import { Pick } from "../../components/Pick";
 import { whole } from "../../format";
 import { Card } from "../report/Card";
+import { chainName, field, parts, stamp } from "../report/foot";
+
+/** The one chip that names a source rather than a chain. It cannot collide with a chain id
+ *  the backend would ever write, and it reads as the word the page uses for it. */
+const SEARCHED = "search";
 
 /** The shelf: every card the reader kept, across every chain.
 
@@ -19,33 +24,6 @@ import { Card } from "../report/Card";
  *  A row carries the card itself (see the favorites table), so this page draws a card the
  *  same way the report page does, from the payload the round was read as - deltas and all.
  */
-
-/** When it was, to the minute. The stored stamps carry seconds and an offset; the shelf only
- *  ever needs the minute, and a locale-formatted date would differ per machine. */
-function stamp(iso: string | null | undefined): string {
-  return (iso ?? "").slice(0, 16).replace("T", " ");
-}
-
-/** One line of a kept card's provenance, out of the parts that are actually known.
- *
- *  The bar is the one the card's own link row uses, so the band reads as the same kind of
- *  thing. A part that is missing is dropped rather than printed as a dash: a card from a
- *  search has no round and no set of settings, and a line of dashes says less than a short
- *  line does. */
-function parts(...values: (string | null | undefined)[]): string {
-  return values.filter((value) => value).join(" ｜ ");
-}
-
-/** A field of that band: the label, and the value when there is one. A field whose value is
- *  missing is dropped whole, so a card kept by a search shows a shorter line rather than a
- *  bare label or a dash. */
-function field(label: string, value: string | null | undefined): string {
-  return value ? label + ": " + value : "";
-}
-
-function chainName(labels: Map<string, string>, chainId: string): string {
-  return labels.get(chainId) ?? chainId;
-}
 
 /** The same shape as the report page's export, one card per kept row. */
 function favoritesToMarkdown(rows: Favorite[], labels: Map<string, string>): string {
@@ -134,7 +112,14 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const list = rows.filter((row) => {
-      if (chain && row.chain_id !== chain) return false;
+      // 搜索 is a source, not a chain: a card a CA search left behind can be from any chain
+      // - including one this app does not screen - so it cannot be a chip in the chain list.
+      // One at a time, like the rest: the chips are one choice, not two stacked filters.
+      if (chain === SEARCHED) {
+        if (row.origin !== "search") return false;
+      } else if (chain && row.chain_id !== chain) {
+        return false;
+      }
       if (!needle) return true;
       return (row.symbol ?? "").toLowerCase().includes(needle)
         || row.ca.toLowerCase().includes(needle);
@@ -159,7 +144,12 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
                   onClick={() => setChain(id)}>
                   {chainName(labels, id)}
                 </button>
-            ))}
+              ))}
+              {/* A card a CA search left behind is on the shelf like any other once it is
+                  collected, and no chain chip can find it when its chain has no radar - so
+                  the source is its own chip, standing after the chains (user, 2026-10-01). */}
+              <button type="button" className={"chip" + (chain === SEARCHED ? " on" : "")}
+                onClick={() => setChain(SEARCHED)}>搜索</button>
           </div>
           <input className="fav-search" value={query} placeholder="过滤 symbol / CA"
             onChange={(event) => setQuery(event.target.value)} />

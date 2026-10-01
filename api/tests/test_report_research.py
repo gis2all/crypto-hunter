@@ -7,11 +7,14 @@ many posts fit, and what the round is allowed to say about people it did not rea
 
 from __future__ import annotations
 
+from app.report import research
 from app.report.research import merge_links, post_block, talk_block
 from app.search.base import TweetRow
 from app.search.discover import Discovery
+from app.search.identify import CARRIES, OWN, Site
 
 WHEN = "2026-09-27T10:43:55+00:00"
+CA = "0x" + "a" * 40
 
 
 def _post(index, handle="solonlabs1", likes=0, text="a post", when=WHEN):
@@ -70,3 +73,52 @@ def test_a_round_whose_only_mentions_were_its_own_says_nothing():
 def test_the_header_is_not_written_for_a_story_nobody_can_count():
     """No strangers, no block - and no heading over an empty section either."""
     assert talk_block([], ["solonlabs1"]) == ""
+
+
+def test_the_links_a_caller_hands_in_are_the_ones_that_are_merged(monkeypatch):
+    """`known` is where a caller's own links go in, and they replace the ones the snapshots
+    table would have supplied - a CA search just read them off the sources and has no row in
+    that table to read them from. Nothing else about the pass changes: the engine is still
+    asked, exactly as a round asks it (6.4.3)."""
+    monkeypatch.setattr(research, "_latest_metrics",
+                        lambda ca: ({"socials": {"twitter": "https://x.com/stale"}}, {}))
+    seen = {}
+
+    def fake_discover(chain, ca, symbol, *, known=(), search=True):
+        seen["known"], seen["search"] = list(known), search
+        return None
+
+    monkeypatch.setattr(research, "discover", fake_discover)
+    out = research.gather({"ca": CA, "chain_id": "arc", "symbol": "TKN"},
+                          known=[("twitter", "https://x.com/live")])
+
+    assert seen["known"] == [("twitter", "https://x.com/live")]
+    assert seen["search"] is True, "a search digs for links the way a round does"
+    assert out["links"] == [("twitter", "https://x.com/live")]
+
+
+def test_the_gathered_answer_carries_the_site_the_search_proved(monkeypatch):
+    """The one address a card prints, handed on by the pass that read the pages: nothing
+    downstream can work out which of the candidates earned the top tier."""
+    monkeypatch.setattr(research, "_latest_metrics", lambda ca: ({}, {}))
+    site = Site("https://solonpad.fun/", OWN, "links to solonlabs1")
+    monkeypatch.setattr(research, "discover",
+                        lambda *args, **kwargs: Discovery(chain="ARC", ca=CA, site=site))
+
+    out = research.gather({"ca": CA, "chain_id": "arc", "symbol": "SOLON"})
+
+    assert out["site"] == "https://solonpad.fun/"
+
+
+def test_a_page_that_only_carries_the_address_is_not_handed_on_as_the_site(monkeypatch):
+    """A listing is worth reading and is not the project's own page, and the card prints one
+    site as the project's own."""
+    monkeypatch.setattr(research, "_latest_metrics", lambda ca: ({}, {}))
+    site = Site("https://listing.fun/", CARRIES, "carries the contract address")
+    monkeypatch.setattr(research, "discover",
+                        lambda *args, **kwargs: Discovery(chain="ARC", ca=CA, site=site))
+
+    out = research.gather({"ca": CA, "chain_id": "arc", "symbol": "SOLON"})
+
+    assert out["site"] == ""
+    assert out["links"] == [("website", "https://listing.fun/")]

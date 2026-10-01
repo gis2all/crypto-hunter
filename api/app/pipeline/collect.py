@@ -32,8 +32,13 @@ from ..sources.http import archive
 #: has no bulk sweep (`fetch_universe` returns nothing), so it can only ever win the
 #: enrich merge - the pull never has an opinion for it to override.
 FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
+    # The name the card is titled with. DexScreener sits last rather than with the other
+    # feed-wide sources at the top of this table: it answers for every token on the chain
+    # and so fills the gap a launchpad nobody scrapes leaves (TIDE on Robinhood is an
+    # ordinary Uniswap pool, not a launchpad launch), while the launchpad the token did
+    # come from keeps its own spelling when it has one.
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-               "coinbarrel", "pez", "peeps"),
+               "coinbarrel", "pez", "peeps", "dexscreener"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
     "market_cap_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
@@ -129,6 +134,58 @@ TOKEN_URLS = {
 
 def token_url(tracker: str, chain_id: str, ca: str) -> str:
     return TOKEN_URLS[tracker] % (chain_id, ca)
+
+
+def stamp_trackers(row: TokenMetrics, chain_id: str, ca: str) -> None:
+    """The three tracker pages, stamped onto one row.
+
+    A pure function of (chain, CA), so it is written once and called from both places that
+    need it: the collect pass stamps every row a round keeps, and a CA search stamps the one
+    row it read. Until it did, a searched card's footer had no GMGN / Debot / DexScreener to
+    print - these fields were only ever filled here, and a search never runs a collect.
+    """
+    row.gmgn_url = token_url("gmgn", chain_id, ca)
+    row.debot_url = token_url("debot", chain_id, ca)
+    row.dexscreener_url = token_url("dexscreener", chain_id, ca)
+
+
+def share_site(row: TokenMetrics | dict | None, url: str) -> None:
+    """Put the site a search just proved at the head of one row's websites.
+
+    The card prints exactly one site, and until this ran it printed only what the sources
+    listed - a token whose site the search learned off the project's own page had no 官网
+    line on it at all. Prepend rather than append: the sites a union of launchpad rows
+    produces arrive in whatever order the sources were read, and the page that was actually
+    read and tied back to the token is the one worth printing.
+
+    `row` is a TokenMetrics in the collect pass and a plain dict on the paths that never
+    built one - a CA search, and the research pass filling in the row it was handed - so both
+    are written. `search` joins the provenance list because it is one of the sources this
+    union field is now built from, which is what keeps "where did this link come from"
+    answerable.
+    """
+    url = str(url or "").strip()
+    if row is None or not url:
+        return
+    if isinstance(row, dict):
+        sites = [str(site) for site in (row.get("websites") or [])]
+        provenance = dict(row.get("provenance") or {})
+    else:
+        sites = [str(site) for site in (row.websites or [])]
+        provenance = dict(row.provenance or {})
+    sites = [url] + [site for site in sites if site and site != url]
+    names = [name for name in str(provenance.get("websites") or "").split(",") if name]
+    if "search" not in names:
+        names.append("search")
+    provenance["websites"] = ",".join(names)
+    if isinstance(row, dict):
+        row["websites"] = sites
+        row["provenance"] = provenance
+    else:
+        row.websites = sites
+        row.provenance = provenance
+
+
 SCALARS = tuple(
     name
     for name in TokenMetrics.model_fields
@@ -276,13 +333,12 @@ def collect(chain: dict, run_id: str, sources: list,
     if on_pulled:
         on_pulled()
     metrics = merge_all(collected)
-    # 三个链接 are a pure function of (chain, CA) - the reference built them the same way -
-    # so they are filled here, once, instead of in five adapters. A snapshot carries them
-    # because a card must be readable without knowing how a URL is spelled.
+    # 三个链接 are a pure function of (chain, CA) - the reference built them the same way - so
+    # they are stamped from one function instead of in five adapters, and a CA search calls
+    # the same one. A snapshot carries them because a card must be readable without knowing
+    # how a URL is spelled.
     for ca, row in metrics.items():
-        row.gmgn_url = token_url("gmgn", chain["id"], ca)
-        row.debot_url = token_url("debot", chain["id"], ca)
-        row.dexscreener_url = token_url("dexscreener", chain["id"], ca)
+        stamp_trackers(row, chain["id"], ca)
     # The index of what was in play, kept outside the database: it is the only way to
     # answer "was this token even seen" for a round that is months old.
     archive(

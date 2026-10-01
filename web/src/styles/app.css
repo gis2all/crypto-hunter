@@ -125,11 +125,13 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
   color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:9.5px;
   letter-spacing:.04em;line-height:1;white-space:nowrap}
 
-/* On a card the button stands beside the CA box rather than alone in a table cell, and a
-   14px box next to a 22px one reads as a box and a stray glyph. 22px is that box to the
-   pixel (1px border + 2px padding + the 16.275px line), and the 6px sides are its
-   padding: one control, drawn at the size of the thing it copies. */
-.card-id .ca-copy{height:22px;padding:0 6px}
+/* On a card the button is bare (2026-10-01, user): it stands beside an address that no longer
+   has a box either (proto.css .ca), and two boxes stacked under a name read as a form. What
+   is left is the glyph, at the 14 the card's row is drawn at. The 22px height and the 3px
+   sides stay as the hit area - the box is gone, the target is not - and it paints no fill,
+   because the head of a podium card is tinted and a --surface button would show up on it as
+   the very rectangle this removes. */
+.card-id .ca-copy{height:22px;padding:0 3px;border:0;background:transparent}
 /* The copy glyph follows the box it lands in instead of the box following the glyph: the
    table's button is 14px tall and takes the 12px size, the card's is 22px beside a 12.5px
    address and takes the 14. The two numbers here beat the width/height attributes the icon
@@ -216,6 +218,34 @@ html{scrollbar-gutter:stable}
 .grid{align-items:start}
 .card-foot{margin-top:0}
 .deltas,.sec-quality .kv-grid,.sec-quality .safety{min-height:auto}
+/* 收藏 is the one grid where searched cards and round cards stand side by side, and it holds
+   them to one height (the block above). A searched card prints no score (8.8.2), so on that
+   grid the one block it is missing - the score bar (8px bar + 17.8px label + the 5px and 9px
+   around them) - is held open at the height the round card gives it. Measured, the two cards
+   then agree block for block: same 结论, same folds, same footer line. Scoped to the shelf on
+   purpose: on 搜索 the card stands alone and the blank block collapses to nothing.
+
+   The head used to need a rule here as well, because a round card's head carried the 21px
+   综合分 numeral while a searched card's carried a 19px symbol, and the two came out 3px
+   apart. Both kinds now draw the same two lines beside a 40px box (2026-10-01), so the tall
+   head is the same head on both cards and there is nothing left to hold open. */
+#view-favorites .scorebar{min-height:40px}
+.scorebar.blank{padding:0}
+
+/* A card's mark, in the box the head keeps for it (Card.tsx). Square: proto.css carries one
+   global zero radius, and the only circle in this app is the 6px run dot. 40px - the height of
+   the two lines it stands beside - and centered rather than on the baseline the head's text
+   sits on, because a box has no baseline. An empty box keeps the fill of the theme's own
+   black or white (--logo-empty) rather than collapsing, so a card with no mark is the same
+   card with nothing in that box - not a card of a different height. The ring is the accent at
+   2px: a hairline in --border was invisible in the light theme, where an empty box is white on
+   a near-white card, so it is drawn at the weight of a thing you are meant to notice rather
+   than of a thing meant to disappear. The 6px radius is the second !important exception to
+   8.4.5 after .cfg-dot (2026-10-01, user), and the box clips its own picture (overflow) so a
+   mark cannot paint out of the corners the ring draws. */
+.card-head .logo{flex:0 0 auto;align-self:center;width:40px;height:40px;background:var(--logo-empty);
+  border:2px solid var(--accent);border-radius:6px!important;overflow:hidden}
+.card-head .logo img{display:block;width:100%;height:100%;object-fit:cover}
 
 /* Equal cards, approved 2026-09-26 - the 结论 box, and it now says when it is cut.
 
@@ -517,6 +547,13 @@ div.pgroup>.pset{margin-top:auto}
 .nav-i{gap:7px;text-transform:uppercase}
 .nav-i .chain-mark{flex:0 0 auto}
 
+/* The two rows that are not a chain carry a lucide glyph where a chain carries its own filled
+   artwork, and the .ico default is too light to stand in that row: the set draws a 1.5 stroke
+   on a 24 grid, which at this row's 14px lands as 0.9px and reads as a hairline beside the
+   solid Arc and Robinhood marks (user, 2026-10-01). 2.5 lands at 1.46px, the weight a filled
+   silhouette of the same height carries. Only the rail's rows move. */
+.nav-i .ico{stroke-width:2.5}
+
 
 
 @media (min-width:1668px){
@@ -640,29 +677,37 @@ div.pgroup>.pset{margin-top:auto}
 .cfg-danger .grp-h{border-bottom-color:var(--danger-border);color:var(--danger-fg)}
 
 /* ---------- 收藏 (the shelf) ---------- */
-/* The one control on a card that keeps it instead of opening it. It stands where the score
-   already is, in the same register as the numbers around it: outline in --muted, and filled
-   in --accent once the shelf holds this CA. Filling the same glyph rather than swapping in a
-   second icon is what keeps the two states from drifting apart. */
-.fav{border:0;background:none;padding:0 2px;line-height:1;cursor:pointer;color:var(--muted);
+/* The two controls a card can carry in its head, and they wear one box: 收藏 keeps the card,
+   重新搜索 runs its address again. One glyph in --muted that lifts to --accent-fg under the
+   pointer is the whole register, so the corner does not read as two kinds of thing.
+   The star goes filled in --accent once the shelf holds this CA, and filling the same glyph
+   rather than swapping in a second icon is what keeps the two states from drifting apart. */
+.fav,.rescan{border:0;background:none;padding:0 2px;line-height:1;cursor:pointer;color:var(--muted);
   display:inline-flex;align-items:center}
-.fav:hover{color:var(--accent-fg)}
+.fav:hover,.rescan:hover{color:var(--accent-fg)}
 .fav svg{fill:none}
 .fav.on{color:var(--accent)}
 .fav.on svg{fill:currentColor}
-.fav:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.fav:focus-visible,.rescan:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+/* Spent while the search it started is in flight; it turns in the meantime (.ico.spin). */
+.rescan:disabled,.rescan:disabled:hover{opacity:.45;cursor:not-allowed;color:var(--muted)}
 
-/* The shelf is the second place in the rail and not a chain, so it is separated from the list
-   of radars rather than being another row in it (Rail.tsx). It is deliberately not .nav: that
-   class is flex:1, and two of them would split the column in half. */
-.nav-shelf{border-top:1px solid var(--hair);padding:10px 0 10px}
-.nav-shelf .nav-i{color:var(--muted)}
-.nav-shelf .nav-i.on{color:var(--fg)}
+/* Kept and searched cards are not chains, but their rows sit inside the radars' own list,
+   right under it and with no line between (Rail.tsx). Deliberately not .nav itself: that
+   class is flex:1, and a second one would split the column in half.
+
+   Same ink as the chain rows, and no padding either. Both were tried the other way and both
+   said the wrong thing: at --muted the two rows read as disabled items standing next to two
+   live ones, and the 6px/10px box they carried made the step from the last radar to the
+   first of them taller than every step between rows (measured 39.4px against 33.3px; user,
+   2026-10-01). What says where you are is the lit row - accent bar, warm ground, bold - not
+   a second shade of text. */
+.nav-shelf{padding:0}
 
 /* The shelf's own strip, standing where the topbar stands so the page does not jump between a
    radar and the shelf. The title carries no count: the cards are the count, and the chips and
    the sort are what a reader reads off this bar. */
-#view-favorites .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+#view-favorites .fav-bar,#view-lookup .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
   gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
 .fav-title{display:flex;align-items:center;gap:7px}
 .fav-title b{font-size:15px;font-weight:600}
@@ -696,3 +741,68 @@ div.pgroup>.pset{margin-top:auto}
   display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:10.5px;
   line-height:1.5;color:var(--muted)}
 
+/* ---------- CA search (features/lookup/LookupView.tsx) ----------
+
+   One address, one card, and the addresses already looked up beside it. The strip on top is
+   the shelf's own (above), so the two places that are not a radar read as one page with a
+   different list under it.
+
+   Two columns, and the left one is fixed: the list is what the page is for - a card is one
+   click away and costs nothing, because the row already carries it - so the list keeps its
+   width and the card takes what is left. */
+
+/* The body IS the radar's grid (\`.grid\`) - the recent list stands in the first track and the
+   card section spans the rest.
+
+   That is what keeps the two cards the same width. An auto-fill track is (content - gutters)
+   / tracks wide, and a section spanning n-1 of those tracks, filled by the same rule,
+   re-derives exactly that width. A plain "320px + the rest" split did not: it had one track
+   where the radar had two, so the searched card came out a third wider than a round card -
+   measured at a 1280px window, 635 against 481. */
+.look-body{align-items:start}
+.look-list{display:flex;flex-direction:column;gap:2px;width:320px}
+.look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted)}
+/* A row is two lines because one will not hold it: a symbol, the chain it is on, the address
+   and when it was read. The address is the thing the reader came to copy, so it keeps the
+   monospace register and the second line. */
+.look-row{display:flex;flex-direction:column;gap:2px;width:100%;padding:6px 9px;border:1px solid transparent;
+  background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
+.look-row:hover{background:var(--surface-warm)}
+.look-row.on{border-color:var(--border);background:var(--surface)}
+.look-top{display:flex;align-items:baseline;gap:7px;min-width:0}
+.look-top b{font-size:12.5px;font-weight:600;color:var(--fg)}
+.look-top i{margin-left:auto;font-style:normal;font-size:10.5px;color:var(--muted)}
+.look-sub{display:flex;align-items:baseline;gap:8px;font-family:var(--mono);font-size:10.5px;
+  color:var(--muted)}
+.look-sub span{margin-left:auto}
+/* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
+   the columns under it rather than flush against the window. */
+#view-lookup>.note-bar{margin:12px 16px}
+/* The card the reader opened. It used to stand under a thin head of its own - the chain's
+   name and a worded 重新搜索 - and that head had no ground, no frame and no padding, so
+   8px over the card it read as a strip someone stopped drawing: every other thing on this
+   page is a framed box. Both halves were said twice anyway - the chain's name is in the
+   card's own foot, and the action belongs to the card - so the head is gone and 重新搜索
+   moved inside the card (Card.tsx). */
+.look-card{grid-column:2/-1;min-width:0}
+/* The searched card rides the radar's own grid (proto.css .grid, floored at 345 on the line
+   above), so a searched card and a round card are the same width whatever stands beside
+   them - the complaint this answers was one card stretched to fill its column. The grid
+   brings the page's own padding and this column is already inset by .look-body, so the
+   padding is dropped here rather than doubled. */
+.look-card .grid{padding:0}
+/* The cell the card fills: a column, so the card stacks under whatever ever stands over it
+   again, and min-width:0 so a long address cannot blow the grid track open. */
+.look-cell{display:flex;flex-direction:column;min-width:0}
+
+/* 搜索管理's rows: one record each - what was looked up, where, and when - with the one
+   button that drops it. The row is the panel's own .frow, so 配置管理 and this drawer read
+   as the same kind of list; address, chain and time run together in one mono line because
+   they are one reading, and the address is the only part that may be cut short. */
+.lk-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.lk-empty{padding:6px 10px;font-size:11.5px;color:var(--muted)}
+/* 清空 is the same two-press arm 中止 uses - the first press says how many go - but it stands
+   in a drawer, so it cannot wear the RunPanel's `.rp-h .btn.arm` selector. */
+.btn.lk-clear.arm{border-color:var(--danger-border);background:var(--danger-bg);color:var(--danger-fg)}

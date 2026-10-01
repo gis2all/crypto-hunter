@@ -6,6 +6,7 @@ import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
   useKeepFavorite, useLiveRun, useRuns } from "./api/hooks";
 import { OverviewPanel } from "./features/overview/OverviewPanel";
 import { FavoritesView } from "./features/favorites/FavoritesView";
+import { LookupView } from "./features/lookup/LookupView";
 import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
 import { batchToMarkdown, TopBar, type View } from "./features/report/TopBar";
@@ -52,9 +53,13 @@ export default function App() {
   const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
-  // 雷达 or 收藏. The two are places, not tabs: 收藏 is not scoped by the selected chain or
-  // by a set of settings, so it cannot live under 报告 / 设定 - see Rail's Place.
-  const [place, setPlace] = useState<Place>(() => (readPref(PLACE_KEY) === "favorites" ? "favorites" : "radar"));
+  // 雷达, 收藏 or 搜索. The three are places, not tabs: the last two are scoped by neither
+  // the selected chain nor a set of settings, so neither can live under 报告 / 设定 - see
+  // Rail's Place.
+  const [place, setPlace] = useState<Place>(() => {
+    const kept = readPref(PLACE_KEY);
+    return kept === "favorites" || kept === "lookup" ? kept : "radar";
+  });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [runPanelOpen, setRunPanelOpen] = useState(false);
@@ -246,6 +251,11 @@ export default function App() {
           // The whole list, not just the names: the shelf's chain switcher is a fixed row
           // read off these (8.7.4), so it needs the order and which of them the rail draws.
           <FavoritesView chains={chains.data ?? []} />
+        ) : place === "lookup" ? (
+          // The chain list is passed for the same kind of reading: a searched card can be on
+          // a chain this app does not screen, and its foot still has to name the one it has
+          // an id for.
+          <LookupView chains={chains.data ?? []} />
         ) : (
           <>
           <TopBar
