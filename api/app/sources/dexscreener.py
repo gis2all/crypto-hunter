@@ -39,6 +39,35 @@ def _num(value: Any) -> float:
         return 0.0
 
 
+def identify(ca: str) -> list[tuple[str, float]]:
+    """Where this CA lives, deepest chain first: [(chain id, the liquidity it holds there)].
+
+    A CA does not say what chain it is on, and every other read about a token is per chain -
+    the node, the explorer, the source list - so a caller holding only an address has to ask
+    this before it can ask anything else. The feed answers one row per pool and repeats the
+    chain, so the rows are grouped here: a token spread over nine pools on one chain is still
+    one token there. When the same address exists on two chains the deeper one is the one a
+    reader means - the market numbers and `dex_pair` are read per chain, so answering with
+    the thin chain's pools would be answering about a different token.
+
+    Empty means the feed has never seen the address. This is a second request to the endpoint
+    `fetch_token` reads; a CA search spends one extra GET beside a model call.
+    """
+    try:
+        payload = json_get(BASE % ca, UA_JSON, tries=2, sleep=1.0, timeout=20.0)
+    except SourceError:
+        return []
+    depth: dict[str, float] = {}
+    for row in ((payload or {}).get("pairs") or []):
+        if not isinstance(row, dict):
+            continue
+        chain = str(row.get("chainId") or "").strip()
+        if not chain:
+            continue
+        depth[chain] = depth.get(chain, 0.0) + _num((row.get("liquidity") or {}).get("usd"))
+    return sorted(depth.items(), key=lambda pair: pair[1], reverse=True)
+
+
 def _numbers(metrics: TokenMetrics, pools: list[dict], best: dict) -> None:
     """The market numbers, in the one caliber the round ranks on.
 
@@ -72,6 +101,26 @@ def _numbers(metrics: TokenMetrics, pools: list[dict], best: dict) -> None:
         metrics.provenance["price_usd"] = "dexscreener"
 
 
+def _name(metrics: TokenMetrics, best: dict, ca: str) -> None:
+    """The symbol the card is titled with, read off the side of the pair this token is on.
+
+    This host repeats both sides of every pool and the token is not always the base one - a
+    CA that only ever shows up as the quote side still has a name, and the merge falls back
+    to here for every token on the chain, including the ones no launchpad adapter knows
+    (TIDE on Robinhood is an ordinary Uniswap pool). Read from `best` for the same reason the
+    market cap is: it is the pool holding the depth.
+    """
+    for side in ("baseToken", "quoteToken"):
+        token = best.get(side) or {}
+        if str(token.get("address") or "").lower() != ca.lower():
+            continue
+        symbol = str(token.get("symbol") or "").strip()
+        if symbol:
+            metrics.symbol = symbol
+            metrics.provenance["symbol"] = "dexscreener"
+        return
+
+
 class DexScreener:
     name = "dexscreener"
     chains = ("arc", "robinhood")
@@ -103,6 +152,7 @@ class DexScreener:
         pools = [row for row in ours if str(row.get("chainId") or "") == chain_id] or ours
         best = max(pools, key=lambda row: _num((row.get("liquidity") or {}).get("usd")))
         _numbers(metrics, pools, best)
+        _name(metrics, best, ca)
         info = best.get("info") or {}
         socials: dict[str, str] = {}
         for entry in info.get("socials") or []:
@@ -125,4 +175,12 @@ class DexScreener:
         if websites:
             metrics.websites = websites
             metrics.provenance["websites"] = "dexscreener"
+        # The mark comes out of the same `info` this host already resolved the two link lists
+        # from, so carrying it costs no request and no second host. Through `web_url` for the
+        # same reason the 官网 column goes through it: what lands in an `img src` is a URL a
+        # browser will follow, and a scheme nothing checked is not one.
+        logo = web_url(info.get("imageUrl"))
+        if logo:
+            metrics.logo_url = logo
+            metrics.provenance["logo_url"] = "dexscreener"
         return metrics, SafetyFacts()

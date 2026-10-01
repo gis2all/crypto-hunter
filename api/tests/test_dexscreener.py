@@ -12,12 +12,12 @@ from app.sources import dexscreener
 CA = "0x" + "a" * 40
 
 
-def _pair(ca, chain="arc", liq=1000, socials=None, websites=None):
+def _pair(ca, chain="arc", liq=1000, socials=None, websites=None, symbol="T", image=None):
     return {
         "chainId": chain,
-        "baseToken": {"address": ca, "symbol": "T"},
+        "baseToken": {"address": ca, "symbol": symbol},
         "liquidity": {"usd": liq},
-        "info": {"socials": socials or [], "websites": websites or []},
+        "info": {"socials": socials or [], "websites": websites or [], "imageUrl": image},
     }
 
 
@@ -36,6 +36,26 @@ def test_the_pairs_are_read_for_the_ca_we_asked_about(monkeypatch):
     assert metrics.socials == {"twitter": "https://x.com/solon"}
     assert metrics.websites == ["https://solonpad.fun"]
     assert metrics.provenance["socials"] == "dexscreener"
+
+
+def test_the_mark_rides_along_with_the_links(monkeypatch):
+    """The token's image is one more field of the `info` this host already answered with, so
+    carrying it costs no second request and no second host - and what lands on the card is a
+    URL, which is all a browser needs."""
+    _answers(monkeypatch, {"pairs": [
+        _pair(CA, image="https://cdn.dexscreener.com/cms/images/abc?width=800")]})
+    metrics, _facts = dexscreener.DexScreener().fetch_token("arc", CA)
+    assert metrics.logo_url == "https://cdn.dexscreener.com/cms/images/abc?width=800"
+    assert metrics.provenance["logo_url"] == "dexscreener"
+
+
+def test_a_listing_with_no_mark_says_nothing(monkeypatch):
+    """Absent is absent: not an empty string the card would have to explain, and not a claim
+    that a mark was checked for. The card draws the empty box either way."""
+    _answers(monkeypatch, {"pairs": [_pair(CA)]})
+    metrics, _facts = dexscreener.DexScreener().fetch_token("arc", CA)
+    assert metrics.logo_url is None
+    assert "logo_url" not in metrics.provenance
 
 
 def test_a_ca_that_answers_on_several_chains_is_left_alone(monkeypatch):
@@ -76,6 +96,34 @@ def test_it_reports_the_numbers_in_the_round_caliber(monkeypatch):
     assert metrics.volume_24h_usd == 50_000.0
     assert metrics.market_cap_usd == 500_000.0 and metrics.price_usd == 0.01
     assert metrics.provenance["liquidity_usd"] == "dexscreener"
+
+
+def test_the_name_comes_from_the_ca_we_asked_about(monkeypatch):
+    """The card is titled with this host's spelling of the symbol, read off the side of the
+    pair this CA is on.
+
+    It is the only source that answers for a token no launchpad adapter scrapes - TIDE on
+    Robinhood is an ordinary Uniswap pool, not a launchpad launch - so without it those
+    cards went out with no name at all (a real search, 2026-10-01).
+    """
+    deep = _pair(CA, chain="robinhood", liq=17_992, symbol="TIDE")
+    thin = _pair(CA, chain="robinhood", liq=2, symbol="TIDE")
+    _answers(monkeypatch, {"pairs": [thin, deep]})
+    metrics, _facts = dexscreener.DexScreener().fetch_token("robinhood", CA)
+    assert metrics.symbol == "TIDE"
+    assert metrics.provenance["symbol"] == "dexscreener"
+
+
+def test_a_ca_that_only_trades_as_the_quote_side_is_still_named(monkeypatch):
+    """Both sides of a pool carry a symbol and this CA is not always the base token.
+
+    Reading baseToken alone would have titled the card with the other token's name.
+    """
+    pair = _pair("0x" + "d" * 40, chain="robinhood", liq=17_992, symbol="OTHER")
+    pair["quoteToken"] = {"address": CA, "symbol": "TIDE"}
+    _answers(monkeypatch, {"pairs": [pair]})
+    metrics, _facts = dexscreener.DexScreener().fetch_token("robinhood", CA)
+    assert metrics.symbol == "TIDE"
 
 
 def test_a_host_that_is_down_says_nothing_rather_than_guessing(monkeypatch):

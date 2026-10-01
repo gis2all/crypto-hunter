@@ -552,6 +552,7 @@ def card(
         "rank": rank,
         "ca": metrics.get("ca"),
         "sym": metrics.get("symbol") or NA,
+        "logo": metrics.get("logo_url") or "",
         "tag": written.get("tag") or "",
         "is_new": is_new,
         "score": _round(breakdown.get("total")),
