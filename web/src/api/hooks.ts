@@ -158,3 +158,88 @@ export function useForgetFavorite() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
   });
 }
+
+/** The CA search page: the cards past searches left behind, and the one slow write that adds
+ *  to them. A search is not scoped by a chain or by a set of settings - the chain comes off
+ *  the address - so neither key carries one. */
+export function useLookupRecent() {
+  return useQuery({ queryKey: ["lookup-recent"], queryFn: api.listLookupRecent });
+}
+
+/** The two writes 搜索管理 makes. One key to invalidate: the list is what they redraw, and a
+ *  record is not a favourite, so the shelf has nothing to say about either of them - a row
+ *  that is both is out of what they touch in the first place (api/v1/lookup.py). */
+export function useForgetLookup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chainId, ca }: { chainId: string; ca: string }) =>
+      api.forgetLookup(chainId, ca),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["lookup-recent"] }),
+  });
+}
+
+export function useClearLookups() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.clearLookups(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["lookup-recent"] }),
+  });
+}
+
+/** One address in, one job out. The job is put in the cache under its own key on the way
+ *  past, so `useLookupJob` has something to draw before its first poll answers. */
+export function useSearchCa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ca: string) => api.searchCa(ca),
+    onSuccess: (job) => {
+      qc.setQueryData(["lookup-job", job.id], job);
+      // The fallback reading below is now a job behind, so it is written over rather than
+      // refetched: 运行结果 must fold the search just run, not the one before it.
+      qc.setQueryData(["lookup-job-latest"], job);
+    },
+  });
+}
+
+/** A queued search, polled until it stops moving.
+ *
+ *  A search is minutes long and the panel is drawn from the stage list the job carries, so
+ *  this asks again while it runs. `failed` ends the poll as much as `done` does: a job
+ *  that died keeps the stage it died on, and folding it away would hide the answer. A job
+ *  with no reading yet counts as running, because that is the state it was just handed. */
+export function useLookupJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ["lookup-job", jobId],
+    queryFn: () => api.getLookupJob(jobId as string),
+    enabled: Boolean(jobId),
+    // An id the backend has never heard of ends the poll as well: asking again cannot
+    // change a 404, and a restored id from a wiped database would otherwise be asked for
+    // every `RUNNING_MS` for as long as the page is open.
+    refetchInterval: (query) => {
+      if (query.state.error) {
+        return false;
+      }
+      return (query.state.data?.status ?? "running") === "running" ? RUNNING_MS : false;
+    },
+  });
+}
+
+/** The newest search on record, for a page that holds no job id of its own.
+ *
+ *  Not polled, on purpose: this is a fallback reading, and the one job that can still be
+ *  moving - the page own - is polled by `useLookupJob` above. null when nothing has ever
+ *  been searched, which the panel reads as "nothing to fold" rather than "queued". */
+export function useLatestLookupJob() {
+  return useQuery({ queryKey: ["lookup-job-latest"], queryFn: api.getLatestLookupJob });
+}
+
+/** Collecting a card that is already on file - the star on a searched token. Like
+ *  `useKeepFavorite` it invalidates the shelf, which is what both readers of `kept` draw. */
+export function useCollectFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chainId, ca }: { chainId: string; ca: string }) =>
+      api.collectFavorite(chainId, ca),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
+  });
+}
