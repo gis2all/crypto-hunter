@@ -299,6 +299,41 @@ def test_a_hackathon_with_a_real_task_still_passes():
     assert not out["excluded"] and out["pass"]
 
 
+def test_a_funding_round_is_refused():
+    out = rules.judge(
+        "KIVO 完成 500 万美元战略投资，由 BitBT Ventures 领投，代币 $KIVO 尚未上线。",
+        author="kivo", family="capital")
+
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-funding-news"
+
+
+def test_a_funding_round_that_opens_a_quest_still_passes():
+    out = rules.judge(
+        "完成战略投资，同时开放测试网白名单领取。",
+        author="kivo", family="issuance")
+
+    assert not out["excluded"] and out["pass"]
+
+
+def test_an_ended_window_is_refused():
+    out = rules.judge(
+        "TapeOut 纪念 NFT 空投已发放，活动已结束。",
+        author="tapeoutevm", family="issuance")
+
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-ended-window"
+
+
+def test_a_preview_without_details_is_refused():
+    out = rules.judge(
+        "Pocket Dragons 新 NFT 系列预告，细节待公布。",
+        author="pocketdragons", family="protocol")
+
+    assert out["excluded"] and not out["pass"]
+    assert out["hits"][0]["rule"] == "exclude-preview-only"
+
+
 def test_a_known_account_announcing_something_still_passes():
     out = _gate("主网上线，测试网已开放", author="Aptos", views=4062)
     assert out["pass"] and not any(hit["rule"] == "unknown-author" for hit in out["hits"])
@@ -1114,6 +1149,14 @@ def test_the_page_reads_items_counts_and_its_own_copy(client):
     assert set(body["form"]) == {"title", "trust", "sources_title", "sources_lead", "empty"}
     assert body["form"]["trust"]["unjudged"]["label"] == "未判定"
     assert body["counts"]["sources"] > 0
+
+
+def test_an_activity_does_not_carry_maturity_or_novelty(isolated_db, client):
+    """成熟度与新机制是 project 的读数；活动卡上留着的是重判前的旧字段（2026-10-28）。"""
+    _an_entry("opp-legacy-activity", maturity="测试网", novelty="tooling")
+    body = client.get("/api/v1/opportunity").json()
+    row = next(item for item in body["items"] if item["slug"] == "opp-legacy-activity")
+    assert row["maturity"] == "" and row["novelty"] == ""
 
 
 def test_the_watchlist_reads_back_the_seeded_rows(client, isolated_db):
@@ -2088,7 +2131,7 @@ def test_the_panel_is_three_groups_category_group_ecosystem_status():
     assert [option["value"] for option in groups["category_group"]["options"]] == \
         ["", "qualify", "protocol"]
     assert [option["label"] for option in groups["category_group"]["options"]] == \
-        ["全部", "空投 / 白名单（资格型）", "新协议 / 新实验（观察型）"]
+        ["全部", "资格（白名单 / 候补 / 空投）", "观察 · 协议（新协议 / 新实验）"]
     # 生态按枚举自己的顺序，不按字母序 —— 面板两次读起来要一样
     assert [option["value"] for option in groups["ecosystem"]["options"]] == \
         ["", "bitcoin", "solana"]
@@ -2131,9 +2174,10 @@ def test_every_category_belongs_to_a_group():
     assert schema.category_group_for("白名单") == "qualify"
     assert schema.category_group_for("测试网") == "engage"
     assert schema.category_group_for("做任务") == "engage"
-    assert schema.category_group_for("挖矿") == "invest"
-    assert schema.category_group_for("Mint") == "invest"
-    assert schema.category_group_for("节点") == "node"
+    assert schema.category_group_for("挖矿") == "yield", "质押 / LP / 金库都算生息"
+    assert schema.category_group_for("Mint") == "spend"
+    assert schema.category_group_for("打新") == "spend"
+    assert schema.category_group_for("节点") == "yield", "跑节点与委托也是钱放进去生息"
     assert schema.category_group_for("交互") == "engage"
     assert schema.category_group_for("治理") == "engage", "治理只有个位数，先并回参与型"
     assert schema.category_group_for("新协议", "project") == "protocol"
