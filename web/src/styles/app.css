@@ -754,6 +754,53 @@ div.pgroup>.pset{margin-top:auto}
    delete-confirm field in the settings drawer - must not look like a value already in it. */
 .fav-search::placeholder{color:var(--muted)}
 .fav-search:focus{outline:none;border-color:var(--accent)}
+/* The shelf's two controls, in the panel beside its cards (features/favorites/FavoritesView
+   .tsx). It is the 搜索 page's shape: the body is the radar's own grid, the panel stands in
+   its first track and the cards take the rest - which is what keeps a card here the width the
+   same number of columns gives a card on a radar (see .look-body below).
+
+   The cost is one column of cards at every width, measured at 1440: three tracks of 370 become
+   two of 395, because the panel takes 320px of the 1133px this grid has in hand and three
+   tracks want 1059. Accepted for four sort keys and two directions being visible at once
+   (2026-10-02, user).
+
+   The first track is the panel's own width rather than an auto-fill track: those are floored at
+   345 and grow, so the panel would stand in a track wider than itself and leave a dead gutter
+   before the cards start - measured 62px at a 1440 window and 173 at 1280, against the 12px
+   the grid gap draws. Fixing the track hands that width to the cards.
+
+   Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
+   and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
+   row rather than a chip that has to fit inside the one above it. */
+#view-favorites .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+.fav-side{display:flex;flex-direction:column;width:320px}
+.fav-side .look-h{margin:10px 0 6px}
+.fav-cards{grid-column:2/-1;min-width:0}
+.fav-cards .grid{padding:0}
+.fav-opts{display:flex;flex-direction:column;gap:2px}
+/* An option row borrows the shape of a 最近搜索 row (.look-row): a box that appears on hover
+   and stays on the one in force, so the panel says what the shelf is ordered by without a
+   word of its own.
+
+   It is a row rather than a block now that each one opens with its glyph (2026-10-02, user):
+   the glyph comes first, the word hangs off it at the 7px the rail opens an icon and a label
+   with, and the glyph is the 14px the rail's own rows use. The stroke is the rail's 2.5 rather
+   than the .ico default of 1.5, and for the same reason the rail raised it there: the 来源
+   list holds the same filled Arc and Robinhood marks the rail does, and a hairline beside a
+   silhouette reads as another set of icons. The 排序 rows take the same weight so the panel
+   reads as one. */
+.fav-opt{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border:1px solid transparent;
+  background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
+.fav-opt svg{flex:0 0 auto}
+.fav-opt .ico{stroke-width:2.5}
+.fav-opt:hover{background:var(--surface-warm)}
+.fav-opt.on{border-color:var(--border);background:var(--surface);color:var(--fg)}
+/* The direction is fenced off from the four keys above it - it reads as the chosen key's own
+   second half rather than as a fifth key - and it is always two rows, so the panel cannot
+   change height when another sort is picked. The fence is --border rather than the --hair an
+   inner divider wears: this line stands on the page ground, not inside a card, and --hair on
+   --bg is a line nobody can see (same reason the bars end in --border). */
+.fav-dirs{margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
 /* A kept card's second footer band: which chain and which set of settings the card was read
    as, and the two timestamps - what a bookmark cannot tell you. It is inside the card, under
    the link row and behind a hair-line rather than a full border, so it reads as one more line
@@ -785,19 +832,20 @@ div.pgroup>.pset{margin-top:auto}
 .look-list{display:flex;flex-direction:column;gap:2px;width:320px}
 .look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted)}
-/* A row is two lines because one will not hold it: a symbol, the chain it is on, the address
-   and when it was read. The address is the thing the reader came to copy, so it keeps the
-   monospace register and the second line. */
-.look-row{display:flex;flex-direction:column;gap:2px;width:100%;padding:6px 9px;border:1px solid transparent;
+/* A row is one line: the mark, the name, and the chain it is on. The address and the moment it
+   was read used to stand under it and came out again (2026-10-02, user) - the card beside the
+   list prints both, and a reader picks a row by name rather than by the address it is about.
+   The mark is the card's own box at 19px (2026-10-02, user): it rides inside the row's own
+   text line rather than setting the height, so the 33.4px row is unchanged. It is the one part
+   of a card a one-line row can carry, and it is what tells two rows with the same symbol
+   apart. */
+.look-row{display:flex;align-items:center;width:100%;padding:6px 9px;border:1px solid transparent;
   background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
 .look-row:hover{background:var(--surface-warm)}
 .look-row.on{border-color:var(--border);background:var(--surface)}
-.look-top{display:flex;align-items:baseline;gap:7px;min-width:0}
+.look-top{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0}
 .look-top b{font-size:12.5px;font-weight:600;color:var(--fg)}
 .look-top i{margin-left:auto;font-style:normal;font-size:10.5px;color:var(--muted)}
-.look-sub{display:flex;align-items:baseline;gap:8px;font-family:var(--mono);font-size:10.5px;
-  color:var(--muted)}
-.look-sub span{margin-left:auto}
 /* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
    the columns under it rather than flush against the window. */
 #view-lookup>.note-bar{margin:12px 16px}

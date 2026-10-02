@@ -1,0 +1,20 @@
+import { ArcMark } from "./ArcMark";
+import { RobinhoodMark } from "./RobinhoodMark";
+
+/** Each chain can carry its own mark - the chain's own artwork, not one of ours. Arc and
+ *  Robinhood have one; a chain without a mark is the label alone, which is what BSC will be
+ *  until its artwork is in. Kept here rather than in the chain payload: the API answers what a
+ *  chain *is* (id, label, enabled), not how this screen draws it.
+ *
+ *  One function for every list that names a source (2026-10-02, user): the rail's chain rows
+ *  and the 收藏 page's 来源 rows open with the same glyph, so the two cannot disagree about
+ *  which mark a chain wears. */
+export function chainIdMark(id: string) {
+  if (id === "arc") {
+    return <ArcMark size={14} />;
+  }
+  if (id === "robinhood") {
+    return <RobinhoodMark size={14} />;
+  }
+  return null;
+}

@@ -10,6 +10,7 @@ import type { Chain, Favorite, Job, JobStage } from "../../api/client";
 import { useCollectFavorite, useFavorites, useForgetFavorite, useLatestLookupJob,
   useLookupJob, useLookupRecent, useSearchCa } from "../../api/hooks";
 import { Icon } from "../../components/Icon";
+import { Logo } from "../../components/Logo";
 import { readPref, savePref } from "../../prefs";
 import { Card } from "../report/Card";
 import { chainName, field, stamp } from "../report/foot";
@@ -374,12 +375,9 @@ export function LookupView({ chains }: { chains: Chain[] }) {
                   onClick={() => remember(row)}
                 >
                   <span className="look-top">
+                    <Logo url={row.card.logo} size={19} />
                     <b>{row.symbol ?? "—"}</b>
                     <i>{chainName(labels, row.chain_id)}</i>
-                  </span>
-                  <span className="look-sub">
-                    <code>{shortCa(row.ca)}</code>
-                    <span>{stamp(row.origin_label)}</span>
                   </span>
                 </button>
               )) : (
