@@ -524,10 +524,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Form */
+        get: operations["get_form_api_v1_system_form_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put System
+         * @description Save what changed, then answer the file as it now reads.
+         *
+         *     The whole form comes back rather than an acknowledgement: a save can leave a row looking
+         *     different from what was typed - a number, a box cleared back to its default, a credential
+         *     standing as a fingerprint - and the page has to draw what was written, not what it sent.
+         */
+        put: operations["put_system_api_v1_system_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Models
+         * @description The model ids the endpoint says it serves, read with the page's unsaved rows.
+         *
+         *     A refusal is an answer rather than an error: the page prints the sentence beside the button
+         *     that asked for it, so a wrong key or an endpoint with no `/models` leaves the form as it was.
+         *     The list is a convenience either way - the box stays typeable, and a model the gateway does
+         *     not list is still a model it will answer with.
+         */
+        post: operations["post_models_api_v1_system_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Test
+         * @description A really small real call per key: the writing path itself, not a reachable endpoint.
+         *
+         *     Reachability is not the question a person is asking when they press this - an endpoint
+         *     that answers 200 with an empty message is the failure this repo has already paid for once
+         *     (6.4.8). So the reading that comes back is whether text arrived. Every key is asked, not
+         *     just the first: the standby has never answered anything, and a round only meets it on the
+         *     day the primary is refused (8.9.7).
+         */
+        post: operations["post_test_api_v1_system_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/x": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post X
+         * @description Whether the X session on this page still carries a search: one profile read, no query.
+         *
+         *     The same rule as the gateway's probes - the rows as they stand on screen, not the file - and
+         *     the same reason: an operator who had to save a cookie before finding out whether it works
+         *     would be storing it in order to test it. Nothing is written, and nothing is recorded: a
+         *     search spends a rate budget a round needs, so this asks the one cheap question that tells a
+         *     session from two strings that look like one.
+         */
+        post: operations["post_x_api_v1_system_x_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActionOut
+         * @description A button a group carries. What it does is the page's business; what it says is not.
+         *
+         *     The label travels with it (2.3.3), and the id is the one word the page does act on - it is
+         *     the map from a name to a handler, which is behaviour and belongs to the page. A group with
+         *     no actions draws no strip.
+         */
+        ActionOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** BatchOut */
         BatchOut: {
             run: components["schemas"]["RunOut"];
@@ -908,6 +1040,11 @@ export interface components {
             options: components["schemas"]["FieldOptionOut"][];
             /** Checks */
             checks: components["schemas"]["FieldOptionOut"][];
+            /**
+             * Presets
+             * @default []
+             */
+            presets: components["schemas"]["FieldOptionOut"][];
             /** Drop Count */
             drop_count?: number | null;
             /**
@@ -1012,6 +1149,11 @@ export interface components {
             hint: string;
             /** Fields */
             fields: components["schemas"]["FieldOut"][];
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["ActionOut"][];
             /**
              * Note
              * @default
@@ -1530,6 +1672,102 @@ export interface components {
              * @default
              */
             delta: string;
+        };
+        /**
+         * SystemFormOut
+         * @description 系统设置: this machine's own wiring - the LLM endpoint, the X session, the log level.
+         *
+         *     The blocks are a chain's 设定 blocks on purpose: one shape, so the two pages are drawn by
+         *     the same renderer and a row cannot mean one thing here and another there. `path` is the
+         *     file the rows are written to, which is the one thing this page has and a chain's does not.
+         */
+        SystemFormOut: {
+            /** Path */
+            path: string;
+            /** Blocks */
+            blocks: components["schemas"]["BlockOut"][];
+        };
+        /**
+         * SystemIn
+         * @description A patch keyed by each row's own path in the file (`llm.base_url`).
+         */
+        SystemIn: {
+            /** Patch */
+            patch?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SystemModelsOut
+         * @description What `/models` answered, and which row the answer is for.
+         *
+         *     `apply_to` travels so the page can offer the list on the right row without learning a key
+         *     name - the same reason the rows themselves arrive composed (8.9.1).
+         */
+        SystemModelsOut: {
+            /** Ok */
+            ok: boolean;
+            /**
+             * Models
+             * @default []
+             */
+            models: string[];
+            /**
+             * Apply To
+             * @default
+             */
+            apply_to: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /**
+         * SystemTestLineOut
+         * @description One key's probe: the row it came from, and what the gateway answered it.
+         */
+        SystemTestLineOut: {
+            /** Label */
+            label: string;
+            /** Ok */
+            ok: boolean;
+            /** Note */
+            note: string;
+            /** Status */
+            status?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Chars */
+            chars?: number | null;
+            /**
+             * Finish Reason
+             * @default
+             */
+            finish_reason: string;
+        };
+        /**
+         * SystemTestOut
+         * @description One small real call per configured key, in the order a round would try them (8.9.7).
+         */
+        SystemTestOut: {
+            /** Ok */
+            ok: boolean;
+            /** Lines */
+            lines: components["schemas"]["SystemTestLineOut"][];
+        };
+        /**
+         * SystemXOut
+         * @description Whether the X session still works, in the client's own words (8.9.10).
+         *
+         *     One sentence rather than 测试连接's line per key: there is one session, and it either is
+         *     logged in or says why it is not.
+         */
+        SystemXOut: {
+            /** Ok */
+            ok: boolean;
+            /** Note */
+            note: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2484,6 +2722,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemovedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_form_api_v1_system_form_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemFormOut"];
+                };
+            };
+        };
+    };
+    put_system_api_v1_system_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemFormOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_models_api_v1_system_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemModelsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_test_api_v1_system_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_x_api_v1_system_x_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemXOut"];
                 };
             };
             /** @description Validation Error */
