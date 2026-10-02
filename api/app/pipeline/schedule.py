@@ -14,6 +14,7 @@ creates one round and leaves the rest alone.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from .. import config
 from . import run as pipeline_run
+from ..macro import service as macro_service
 
 log = logging.getLogger("crypto-hunter.schedule")
 
@@ -239,6 +241,10 @@ def _loop() -> None:
             tick()
         except Exception:  # a broken tick must not take the ticker down
             log.exception("tick failed")
+        try:
+            macro_tick()
+        except Exception:
+            log.exception("macro tick failed")
 
 
 def start() -> None:
@@ -269,3 +275,47 @@ def stop() -> None:
         pool, _executor = _executor, None
     if pool is not None:
         pool.shutdown(wait=False)
+
+#: Hour slots with a macro collection in flight. Submission marks the slot
+#: before queueing (a tick landing in between has to see it), like _live does
+#: for rounds. Finished slots are never resubmitted: run_slot is idempotent,
+#: but the pool should not spend an hour re-reading a slot that answered.
+_macro_live: set[str] = set()
+
+
+def submit_macro(slot: str) -> bool:
+    """Queue one macro slot. False when it is already running."""
+    with _lock:
+        if slot in _macro_live:
+            return False
+        if macro_service.slot_done(slot):
+            return False
+        _macro_live.add(slot)
+    try:
+        future = executor().submit(_macro_work, slot)
+    except BaseException:
+        with _lock:
+            _macro_live.discard(slot)
+        raise
+    future.add_done_callback(lambda _future: _macro_live.discard(slot))
+    return True
+
+
+def _macro_work(slot: str) -> dict:
+    try:
+        return macro_service.run_slot(slot)
+    except Exception:
+        log.exception("macro slot %s failed", slot)
+        return {"slot": slot, "error": "failed"}
+
+
+def macro_tick(now: datetime | None = None) -> str | None:
+    """Start the macro slot that is due. At most one per hour; a running slot
+    waits for the next tick instead of starting twice."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    slot = macro_service.current_slot(now)
+    if submit_macro(slot):
+        log.info("macro slot %s queued", slot)
+        return slot
+    return None

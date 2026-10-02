@@ -224,3 +224,91 @@ CREATE TABLE IF NOT EXISTS search_jobs (
   started_at  TEXT NOT NULL,
   finished_at TEXT
 );
+
+-- Macro track: coin-news hotspots. New tables only; nothing existing changes.
+-- Flow: macro_sources -> macro_items (dedup by fingerprint) -> selected ->
+-- macro_events via macro_event_items -> macro_digests. macro_runs makes the
+-- hourly slot idempotent the same way runs.run_key does for rounds.
+
+CREATE TABLE IF NOT EXISTS macro_sources (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'rss',
+  url TEXT NOT NULL,
+  tier TEXT NOT NULL DEFAULT 'media',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS macro_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL REFERENCES macro_sources(id),
+  fingerprint TEXT NOT NULL UNIQUE,
+  url TEXT,
+  title TEXT NOT NULL,
+  summary TEXT,
+  published_at TEXT,
+  fetched_at TEXT NOT NULL,
+  score1 REAL,
+  score2 REAL,
+  score_avg REAL,
+  selected INTEGER NOT NULL DEFAULT 0,
+  title_zh TEXT,
+  summary_zh TEXT,
+  reason TEXT,
+  project TEXT,
+  sector TEXT,
+  morph TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS macro_events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT,
+  heat REAL NOT NULL DEFAULT 0,
+  sources_count INTEGER NOT NULL DEFAULT 0,
+  items_count INTEGER NOT NULL DEFAULT 0,
+  is_new INTEGER NOT NULL DEFAULT 0,
+  is_rising INTEGER NOT NULL DEFAULT 0,
+  locked INTEGER NOT NULL DEFAULT 0,
+  first_seen TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS macro_event_items (
+  event_id TEXT NOT NULL REFERENCES macro_events(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES macro_items(id) ON DELETE CASCADE,
+  manual INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (event_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS macro_digests (
+  kind TEXT NOT NULL,
+  day TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (kind, day)
+);
+
+CREATE TABLE IF NOT EXISTS macro_runs (
+  id TEXT PRIMARY KEY,
+  run_key TEXT NOT NULL UNIQUE,
+  slot TEXT NOT NULL,
+  status TEXT NOT NULL,
+  counts_json TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS macro_favorites (
+  event_id TEXT PRIMARY KEY REFERENCES macro_events(id) ON DELETE CASCADE,
+  saved_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_macro_items_selected ON macro_items(selected, score_avg DESC);
+CREATE INDEX IF NOT EXISTS idx_macro_items_pub ON macro_items(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_macro_events_heat ON macro_events(heat DESC);
+CREATE INDEX IF NOT EXISTS idx_macro_event_items_item ON macro_event_items(item_id);

@@ -38,7 +38,9 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 9 added `favorites.kept`: the row is now either a card the reader collected or a record a
 #: CA search left behind. A search writes its card with kept = 0, so a token can be searched
 #: and then collected without a second row for it; the shelf reads `kept = 1` only.
-SCHEMA_VERSION = 10
+#: 11 added the macro track tables (coin-news hotspots): items, events,
+#: digests, runs and event favorites. Fresh tables only, no migration.
+SCHEMA_VERSION = 11
 
 
 def now_iso() -> str:

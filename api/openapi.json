@@ -1462,6 +1462,489 @@
     }
    }
   },
+  "/api/v1/macro/items": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "List Items",
+    "description": "The feed: everything collected, or the picked ones only.",
+    "operationId": "list_items_api_v1_macro_items_get",
+    "parameters": [
+     {
+      "name": "selected_only",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Selected Only"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MacroItemOut"
+         },
+         "title": "Response List Items Api V1 Macro Items Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/events": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "List Events",
+    "description": "The hotspot board, hottest first or latest first.",
+    "operationId": "list_events_api_v1_macro_events_get",
+    "parameters": [
+     {
+      "name": "sort",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "heat",
+       "title": "Sort"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "default": 50,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MacroEventOut"
+         },
+         "title": "Response List Events Api V1 Macro Events Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/events/{event_id}": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Get Event",
+    "operationId": "get_event_api_v1_macro_events__event_id__get",
+    "parameters": [
+     {
+      "name": "event_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Event Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MacroEventDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/digests/latest": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Latest Digest",
+    "operationId": "latest_digest_api_v1_macro_digests_latest_get",
+    "parameters": [
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "daily",
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MacroDigestOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/digests/{day}": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Get Digest",
+    "operationId": "get_digest_api_v1_macro_digests__day__get",
+    "parameters": [
+     {
+      "name": "day",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Day"
+      }
+     },
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "daily",
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MacroDigestOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/topics": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "List Topics",
+    "description": "The three label dimensions with counts, over the picked items.",
+    "operationId": "list_topics_api_v1_macro_topics_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/MacroTopicOut"
+         },
+         "type": "array",
+         "title": "Response List Topics Api V1 Macro Topics Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/search": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Search Items",
+    "operationId": "search_items_api_v1_macro_search_get",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Q"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100,
+       "default": 30,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MacroItemOut"
+         },
+         "title": "Response Search Items Api V1 Macro Search Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/favorites": {
+   "get": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "List Favorites",
+    "description": "The event half of the shelf: coin cards stay on /favorites.",
+    "operationId": "list_favorites_api_v1_macro_favorites_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/MacroEventOut"
+         },
+         "type": "array",
+         "title": "Response List Favorites Api V1 Macro Favorites Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Keep Favorite",
+    "operationId": "keep_favorite_api_v1_macro_favorites_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MacroFavoriteIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MacroEventOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/favorites/{event_id}": {
+   "delete": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Forget Favorite",
+    "operationId": "forget_favorite_api_v1_macro_favorites__event_id__delete",
+    "parameters": [
+     {
+      "name": "event_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Event Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RemovedOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/macro/collect": {
+   "post": {
+    "tags": [
+     "macro"
+    ],
+    "summary": "Trigger Collect",
+    "description": "Run the current hour slot now. Accepted immediately; the slot itself is\nidempotent, so a tick landing in between collects nothing twice.",
+    "operationId": "trigger_collect_api_v1_macro_collect_post",
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MacroCollectOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/system/form": {
    "get": {
     "tags": [
@@ -3398,6 +3881,428 @@
     ],
     "title": "LookupIn",
     "description": "An address to search. The chain is not part of the ask: an address implies it, and the\nreader typing one does not necessarily know which chain it is on (`app/lookup.py`\n`resolve` answers that from the feed, deepest chain first)."
+   },
+   "MacroCollectOut": {
+    "properties": {
+     "accepted": {
+      "type": "boolean",
+      "title": "Accepted"
+     },
+     "slot": {
+      "type": "string",
+      "title": "Slot"
+     }
+    },
+    "type": "object",
+    "required": [
+     "accepted",
+     "slot"
+    ],
+    "title": "MacroCollectOut"
+   },
+   "MacroDigestEventOut": {
+    "properties": {
+     "event_id": {
+      "type": "string",
+      "title": "Event Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "heat": {
+      "type": "number",
+      "title": "Heat",
+      "default": 0.0
+     }
+    },
+    "type": "object",
+    "required": [
+     "event_id",
+     "title"
+    ],
+    "title": "MacroDigestEventOut"
+   },
+   "MacroDigestOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "day": {
+      "type": "string",
+      "title": "Day"
+     },
+     "intro": {
+      "type": "string",
+      "title": "Intro",
+      "default": ""
+     },
+     "sections": {
+      "items": {
+       "$ref": "#/components/schemas/MacroDigestSectionOut"
+      },
+      "type": "array",
+      "title": "Sections",
+      "default": []
+     },
+     "events": {
+      "items": {
+       "$ref": "#/components/schemas/MacroDigestEventOut"
+      },
+      "type": "array",
+      "title": "Events",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "day"
+    ],
+    "title": "MacroDigestOut"
+   },
+   "MacroDigestSectionOut": {
+    "properties": {
+     "sector": {
+      "type": "string",
+      "title": "Sector"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/MacroItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "sector"
+    ],
+    "title": "MacroDigestSectionOut"
+   },
+   "MacroEventDetailOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "heat": {
+      "type": "number",
+      "title": "Heat",
+      "default": 0.0
+     },
+     "sources_count": {
+      "type": "integer",
+      "title": "Sources Count",
+      "default": 0
+     },
+     "items_count": {
+      "type": "integer",
+      "title": "Items Count",
+      "default": 0
+     },
+     "is_new": {
+      "type": "boolean",
+      "title": "Is New",
+      "default": false
+     },
+     "is_rising": {
+      "type": "boolean",
+      "title": "Is Rising",
+      "default": false
+     },
+     "first_seen": {
+      "type": "string",
+      "title": "First Seen"
+     },
+     "last_seen": {
+      "type": "string",
+      "title": "Last Seen"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/MacroItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "first_seen",
+     "last_seen"
+    ],
+    "title": "MacroEventDetailOut"
+   },
+   "MacroEventOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "heat": {
+      "type": "number",
+      "title": "Heat",
+      "default": 0.0
+     },
+     "sources_count": {
+      "type": "integer",
+      "title": "Sources Count",
+      "default": 0
+     },
+     "items_count": {
+      "type": "integer",
+      "title": "Items Count",
+      "default": 0
+     },
+     "is_new": {
+      "type": "boolean",
+      "title": "Is New",
+      "default": false
+     },
+     "is_rising": {
+      "type": "boolean",
+      "title": "Is Rising",
+      "default": false
+     },
+     "first_seen": {
+      "type": "string",
+      "title": "First Seen"
+     },
+     "last_seen": {
+      "type": "string",
+      "title": "Last Seen"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "first_seen",
+     "last_seen"
+    ],
+    "title": "MacroEventOut"
+   },
+   "MacroFavoriteIn": {
+    "properties": {
+     "event_id": {
+      "type": "string",
+      "title": "Event Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "event_id"
+    ],
+    "title": "MacroFavoriteIn"
+   },
+   "MacroItemOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "source_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Name"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "published_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Published At"
+     },
+     "score_avg": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Score Avg"
+     },
+     "selected": {
+      "type": "boolean",
+      "title": "Selected",
+      "default": false
+     },
+     "title_zh": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title Zh"
+     },
+     "summary_zh": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary Zh"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project"
+     },
+     "sector": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sector"
+     },
+     "morph": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Morph"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "source_id",
+     "title"
+    ],
+    "title": "MacroItemOut"
+   },
+   "MacroTopicOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "name",
+     "count"
+    ],
+    "title": "MacroTopicOut"
    },
    "MetricOut": {
     "properties": {

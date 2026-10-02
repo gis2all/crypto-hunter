@@ -600,3 +600,76 @@ class LexiconOut(BaseModel):
 
 class ErrorOut(BaseModel):
     detail: str
+
+#: Macro track: one screen is one endpoint, like everywhere else. Items are the
+#: raw feed, events are clustered stories ranked by heat, digests are the daily
+#: briefing, topics aggregate the three label dimensions.
+
+
+class MacroItemOut(BaseModel):
+    id: int
+    source_id: str
+    source_name: str | None = None
+    url: str | None = None
+    title: str
+    summary: str | None = None
+    published_at: str | None = None
+    score_avg: float | None = None
+    selected: bool = False
+    title_zh: str | None = None
+    summary_zh: str | None = None
+    reason: str | None = None
+    project: str | None = None
+    sector: str | None = None
+    morph: str | None = None
+
+
+class MacroEventOut(BaseModel):
+    id: str
+    title: str
+    summary: str | None = None
+    heat: float = 0.0
+    sources_count: int = 0
+    items_count: int = 0
+    is_new: bool = False
+    is_rising: bool = False
+    first_seen: str
+    last_seen: str
+
+
+class MacroEventDetailOut(MacroEventOut):
+    items: list[MacroItemOut] = []
+
+
+class MacroDigestSectionOut(BaseModel):
+    sector: str
+    items: list[MacroItemOut] = []
+
+
+class MacroDigestEventOut(BaseModel):
+    event_id: str
+    title: str
+    heat: float = 0.0
+
+
+class MacroDigestOut(BaseModel):
+    kind: str
+    day: str
+    intro: str = ""
+    sections: list[MacroDigestSectionOut] = []
+    events: list[MacroDigestEventOut] = []
+
+
+class MacroTopicOut(BaseModel):
+    kind: str
+    name: str
+    count: int
+
+
+class MacroCollectOut(BaseModel):
+    accepted: bool
+    slot: str
+
+
+class MacroFavoriteIn(BaseModel):
+    event_id: str

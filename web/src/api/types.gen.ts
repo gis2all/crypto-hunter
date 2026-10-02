@@ -524,6 +524,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/macro/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Items
+         * @description The feed: everything collected, or the picked ones only.
+         */
+        get: operations["list_items_api_v1_macro_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Events
+         * @description The hotspot board, hottest first or latest first.
+         */
+        get: operations["list_events_api_v1_macro_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/events/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Event */
+        get: operations["get_event_api_v1_macro_events__event_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/digests/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest Digest */
+        get: operations["latest_digest_api_v1_macro_digests_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/digests/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Digest */
+        get: operations["get_digest_api_v1_macro_digests__day__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Topics
+         * @description The three label dimensions with counts, over the picked items.
+         */
+        get: operations["list_topics_api_v1_macro_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Items */
+        get: operations["search_items_api_v1_macro_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Favorites
+         * @description The event half of the shelf: coin cards stay on /favorites.
+         */
+        get: operations["list_favorites_api_v1_macro_favorites_get"];
+        put?: never;
+        /** Keep Favorite */
+        post: operations["keep_favorite_api_v1_macro_favorites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/favorites/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Forget Favorite */
+        delete: operations["forget_favorite_api_v1_macro_favorites__event_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/macro/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Collect
+         * @description Run the current hour slot now. Accepted immediately; the slot itself is
+         *     idempotent, so a tick landing in between collects nothing twice.
+         */
+        post: operations["trigger_collect_api_v1_macro_collect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/form": {
         parameters: {
             query?: never;
@@ -1396,6 +1583,188 @@ export interface components {
         LookupIn: {
             /** Ca */
             ca: string;
+        };
+        /** MacroCollectOut */
+        MacroCollectOut: {
+            /** Accepted */
+            accepted: boolean;
+            /** Slot */
+            slot: string;
+        };
+        /** MacroDigestEventOut */
+        MacroDigestEventOut: {
+            /** Event Id */
+            event_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+        };
+        /** MacroDigestOut */
+        MacroDigestOut: {
+            /** Kind */
+            kind: string;
+            /** Day */
+            day: string;
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
+            /**
+             * Sections
+             * @default []
+             */
+            sections: components["schemas"]["MacroDigestSectionOut"][];
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["MacroDigestEventOut"][];
+        };
+        /** MacroDigestSectionOut */
+        MacroDigestSectionOut: {
+            /** Sector */
+            sector: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["MacroItemOut"][];
+        };
+        /** MacroEventDetailOut */
+        MacroEventDetailOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+            /**
+             * Sources Count
+             * @default 0
+             */
+            sources_count: number;
+            /**
+             * Items Count
+             * @default 0
+             */
+            items_count: number;
+            /**
+             * Is New
+             * @default false
+             */
+            is_new: boolean;
+            /**
+             * Is Rising
+             * @default false
+             */
+            is_rising: boolean;
+            /** First Seen */
+            first_seen: string;
+            /** Last Seen */
+            last_seen: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["MacroItemOut"][];
+        };
+        /** MacroEventOut */
+        MacroEventOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+            /**
+             * Sources Count
+             * @default 0
+             */
+            sources_count: number;
+            /**
+             * Items Count
+             * @default 0
+             */
+            items_count: number;
+            /**
+             * Is New
+             * @default false
+             */
+            is_new: boolean;
+            /**
+             * Is Rising
+             * @default false
+             */
+            is_rising: boolean;
+            /** First Seen */
+            first_seen: string;
+            /** Last Seen */
+            last_seen: string;
+        };
+        /** MacroFavoriteIn */
+        MacroFavoriteIn: {
+            /** Event Id */
+            event_id: string;
+        };
+        /** MacroItemOut */
+        MacroItemOut: {
+            /** Id */
+            id: number;
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /** Published At */
+            published_at?: string | null;
+            /** Score Avg */
+            score_avg?: number | null;
+            /**
+             * Selected
+             * @default false
+             */
+            selected: boolean;
+            /** Title Zh */
+            title_zh?: string | null;
+            /** Summary Zh */
+            summary_zh?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Project */
+            project?: string | null;
+            /** Sector */
+            sector?: string | null;
+            /** Morph */
+            morph?: string | null;
+        };
+        /** MacroTopicOut */
+        MacroTopicOut: {
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
         };
         /** MetricOut */
         MetricOut: {
@@ -2731,6 +3100,322 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_api_v1_macro_items_get: {
+        parameters: {
+            query?: {
+                selected_only?: boolean;
+                limit?: number;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_events_api_v1_macro_events_get: {
+        parameters: {
+            query?: {
+                sort?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_event_api_v1_macro_events__event_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroEventDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_digest_api_v1_macro_digests_latest_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroDigestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_digest_api_v1_macro_digests__day__get: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroDigestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_topics_api_v1_macro_topics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroTopicOut"][];
+                };
+            };
+        };
+    };
+    search_items_api_v1_macro_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_favorites_api_v1_macro_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroEventOut"][];
+                };
+            };
+        };
+    };
+    keep_favorite_api_v1_macro_favorites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MacroFavoriteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_favorite_api_v1_macro_favorites__event_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_collect_api_v1_macro_collect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroCollectOut"];
                 };
             };
         };

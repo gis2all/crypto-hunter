@@ -1,0 +1,55 @@
+# Macro track: coin-news hotspots. One file, like one chain file.
+# Collection runs hourly; the daily digest builds on the 08:00 slot (Asia/Shanghai).
+
+cadence:
+  collect_minutes: 60
+  digest_hour: 8
+  timezone: Asia/Shanghai
+
+selection:
+  score_threshold: 3.5
+  min_single_score: 2.5
+  keep_per_day: 50
+  prescreen_max_age_days: 14
+
+heat:
+  window_hours: 48
+  half_life_hours: 24
+
+topics:
+  sectors: [L1, L2, DeFi, NFT, GameFi, Meme, AI, RWA, Stablecoin, Infra, CEX, Regulation, Security, Wallet, Bridge]
+  morphs: [announcement, funding, listing, hack, regulation, research, opinion, data, partnership]
+
+# v1 reads RSS and generic JSON. X accounts come later: the type field already
+# reserves the slot, the fetcher raises a clear error for unknown types.
+sources:
+  - id: coindesk
+    name: CoinDesk
+    type: rss
+    url: https://www.coindesk.com/arc/outboundfeeds/rss/
+    tier: media
+    enabled: true
+  - id: cointelegraph
+    name: Cointelegraph
+    type: rss
+    url: https://cointelegraph.com/rss
+    tier: media
+    enabled: true
+  - id: decrypt
+    name: Decrypt
+    type: rss
+    url: https://decrypt.co/feed
+    tier: media
+    enabled: true
+  - id: bitcoinmag
+    name: Bitcoin Magazine
+    type: rss
+    url: https://bitcoinmagazine.com/feed
+    tier: media
+    enabled: true
+  - id: cryptoslate
+    name: CryptoSlate
+    type: rss
+    url: https://cryptoslate.com/feed/
+    tier: media
+    enabled: true
