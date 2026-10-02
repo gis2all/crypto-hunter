@@ -70,6 +70,24 @@ export function Widget({
     );
   }
 
+  if (field.widget === "text" || field.widget === "password") {
+    // The one editable string row in the app (系统设置): a gateway address, a model id, and the
+    // credential box beside them. Left-aligned and as wide as the row leaves - a URL is not a
+    // threshold, and the 108px box the number rows are sized for cuts one in half. The
+    // credential box is this same row wearing `password`: characters hidden, and the browser's
+    // own manager told to stay out of it.
+    const secret = field.widget === "password";
+    return (
+      <input
+        className="str"
+        type={secret ? "password" : "text"}
+        autoComplete={secret ? "new-password" : undefined}
+        value={stringValue(value)}
+        onChange={(e) => onValue(e.target.value)}
+      />
+    );
+  }
+
   if (field.widget === "bool") {
     return (
       <label className="chk">

@@ -453,6 +453,70 @@ html{scrollbar-gutter:stable}
 .prow.wide>label{min-width:0}
 .prow.wide .field:has(input[type=checkbox]):not(:has(input[type=text], input[type=number])){flex:1 0 auto;max-width:100%;margin-left:0;padding-left:0;justify-content:flex-end}
 
+/* 系统设置's editable string rows (2026-10-02). `.prow input` is sized and aligned for a
+   threshold - 108px, right-aligned - and a gateway address is neither: it is the one box on
+   the page holding a sentence rather than a number. So it takes the room the row leaves and
+   reads left to right. Nothing else draws one: a chain's rows are numbers, choices and boxes. */
+.prow .field>input.str{flex:1 1 auto;width:auto;min-width:0;text-align:left}
+
+/* 系统设置 draws every row as two tracks: one column of controls, and one column for the marks
+   that follow them (2026-10-02, user: 调用右侧，输入框应该左右对齐, then 端点、搜索也要做成类似调用
+   这种对齐，目前输入框太长了).
+
+   Two things used to break the column. A unit is a flex item after the box, so 单次超时's box
+   ended 16px left of 重试次数's (measured on 调用 at 1440: right edge 1380 with a unit, 1396
+   without); and a text box took whatever the row had left, so 网关地址 stretched to 903px while
+   the 模型 row under it stretched to 979 the moment nothing sat beside it. Both are the same
+   mistake: the box was sized by what happened to sit next to it instead of by its group.
+
+   So a group names its own control width - 260 for a row holding a sentence, 80 for a number
+   (the box's own width, `proto.css`), 112 for a choice, because 默认（INFO） is the longest label
+   this page draws - and, in `--mark-w`, the room its marks need: the widest is 已配置 · <首6…尾4>
+   at 104px, 秒 is 11px, 日志等级 has no mark at all. The grid then does what flex rows could
+   not: the control holds track one wherever the marks are, a mark starts 6px after it and reads
+   left to right, and a row with nothing to put there leaves the track empty rather than pulling
+   the control to the right edge and 预设 40px away from the box it types into.
+
+   `:has()` is what lets a group say this instead of each row: a page that adds a row cannot land
+   it in a column of its own. */
+#view-system .pgroup{--ctl-w:112px;--mark-w:0px}
+#view-system .pgroup:has(.prow .field>input.str){--ctl-w:260px;--mark-w:112px}
+#view-system .pgroup:has(.prow .field>.unit){--ctl-w:80px;--mark-w:17px}
+
+/* Only a field with something drawn in it is a grid: an environment-owned row arrives as one bare
+   text node (`Widget`'s last branch), which has no box to line up and reads at the row's right
+   edge the way it always has. */
+#view-system .prow .field:has(> *){display:grid;align-items:center;justify-content:end;
+  column-gap:0;grid-template-columns:var(--ctl-w) minmax(0, var(--mark-w))}
+#view-system .prow .field>*:first-child{grid-column:1;width:var(--ctl-w);min-width:0}
+#view-system .prow .field>*:not(:first-child){grid-column:2;min-width:0;padding-left:6px;
+  white-space:nowrap}
+#view-system .prow .field>.pick-wrap .pick-cur{overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* Where the picker *is* the control, it takes the group's column and holds its label the same
+   way the number boxes hold theirs. */
+#view-system .pgroup:not(:has(.prow .field>input.str)) .prow .field>.pick-wrap>.btn{
+  width:var(--ctl-w);padding:0 6px;gap:4px;justify-content:space-between}
+
+/* The endpoint's two probes - 获取模型 / 测试连接 - sit on a strip of their own under the rows
+   they act on rather than in the group header: what a gateway answers is a sentence, and a
+   header strip has no room for one. */
+.pgroup-acts{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap}
+.pact-note{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:0;
+  overflow-wrap:anywhere}
+.pact-note.bad{color:var(--danger-fg)}
+
+/* 测试连接 asks every configured key (8.9.7), so its answer is a line per key instead of one
+   sentence: the row the key came from, then the sentence it earned. The block takes the room
+   left of the buttons and drops under them when there is none; only the verdict wears the red,
+   so which key failed stays legible at a glance. */
+.pact-lines{display:flex;flex-direction:column;gap:2px;flex:1 1 260px;min-width:0}
+.pact-line{display:flex;align-items:baseline;gap:5px;min-width:0;
+  font-family:var(--mono);font-size:10.5px}
+.pact-line>b{flex:0 0 auto;color:var(--fg-2);font-weight:400}
+.pact-line>span{color:var(--muted);overflow-wrap:anywhere}
+.pact-line.bad>span{color:var(--danger-fg)}
+
 /* The medal strip is an overlay, not a thicker border. A 2px top border left the three
    podium cards 1px taller than the other two, and 1px is a difference a reader looking
    down a row of cards can find. Drawn over the 1px border instead, the strip keeps its
@@ -650,8 +714,17 @@ div.pgroup>.pset{margin-top:auto}
    offers a choice - the topbar's config picker and the settings rows wear this same list, so
    the two cannot drift apart. Pick.tsx owns the behaviour; these are its lines. */
 .pick-wrap{position:relative;display:inline-flex}
+/* A menu long enough to leave the screen (2026-10-02, user): the 36-model candidate list ran
+   past the panel's bottom edge and its tail could not be reached. A menu's length is now the
+   menu's own problem - it scrolls in here - and the bar is drawn by hand, because nothing else
+   in this app scrolls inside itself and the platform's bar is an overlay: a list that stops
+   mid-air with no bar on it reads as a list that was cut off, which is the report this fixes. */
 .pick-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:40;min-width:100%;padding:4px;
-  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow)}
+  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);
+  max-height:264px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.pick-menu::-webkit-scrollbar{width:9px}
+.pick-menu::-webkit-scrollbar-track{background:transparent}
+.pick-menu::-webkit-scrollbar-thumb{background:var(--border)}
 .pick-item{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border:0;
   background:none;color:var(--fg);font:inherit;font-size:11.5px;white-space:nowrap;
   text-align:left;cursor:pointer}
@@ -726,23 +799,31 @@ div.pgroup>.pset{margin-top:auto}
    a second shade of text. */
 .nav-shelf{padding:0}
 
+/* 系统设置 is a rail row because it belongs to no chain (user, 2026-10-02), and it is pinned
+   under the list rather than in it: the chains and the two shelves are things you read, and
+   this is the machine they read with - the theme switch below it is the other global row.
+   .nav is a flex *item*, so margin-top:auto on a child of it does nothing until the list
+   itself is a column flex box - that pair is the whole rule, and a rail with three chains
+   and a rail with one both put this row at the bottom of the list. */
+.nav{display:flex;flex-direction:column}
+.nav-foot{margin-top:auto}
+
 /* The shelf's own strip, standing where the topbar stands so the page does not jump between a
-   radar and the shelf. The title carries no count: the cards are the count, and the chips and
-   the sort are what a reader reads off this bar. */
-#view-favorites .fav-bar,#view-lookup .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+   radar and the shelf. The title carries no count: the cards are the count. The shelf's 来源
+   chips and its sort came out of this bar and into the panel beside its cards (2026-10-02,
+   user), so what is left on it is the bulk fold, the box and 导出. */
+#view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
   gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
 .fav-title{display:flex;align-items:center;gap:7px}
 .fav-title b{font-size:15px;font-weight:600}
 .fav-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
-.fav-chips{display:flex}
 .chip{height:var(--ctrl-h);padding:0 9px;border:1px solid var(--border);background:var(--surface);
   color:var(--muted);font-family:var(--mono);font-size:10.5px;line-height:1;cursor:pointer;white-space:nowrap}
 .chip+.chip{margin-left:-1px}
+/* What is left is the card's own chip (Card.tsx, `.chips .chip`): the bar no longer wears one,
+   because 来源 is a list of rows like 排序 (2026-10-02, user). The hover stays for the card;
+   `.on` went with the row that was the only thing able to be selected. */
 .chip:hover{background:var(--surface-warm);color:var(--fg-2)}
-.chip.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
-/* The trigger keeps one width, the longer label's: a control that changes size when the
-   reader picks the other sort drags the button beside it back and forth. */
-.fav-sort{width:106px}
 /* Wide enough for a whole CA - a filter box that cannot show the thing being filtered on the
    one screen where CAs are what you copy is a box that hides its own answer. */
 .fav-search{height:var(--ctrl-h);width:322px;padding:0 7px;border:1px solid var(--border);

@@ -1,35 +1,21 @@
-import { Moon, Search, Star, Sun } from "lucide-react";
+import { Moon, Search, Settings, Star, Sun } from "lucide-react";
 
 import type { Chain } from "../../api/client";
-import { ArcMark } from "../../components/ArcMark";
-import { RobinhoodMark } from "../../components/RobinhoodMark";
 import { Icon } from "../../components/Icon";
 import { Mark } from "../../components/Mark";
+import { chainIdMark } from "../../components/chainMark";
 import type { Theme } from "../../theme";
 
-/** Each chain can carry its own mark - the chain's own artwork, not one of ours. Arc and
- *  Robinhood have one; a chain without a mark is the label alone, which is what BSC will be
- *  until its artwork is in. Kept here rather than in the chain payload: the API answers what a
- *  chain *is* (id, label, enabled), not how this screen draws it. */
-function chainIdMark(id: string) {
-  if (id === "arc") {
-    return <ArcMark size={14} />;
-  }
-  if (id === "robinhood") {
-    return <RobinhoodMark size={14} />;
-  }
-  return null;
-}
-
-/** The three places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is one
- *  shelf for every chain, and 搜索 reads one address from any chain. Neither of the last
- *  two is a row in the chain list: a kept card, and a searched one, can both come from a
- *  chain this app does not screen at all. */
-export type Place = "radar" | "favorites" | "lookup";
+/** The places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is one shelf for
+ *  every chain; 搜索 reads one address from any chain; 系统设置 is this machine - the gateway,
+ *  the X session, the log level. None of the last three is a row in the chain list: a kept
+ *  card, a searched one and a gateway's key can all belong to something this app never
+ *  screens. */
+export type Place = "radar" | "favorites" | "lookup" | "system";
 
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
- *  chain, not a menu, and a row nobody can open is not a menu item. Settings is a tab in
- *  the topbar, not a rail entry. */
+ *  chain, not a menu, and a row nobody can open is not a menu item. A chain's 设定 is a tab in
+ *  the topbar, not a rail entry - but 系统设置 is one, because it is not a chain's to own. */
 
 export function Rail({
   chains,
@@ -95,6 +81,19 @@ export function Rail({
           >
             <Icon as={Star} size={14} />
             收藏
+          </div>
+        </div>
+        {/* The one row that is neither a chain nor a shelf: this machine's own wiring. It sits
+            at the bottom of the list because it is global, like the theme switch below it, and
+            it is a Place all the same - so exactly one row lights (8.3.8) and it can be left
+            for on a reload (prefs). */}
+        <div className="nav-foot">
+          <div
+            className={"nav-i" + (place === "system" ? " on" : "")}
+            onClick={() => onSelectPlace("system")}
+          >
+            <Icon as={Settings} size={14} />
+            系统设置
           </div>
         </div>
       </nav>
