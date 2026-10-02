@@ -24,6 +24,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any, Sequence
 from urllib.parse import urlsplit
@@ -43,6 +44,13 @@ DEFAULT_CLI = 'twitter'
 #: retries a 429 three times; the timeout is the backstop for the retry that never returns.
 SEARCH_SIZE = 20
 QUERY_TIMEOUT = 120.0
+#: What the 测试连接 button is allowed to spend (系统设置). A person is waiting on this one, so it
+#: takes the round's 120s backstop down to something a button can fail at.
+PROBE_TIMEOUT = 30.0
+#: What that button asks: the account the cookies claim to be. The cheapest real read the client
+#: has - one profile, no query, nothing spent against the search budget a round needs - and the
+#: one answer that tells a session apart from two strings that look like one.
+PROBE_ARGV = ('whoami', '--json')
 #: How many of an account's own posts a round reads. Twenty is one page of the client's
 #: own output and roughly two weeks of a project that posts daily, which is what "is
 #: anyone still here" needs: the text of each post plus the engagement beside it.
@@ -132,6 +140,22 @@ def rows_of(tweets: Sequence[dict]) -> list[TweetRow]:
     return out
 
 
+def _probe_refusal(payload: Any, proc) -> str:
+    """What the client said when the session was refused, in its own words where it had any.
+
+    `--json` prints the failure to stdout as `{"ok": false, "error": {"message": ...}}` and
+    exits 1, so the payload is the sentence worth showing; the tail of stderr is the fallback
+    for a client that died before it could write one.
+    """
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"])
+    tail = ' '.join((proc.stderr or '').split()[-24:])
+    argv = getattr(proc, 'args', None)
+    return tail or ("%s rc=%s" % (argv[0] if argv else 'x cli', proc.returncode))
+
+
 @dataclass
 class _Author:
     """One account as the tweets saw it. Mutable because two queries add to one row."""
@@ -175,13 +199,26 @@ class XEngine:
         ct0 = self.ct0 or os.environ.get('CH_X_CT0', '').strip()
         if not token or not ct0:
             raise RuntimeError('x search needs CH_X_AUTH_TOKEN and CH_X_CT0'
-                               ' (see config/search.env.example)')
+                               ' (see config/system.yaml.example)')
         return token, ct0
 
     def _ask(self, text: str, product: str) -> list[dict]:
         """One query, as the tweets it returned."""
         return self._run([self.cli, 'search', text, '-t', product, '--max', str(self.size),
                           '--json'])
+
+    def _exec(self, argv: list[str], timeout: float | None = None):
+        """One subprocess with the session in its environment.
+
+        The credentials and the environment are assembled here, once, because a search and the
+        测试连接 probe have to spend the same cookie the same way; `_run` reads rows out of this
+        call and `probe` reads its exit code and its payload.
+        """
+        token, ct0 = self.credentials()
+        env = {**os.environ, 'TWITTER_AUTH_TOKEN': token, 'TWITTER_CT0': ct0}
+        return subprocess.run(argv, capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', env=env,
+                              timeout=timeout if timeout is not None else self.timeout)
 
     def _run(self, argv: list[str]) -> list[dict]:
         """One subprocess, as the rows the client printed.
@@ -192,10 +229,7 @@ class XEngine:
         """
         if self.runner is not None:
             return list(self.runner(argv) or [])
-        token, ct0 = self.credentials()
-        env = {**os.environ, 'TWITTER_AUTH_TOKEN': token, 'TWITTER_CT0': ct0}
-        proc = subprocess.run(argv, capture_output=True, text=True, encoding='utf-8',
-                              errors='replace', env=env, timeout=self.timeout)
+        proc = self._exec(argv)
         if proc.returncode != 0:
             raise RuntimeError('x cli rc=%s: %s' % (proc.returncode,
                                                    ' '.join((proc.stderr or '').split()[-24:])))
@@ -203,6 +237,53 @@ class XEngine:
         if isinstance(payload, dict):
             return list(payload.get('data') or [])
         return list(payload or [])
+
+    # -- whether this session still works -----------------------------------------------
+    def probe(self) -> dict:
+        """The account these cookies claim to be, or the refusal in the client's own words.
+
+        `获取模型` has a `/models` that proves a door opens; X has no such free door, and the
+        thing an operator is asking with this button is not "does the internet work" but "is this
+        still a logged-in session" - so it asks for the one page only a session can read. A
+        refusal comes back in `note` rather than as an exception, the shape `llm.probe` uses: a
+        401 is the reading the button was pressed for, and printing it beside the button is the
+        whole point.
+
+        Never raises, never records, touches no cooldown: this is a button, not a round, and a
+        session resting from a 429 is still the session this button is allowed to ask about.
+        """
+        out: dict = {"ok": False, "note": "", "username": "", "latency_ms": 0}
+        started = time.time()
+        try:
+            proc = self._exec([self.cli, *PROBE_ARGV], timeout=PROBE_TIMEOUT)
+        except RuntimeError as exc:  # the credentials are missing, and it says which
+            out["note"] = str(exc)
+            return out
+        except OSError as exc:  # the client is not installed, or is not runnable
+            out["note"] = "%s 无法执行：%s" % (self.cli, exc)
+            return out
+        except subprocess.SubprocessError as exc:  # it hung past PROBE_TIMEOUT
+            out["note"] = "%s 超过 %g 秒未响应：%s" % (self.cli, PROBE_TIMEOUT, exc)
+            return out
+        out["latency_ms"] = int((time.time() - started) * 1000)
+        payload: Any = None
+        try:
+            payload = json.loads(proc.stdout)
+        except ValueError:
+            payload = None
+        if proc.returncode != 0 or not isinstance(payload, dict) or payload.get("ok") is False:
+            out["note"] = _probe_refusal(payload, proc)
+            return out
+        user = payload.get("data")
+        user = user.get("user") if isinstance(user, dict) else None
+        handle = str((user or {}).get("screenName") or (user or {}).get("username") or "")
+        out["ok"] = True
+        out["username"] = handle
+        if handle:
+            out["note"] = "连接正常 · %d 毫秒 · 会话 @%s" % (out["latency_ms"], handle)
+        else:
+            out["note"] = "连接正常 · %d 毫秒" % out["latency_ms"]
+        return out
 
     # -- one token ---------------------------------------------------------------------
     def search(self, query: str, *, limit: int = 20) -> EngineAnswer:

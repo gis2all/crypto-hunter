@@ -10,6 +10,7 @@ import copy
 import functools
 import io
 import itertools
+import json
 import os
 import secrets
 import shutil
@@ -35,64 +36,126 @@ WEB_DIST = ROOT / "web" / "dist"
 HOST = os.environ.get("CH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CH_PORT", "8787"))
 
-#: The writing stage's endpoint, as a file next to the chain config. A deployment detail
-#: (which gateway, which key) does not belong in a shell profile, and this app runs as one
-#: process, so a file plus a restart is the whole install step.
-LLM_ENV_PATH = Path(os.environ.get("CH_LLM_ENV", str(ROOT / "config" / "llm.env")))
+#: The deployment's own wiring - which gateway answers the writing stage, which X session
+#: carries a search, how loud the log is - in one file next to the chain config. A deployment
+#: detail does not belong in a shell profile, and this app runs as one process, so the file is
+#: the whole install step; the 系统设置 page is that same file with a form in front of it.
+SYSTEM_PATH = Path(os.environ.get("CH_SYSTEM_ENV", str(ROOT / "config" / "system.yaml")))
 
-#: The X search engine's session, in the same shape and for the same reason: which account
-#: answers a search is a deployment detail, and a file next to the chain config is the whole
-#: install step. Read once at import - a rotated cookie takes a restart, which is the price
-#: of not reading a credential file on every token of every round.
-SEARCH_ENV_PATH = Path(os.environ.get("CH_SEARCH_ENV", str(ROOT / "config" / "search.env")))
+#: The only list of what that file may set: the key's path inside it, the environment variable
+#: the rest of the code already reads, and the shape a value has to be. One table, because two
+#: readers walk it - the loader below and the page - and a second copy would let the page offer
+#: a knob nothing reads. A secret is never handed back to a browser, and a 'choice:' tail is the
+#: whole set of answers a save will take.
+SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
+    ("llm.base_url", "CH_LLM_BASE_URL", "text"),
+    ("llm.api_key", "CH_LLM_API_KEY", "secret"),
+    ("llm.api_key_fallback", "CH_LLM_API_KEY_FALLBACK", "secret"),
+    ("llm.model", "CH_LLM_MODEL", "text"),
+    ("llm.reasoning", "CH_LLM_REASONING", "choice:none|minimal|low|medium|high"),
+    ("llm.max_tokens", "CH_LLM_MAX_TOKENS", "int"),
+    ("llm.timeout", "CH_LLM_TIMEOUT", "num"),
+    ("llm.tries", "CH_LLM_TRIES", "int"),
+    ("llm.key_cooldown", "CH_LLM_KEY_COOLDOWN", "num"),
+    ("llm.extra_headers", "CH_LLM_EXTRA_HEADERS", "json"),
+    ("research_workers", "CH_RESEARCH_WORKERS", "int"),
+    ("x.auth_token", "CH_X_AUTH_TOKEN", "secret"),
+    ("x.ct0", "CH_X_CT0", "secret"),
+    ("x.cli", "CH_X_CLI", "text"),
+    ("log_level", "CH_LOG_LEVEL", "choice:DEBUG|INFO|WARNING|ERROR"),
+)
 
-#: What each file put in the environment, and what it put there. A value that is still
-#: exactly this is still that file's to withdraw; anything else means somebody else owns
-#: the variable now and the file must keep its hands off.
+#: What the file put in the environment, and what it put there. A value that is still exactly
+#: this is still the file's to withdraw; anything else means somebody else owns the variable
+#: now and the file must keep its hands off.
 #:
-#: Keyed by path, because two files are read here and re-reading one must not withdraw what
-#: the other set. The LLM file is re-read on every model call, and while the record was one
-#: flat dict that reload deleted the search file's credentials on the first call of every
-#: process - every X search and every timeline after it failed "needs CH_X_AUTH_TOKEN", in a
-#: round that looked like it had simply found nothing.
+#: Keyed by path because two files used to be read here, and re-reading one must not withdraw
+#: what the other set: the LLM file is re-read on every model call, and while the record was
+#: one flat dict that reload deleted the search file's credentials on the first call of every
+#: process - every X search after it failed "needs CH_X_AUTH_TOKEN", in a round that looked
+#: like it had simply found nothing. Both files are one file now and the rule is unchanged:
+#: re-reading one path never reaches for a variable another path owns.
 _FROM_FILE: dict[Path, dict[str, str]] = {}
 
 
+def _dig(document: Mapping, path: str) -> Any:
+    """`document`'s value at `path`, or None where the file has nothing to say."""
+    value: Any = document
+    for part in path.split("."):
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(part)
+    return value
+
+
+def flatten(document: Mapping) -> dict[str, str]:
+    """The variables `document` sets - and only the ones it really sets.
+
+    `null`, a missing key and an empty value all mean the same thing: this file does not
+    configure that variable, so nothing goes into the environment and the code's own default
+    decides. That is what a half-filled copy of the example relies on, and it is why a value is
+    never written as an empty string: `float(os.environ.get("CH_LLM_TIMEOUT", "180"))` would
+    raise on one where the default is what was meant.
+    """
+    out: dict[str, str] = {}
+    for key, name, kind in SYSTEM_KEYS:
+        value = _dig(document, key)
+        if value is None:
+            continue
+        if kind == "json" and isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False)
+        else:
+            text = str(value).strip()
+        if text:
+            out[name] = text
+    return out
+
+
+def file_owner(path: Path | None = None) -> dict[str, str]:
+    """What the file at `path` currently owns in the environment, variable by variable.
+
+    The page reads this to tell a value it can write from one the operating system is holding:
+    a variable the file did not set is never touched by the file, so a row for it is read-only.
+    """
+    return dict(_FROM_FILE.get(path or SYSTEM_PATH, {}))
+
+
 def load_env_file(path: Path | None = None) -> int:
-    """Apply `KEY=VALUE` lines from an env file and return how many were applied.
+    """Apply `config/system.yaml` and return how many variables were set.
 
     Called on every LLM call rather than once at import. That is what makes the file the
-    install step: edit it and the next round picks the change up, delete it and the
-    settings are gone - no restart, and no stale endpoint left behind in `os.environ`.
+    install step: edit it and the next round picks the change up, delete it and the settings
+    are gone - no restart, and no stale endpoint left behind in `os.environ`.
 
-    A real environment variable always wins, including one set after the file was read:
-    that key is simply never touched again.
+    A real environment variable always wins, including one set after the file was read: that
+    key is simply never touched again.
     """
-    path = path or LLM_ENV_PATH
+    path = path or SYSTEM_PATH
     for key, value in list(_FROM_FILE.pop(path, {}).items()):
         if os.environ.get(key) == value:
             del os.environ[key]
     if not path.is_file():
         return 0
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        # A file caught mid-write parses as nothing, and the round it lands in is not the place
+        # to learn that. Everything it owned was withdrawn above, so the code's own defaults
+        # answer - the same state as a file that is not there at all.
+        return 0
     applied = 0
     owned: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for name, value in flatten(document).items():
+        if name in os.environ:
             continue
-        key, value = line.split("=", 1)
-        key, value = key.strip(), value.strip()
-        if not key or key in os.environ:
-            continue
-        os.environ[key] = value
-        owned[key] = value
+        os.environ[name] = value
+        owned[name] = value
         applied += 1
     _FROM_FILE[path] = owned
     return applied
 
 
 load_env_file()
-load_env_file(SEARCH_ENV_PATH)
 
 
 @functools.lru_cache(maxsize=1)
@@ -334,14 +397,18 @@ def _round_trip() -> YAML:
     return writer
 
 
-def _read_document(path: Path) -> Any:
-    """A chain file as the round-trip parser models it - comments and key order and all."""
+def read_document(path: Path) -> Any:
+    """A config file as the round-trip parser models it - comments and key order and all.
+
+    Public because two writers share it and neither may lose a file's comments: the chain
+    files edit one set of settings at a time, and `system.yaml` edits one key at a time.
+    """
     with open(path, "rb") as fh:
         return _round_trip().load(fh.read().decode("utf-8"))
 
 
-def _write_document(path: Path, document: Any) -> None:
-    """Replace a chain file with `document`, keeping its newline and its comments.
+def write_document(path: Path, document: Any) -> None:
+    """Replace a config file with `document`, keeping its newline and its comments.
 
     Through a temp file in the same directory and a rename: a reader that loses the race -
     the ticker, or the next request - gets the whole of the old file or the whole of the
@@ -373,12 +440,12 @@ def _edit_configs(chain_id: str, edit: Callable[[Any], None]) -> None:
     """
     with _write_lock:
         path = chain_path(chain_id)
-        document = _read_document(path)
+        document = read_document(path)
         configs = (document or {}).get("configs")
         if not isinstance(configs, list) or not configs:
             raise KeyError(f"{chain_id}: a chain file with no configs screens nothing")
         edit(configs)
-        _write_document(path, document)
+        write_document(path, document)
         reload()
 
 

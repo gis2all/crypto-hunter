@@ -34,7 +34,7 @@ api/*.db-*
 
 # secrets
 .env
-config/*.env
+config/system.yaml
 
 # logs and coverage
 *.log

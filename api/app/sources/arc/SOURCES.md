@@ -62,7 +62,7 @@ sourcify note 404 = 「我这儿没有它的记录」，是答案不是失败：
 和校验器原话**再问一次**（`research.REPAIR_HEAD`，落库 `prompt_version = research.md@7+repair`）；
 再失败才当作缺席 —— 那个币不进排名，本轮 note 里写明。
 
-## 挖链：X 高级搜索（`app/search/`，登录态在 `config/search.env`）
+## 挖链：X 高级搜索（`app/search/`，登录态在 `config/system.yaml`）
 
 数据源给的社媒是 **handle 与裸域名**，新币更常常一个都没有 —— 但 X 上多半已经有人发过它的
 合约地址。这一层做的就是「CA 进、项目自己的链接出」；它在 `identify` 之前，交出来的一律是
@@ -74,10 +74,10 @@ sourcify note 404 = 「我这儿没有它的记录」，是答案不是失败：
   都问一遍」才付得起。
 - **两个问题**：合约地址（转述不了的那串）找写下它的人；ticker 找那个从没写过地址的账号。
   实测里 ticker 是唯一能把某些官方账号找出来的那条。
-- **登录态**：`config/search.env` 的 `CH_X_AUTH_TOKEN`（session cookie）与 `CH_X_CT0`
+- **登录态**：`config/system.yaml` 的 `x.auth_token`（session cookie，环境变量名 `CH_X_AUTH_TOKEN`）与 `x.ct0`
   （CSRF token，随 bearer 一起发 `X-Csrf-Token`）。请用**小号**：搜索是被限流计数的读，429 要让
-  这个号歇一会。这份文件在启动时读一次（`llm.env` 是每次模型调用重读，两者不同），换了 cookie
-  要重启。
+  这个号歇一会。会话是**用时才读**的：`engines/xsearch` 每次搜索都重读环境变量，换了 cookie 存一下
+  就用上，不用重启。
 - **找 ≠ 信**（`search/identify.py`）：搜索只给候选与阅读顺序（`xsearch.affinity` 把 handle / name
   像 ticker 的排前面；`PROFILE_HITS = 12` 个账号交给 `read_profiles` 读 8 个，`check_sites` 另读
   6 个站）。谁是真的由「读页面」决定，两条路任一成立即可：页面自己的描述里带 CA（X 上就是 bio）；

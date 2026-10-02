@@ -85,21 +85,28 @@ def settings() -> dict:
     }
 
 
-def _api_keys() -> list[str]:
-    """Every configured key, the primary first, in the order they should be tried.
+def keys_in(*values: str) -> list[str]:
+    """The keys these fields name, the primary first, in the order they should be tried.
 
-    Comma-separated on one line, because that is the shape an env file makes easy: a
-    standby appended to `CH_LLM_API_KEY` needs no second variable. `CH_LLM_API_KEY_FALLBACK`
-    is the same list, appended, for an operator who would rather not edit the primary line.
-    Duplicates are dropped - the same key twice is one key and one wasted refusal.
+    Comma-separated on one line, because that is the shape an env file makes easy: a standby
+    appended to `CH_LLM_API_KEY` needs no second variable. Duplicates are dropped - the same key
+    twice is one key and one wasted refusal. The environment is not the only place a list of
+    keys comes from: the settings page's two rows are read through here as well, or the page
+    would act as if the 备用 Key row did not exist (8.9.7).
     """
     keys: list[str] = []
-    for name in ("CH_LLM_API_KEY", "CH_LLM_API_KEY_FALLBACK"):
-        for part in os.environ.get(name, "").split(","):
+    for value in values:
+        for part in (value or "").split(","):
             part = part.strip()
             if part and part not in keys:
                 keys.append(part)
     return keys
+
+
+def _api_keys() -> list[str]:
+    """Every configured key, read from the environment (the file has already been applied)."""
+    return keys_in(os.environ.get("CH_LLM_API_KEY", ""),
+                   os.environ.get("CH_LLM_API_KEY_FALLBACK", ""))
 
 
 def _fingerprint(api_key: str) -> str:
@@ -139,6 +146,122 @@ class LLMUnavailable(RuntimeError):
 
 def configured() -> bool:
     return _configured(settings())
+
+
+#: How long a probe waits. Short because a person is watching a button, and an endpoint that
+#: needs longer than this is something to learn from a round rather than from a form.
+PROBE_TIMEOUT = 20.0
+
+#: The most a probe may spend. It answers one word; the ceiling is what keeps an endpoint left
+#: on its own (high) reasoning default from billing a form visit like a research call.
+PROBE_MAX_TOKENS = 256
+
+#: How many keys one press of 测试连接 spends a call on. The page has two rows and a row may
+#: hold a comma list, so this forgives a third and stops counting there.
+PROBE_MAX_KEYS = 3
+
+
+def _probe_headers(current: dict, key: str | None = None) -> dict:
+    headers = dict(current["headers"])
+    headers["Authorization"] = "Bearer %s" % (key or current["api_key"])
+    return headers
+
+
+def list_models(current: dict) -> list[str]:
+    """The model ids the endpoint says it serves, or `LLMUnavailable` in its own words.
+
+    One GET, the primary key, no retries and no cooldown: this answers a button. A key the
+    gateway refuses is refused *for the probe* - a round has its own opinion and its own
+    bookkeeping - so nothing here touches `_DOWN` or `llm_calls`.
+    """
+    if not current["base_url"]:
+        raise LLMUnavailable("还没有填网关地址")
+    if not current["api_key"]:
+        raise LLMUnavailable("还没有填 API Key")
+    try:
+        with httpx.Client(timeout=PROBE_TIMEOUT) as client:
+            resp = client.get("%s/models" % current["base_url"], headers=_probe_headers(current))
+    except httpx.HTTPError as exc:
+        raise LLMUnavailable("连不上 %s：%s" % (current["base_url"], exc)) from exc
+    if resp.status_code >= 400:
+        raise LLMUnavailable("网关返回 %d：%s" % (resp.status_code, resp.text[:200]))
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise LLMUnavailable("网关回的不是 JSON") from exc
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        raise LLMUnavailable("这个端点没有 /models 列表，模型名请手填")
+    ids = sorted({str(item["id"]) for item in data
+                  if isinstance(item, dict) and item.get("id")})
+    if not ids:
+        raise LLMUnavailable("端点返回 0 个模型")
+    return ids
+
+
+def probe(current: dict, key: str | None = None) -> dict:
+    """One really small real call, and the readings it takes to judge the answer.
+
+    `/models` proves a door opens; it does not prove the model answers. The trap this repo
+    already paid for is an endpoint that answers 200 with an *empty* message because the
+    thinking ate the ceiling (6.4.8) - a form that only checked reachability would call that
+    configuration healthy. So this asks for one word and reports whether text came back.
+
+    Never raises for the gateway's own answers (a refusal is a reading, not a crash) and never
+    records: `llm_calls` is a round's bill, and a button is not a round. `key` is the credential
+    to spend, the primary when the caller does not say; asking a key neither reads nor writes
+    `_DOWN`, so a key resting from a round is still the key this button tests.
+    """
+    out: dict = {"status": None, "latency_ms": 0, "chars": 0, "finish_reason": "", "error": None}
+    if not _configured(current):
+        out["error"] = "网关地址、API Key、模型三样都要填上"
+        return out
+    body: dict = {"model": current["model"], "temperature": 0, "max_tokens": PROBE_MAX_TOKENS,
+                  "messages": [{"role": "user", "content": "ping"}]}
+    if current["reasoning"]:
+        body["reasoning_effort"] = current["reasoning"]
+    started = time.time()
+    try:
+        with httpx.Client(timeout=PROBE_TIMEOUT) as client:
+            resp = client.post("%s/chat/completions" % current["base_url"],
+                               headers=_probe_headers(current, key), json=body)
+    except httpx.HTTPError as exc:
+        out["latency_ms"] = int((time.time() - started) * 1000)
+        out["error"] = "连不上 %s：%s" % (current["base_url"], exc)
+        return out
+    out["status"] = resp.status_code
+    out["latency_ms"] = int((time.time() - started) * 1000)
+    if resp.status_code >= 400:
+        out["error"] = "网关返回 %d：%s" % (resp.status_code, resp.text[:200])
+        return out
+    try:
+        payload = resp.json()
+    except ValueError:
+        out["error"] = "网关回的不是 JSON"
+        return out
+    try:
+        choice = payload["choices"][0]
+        text = choice["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError, AttributeError):
+        out["error"] = "回包里没有 choices[0].message.content"
+        return out
+    out["chars"] = len(str(text).strip())
+    out["finish_reason"] = str(choice.get("finish_reason") or "")
+    if not out["chars"]:
+        out["error"] = ("模型答了，但正文是空的（finish_reason=%s）—— 思考吃光了额度，"
+                        "要么把「回答上限」调大，要么把「推理档位」设成不思考"
+                        % (out["finish_reason"] or "?"))
+    return out
+
+
+def probe_keys(current: dict) -> list[dict]:
+    """One minimal call per configured key, in the order a round would try them.
+
+    The standby is the key nobody has ever watched answer: a round meets it for the first time
+    at the moment the primary is refused, which is the worst moment to learn it is bad too.
+    `api_keys` is a round's order, and the walking stops at `PROBE_MAX_KEYS` calls.
+    """
+    return [probe(current, key) for key in current["api_keys"][:PROBE_MAX_KEYS]]
 
 
 def _post(current: dict, headers: dict, body: dict, timeout: float | None,
