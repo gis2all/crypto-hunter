@@ -4,6 +4,7 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
 import { Icon } from "../../components/Icon";
+import { Logo } from "../../components/Logo";
 import { Rich } from "../../components/Rich";
 import { whole } from "../../format";
 
@@ -80,33 +81,6 @@ function rank(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `#${value}`;
 }
 
-/** The token's own mark, in the box the head keeps for it.
- *
- *  The box is drawn whether or not there is a picture in it: a card with no mark is the same
- *  card with nothing in that box, not a card of a different height - the same reason the
- *  shelf reserves the score's corner (8.8.2). It is a square because the whole screen is, and
- *  the fill when it is empty is the theme's own black or white (--logo-empty) rather than
- *  nothing at all, so an empty box reads as empty. The box is drawn in the accent at 2px, and
- *  with a 6px radius (2026-10-01, user): the fill says which box it is, and the ring says
- *  there is a box at all - a hairline in --border was too quiet on the light theme, where the
- *  empty fill is white on a near-white card.
- *
- *  It is the height of the two lines beside it - the symbol and the address, which the head
- *  is - so the head stands or falls on the text, and a mark can be any shape it likes inside
- *  the square without moving anything.
- *
- *  A mark that will not load leaves the box as it stands instead of putting a broken-image
- *  glyph in the middle of a card: the box already says "no picture", and a failed fetch has
- *  nothing to add to it. */
-function Logo({ url }: { url: string }) {
-  const [broken, setBroken] = useState(false);
-  return (
-    <span className="logo">
-      {url && !broken ? <img src={url} alt="" onError={() => setBroken(true)} /> : null}
-    </span>
-  );
-}
-
 /** `openAll` + `bulkTick` are the topbar's 展开卡片 / 收起卡片 reaching every card at
  *  once. The two <details> and the 展开 button under the conclusion are uncontrolled - the
  *  reader owns them - so a bulk action remounts them under a new key rather than trying to
@@ -169,7 +143,6 @@ export function Card({
     <article className={"card" + podium}>
       <header className="card-head">
         <div className="head-l">
-          {listed ? <span className="rank">{String(card.rank).padStart(2, "0")}</span> : null}
           <Logo url={card.logo} />
           <div className="head-id">
             <div className="head-name">
@@ -219,11 +192,23 @@ export function Card({
               <Icon as={Star} size={14} />
             </button>
           ) : null}
+          {/* The rank stands under the score (2026-10-02, user): both are readings of the
+              round rather than of the token, so they share the one corner the score owned
+              instead of sitting at opposite ends of the head. The stack keeps its two lines
+              tight (line-height:1) so 21px + 11.5px stays inside the 40px mark beside it
+              and the head does not grow - the shelf stands searched cards and round cards
+              in one grid (8.8.2), and a head that grows would move every block under it. */}
           {listed ? (
-            <>
-              <span className="score">{whole(card.score)}</span>
-              <span className="score-label">综合分</span>
-            </>
+            <span className="score-stack">
+              <span className="score-line">
+                <span className="score">{whole(card.score)}</span>
+                <span className="score-label">综合分</span>
+              </span>
+              <span className="score-line">
+                <span className="rank">{String(card.rank).padStart(2, "0")}</span>
+                <span className="score-label">排名</span>
+              </span>
+            </span>
           ) : null}
         </div>
       </header>

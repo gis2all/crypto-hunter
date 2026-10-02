@@ -1,4 +1,4 @@
-"""The settings page as a form model.
+"""The settings pages as a form model - a chain's口径, and this machine's own wiring.
 
 The UI has no knowledge of filters, weights or schedules: it renders whatever widgets
 this module describes. Adding a rule is therefore a backend change, and a knob that
@@ -628,3 +628,123 @@ def rule_label(reason: str) -> str:
     `core/funnel.RULE_LABEL`, beside the rule order, because the change bar's 退出
     reason now prints them too - one dict, two readers, so they cannot drift apart."""
     return funnel.RULE_LABEL.get(reason, reason)
+
+
+#: 系统设置 - this machine's own wiring (`config/system.yaml`), which is not a chain's口径.
+#: The labels live here with every other sentence a page prints (2.3.3); the values arrive from
+#: `system_settings.state()`, so the page and the loader cannot drift - both walk
+#: `config.SYSTEM_KEYS`. A row's `dim` says where its value came from, and it says it only when
+#: that is not the file: a variable the shell exported beats the file, so that row is a reading
+#: and not a box, and a value nobody set is the code's own default. A row the file itself decides
+#: stays blank - the file is the normal case, and a column of the same word on every row says
+#: nothing.
+SYSTEM_LABELS = {
+    "llm.base_url": "网关地址",
+    "llm.api_key": "API Key",
+    "llm.api_key_fallback": "备用 Key",
+    "llm.model": "模型",
+    "llm.extra_headers": "额外请求头",
+    "llm.reasoning": "推理档位",
+    "llm.max_tokens": "回答上限",
+    "llm.timeout": "单次超时",
+    "llm.tries": "重试次数",
+    "llm.key_cooldown": "失效冷却",
+    "research_workers": "调研并发",
+    "x.auth_token": "auth_token",
+    "x.ct0": "ct0",
+    "x.cli": "搜索客户端",
+    "log_level": "日志等级",
+}
+
+#: The file is the normal case and is not marked: a column of the same word on every row says
+#: nothing, and it buries the rows that are worth looking at (user, 2026-10-02).
+SYSTEM_SOURCE = {"file": "", "env": "环境变量", "unset": "默认"}
+
+#: The endpoint's own default is the empty answer for both choices: leaving the row unset is a
+#: real answer, and it is what every call did before the knob existed.
+SYSTEM_REASONING = (("", "端点默认"), ("none", "不思考"), ("minimal", "minimal"),
+                    ("low", "low"), ("medium", "medium"), ("high", "high"))
+SYSTEM_LEVELS = (("", "默认（INFO）"), ("DEBUG", "DEBUG"), ("INFO", "INFO"),
+                 ("WARNING", "WARNING"), ("ERROR", "ERROR"))
+
+#: The gateways this install is most often pointed at, as a shortcut and not a whitelist:
+#: picking one only types an address into a box that stays editable, because the endpoint
+#: someone actually runs is as likely to be a machine on their own LAN as one of these.
+SYSTEM_ENDPOINTS = (
+    ("https://opencode.ai/zen/go/v1", "opencode zen"),
+    ("https://api.openai.com/v1", "OpenAI"),
+    ("https://api.deepseek.com/v1", "DeepSeek"),
+)
+
+
+def system_blocks(state: dict[str, dict]) -> list[dict]:
+    """Compose the 系统设置 form from `system_settings.state()`. Pure: everything arrives."""
+
+    def row(path: str, widget: str = "text", **kw: Any) -> dict:
+        entry = state[path]
+        label = SYSTEM_LABELS[path]
+        source = SYSTEM_SOURCE[entry["source"]]
+        if entry["kind"] == "secret":
+            # Never the value itself: the row says which credential is stored, and a blank box
+            # keeps it (the one thing a blank box cannot mean is "clear this key").
+            # The box is drawn as a password field on the page, so typing one in is not for
+            # whoever walks past the screen.
+            stored = ("已配置 · " + entry["mask"]) if entry["set"] else "未配置"
+            if entry["source"] == "env":
+                return _field(path, label, "ro", value=stored, dim=source, dim_in="label")
+            return _field(path, label, "password", value="", dim=stored, dim_in="field")
+        if entry["source"] == "env":
+            return _field(path, label, "ro", value=entry["value"], dim=source, dim_in="label")
+        return _field(path, label, widget, value=entry["value"], dim=source, dim_in="label", **kw)
+
+    def group(key: str, title: str, detail: str, fields: list[dict],
+              actions: list[dict] | None = None) -> dict:
+        return {"key": key, "title": title, "hint": "", "detail": detail, "fields": fields,
+                "actions": actions or []}
+
+    endpoint = group("llm-endpoint", "端点", (
+        "网关、Key、模型。改完下次调用生效，不用重启。额外请求头写成 JSON 对象，例如"
+        " {\"x-opencode-session\": \"crypto-hunter\"}。"
+    ), [
+        row("llm.base_url", presets=_options(list(SYSTEM_ENDPOINTS))),
+        row("llm.api_key"),
+        row("llm.api_key_fallback"),
+        row("llm.model"),
+        row("llm.extra_headers"),
+    ], actions=[
+        {"id": "models", "label": "获取模型"},
+        {"id": "test", "label": "测试连接"},
+    ])
+    call = group("llm-call", "调用", (
+        "推理档位只有「不思考」是真的关：minimal 与 low 一样会花思考 token。回答上限 0 = 不设，"
+        "调小会让推理模型返回空消息（不是报错）。超时要高于真实回答耗时，它与重试相乘。"
+        "调研并发是同时问几个币，网关开始 429 就先调小它。"
+    ), [
+        row("llm.reasoning", "select", options=_options(list(SYSTEM_REASONING))),
+        row("llm.max_tokens", "num"),
+        row("llm.timeout", "num", unit="秒"),
+        row("llm.tries", "num"),
+        row("llm.key_cooldown", "num", unit="秒"),
+        row("research_workers", "num"),
+    ])
+    session = group("x-session", "X会话", (
+        "两个值来自一个已登录 x.com 的会话 cookie（DevTools → Application → Cookies），"
+        "用一个一次性账号：搜索是会被限流的读请求，429 会让币丢掉链接。"
+        "「测试连接」用它读一次这个账号本身：一次请求，不占搜索额度。"
+    ), [
+        row("x.auth_token"),
+        row("x.ct0"),
+        row("x.cli"),
+    ], actions=[
+        {"id": "x", "label": "测试连接"},
+    ])
+    level = group("log-level", "等级", (
+        "日志是唯一记录阶段耗时的地方（7.1.4），改完当场生效。"
+    ), [
+        row("log_level", "select", options=_options(list(SYSTEM_LEVELS))),
+    ])
+    return [
+        {"key": "llm", "title": "模型", "columns": 1, "groups": [endpoint, call]},
+        {"key": "x", "title": "搜索", "columns": 1, "groups": [session]},
+        {"key": "log", "title": "日志", "columns": 1, "groups": [level]},
+    ]

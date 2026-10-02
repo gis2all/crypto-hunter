@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+import yaml
 
 from app import cancel, config, llm
 from app.llm import client as llm_client
@@ -34,13 +35,13 @@ ENV_KEYS = (
 
 @pytest.fixture()
 def env_file(tmp_path, monkeypatch):
-    """A stand-in for config/llm.env plus a clean environment around it.
+    """A stand-in for config/system.yaml plus a clean environment around it.
 
     The real file holds a real key, so a test that let `settings()` read it would leak the
     operator's credentials into the test process and would depend on their gateway.
     """
-    path = tmp_path / "llm.env"
-    monkeypatch.setattr(config, "LLM_ENV_PATH", path)
+    path = tmp_path / "system.yaml"
+    monkeypatch.setattr(config, "SYSTEM_PATH", path)
     monkeypatch.setattr(config, "_FROM_FILE", {})
     # The cooldown of a refused key is process-local state, so a test that left one behind
     # would silently skip a key in the next test. A fresh map per test is the whole fix.
@@ -51,7 +52,21 @@ def env_file(tmp_path, monkeypatch):
 
 
 def _write(path, **values):
-    path.write_text("".join("%s=%s\n" % item for item in values.items()), encoding="utf-8")
+    """Write the variables the tests below name into a `system.yaml`.
+
+    The call sites talk in the variables `settings()` reads, because that is the level they are
+    testing; mapping them back into the file's own paths happens here, off the one table.
+    """
+    by_env = {env: key for key, env, _kind in config.SYSTEM_KEYS}
+    document: dict = {}
+    for name, value in values.items():
+        parts = by_env[name].split(".")
+        node = document
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+    path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8")
 
 
 def _ok(text):

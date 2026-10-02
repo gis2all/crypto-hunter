@@ -1461,10 +1461,218 @@
      }
     }
    }
+  },
+  "/api/v1/system/form": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Get Form",
+    "operationId": "get_form_api_v1_system_form_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemFormOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system": {
+   "put": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Put System",
+    "description": "Save what changed, then answer the file as it now reads.\n\nThe whole form comes back rather than an acknowledgement: a save can leave a row looking\ndifferent from what was typed - a number, a box cleared back to its default, a credential\nstanding as a fingerprint - and the page has to draw what was written, not what it sent.",
+    "operationId": "put_system_api_v1_system_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SystemIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemFormOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/models": {
+   "post": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Post Models",
+    "description": "The model ids the endpoint says it serves, read with the page's unsaved rows.\n\nA refusal is an answer rather than an error: the page prints the sentence beside the button\nthat asked for it, so a wrong key or an endpoint with no `/models` leaves the form as it was.\nThe list is a convenience either way - the box stays typeable, and a model the gateway does\nnot list is still a model it will answer with.",
+    "operationId": "post_models_api_v1_system_models_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SystemIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemModelsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/test": {
+   "post": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Post Test",
+    "description": "A really small real call per key: the writing path itself, not a reachable endpoint.\n\nReachability is not the question a person is asking when they press this - an endpoint\nthat answers 200 with an empty message is the failure this repo has already paid for once\n(6.4.8). So the reading that comes back is whether text arrived. Every key is asked, not\njust the first: the standby has never answered anything, and a round only meets it on the\nday the primary is refused (8.9.7).",
+    "operationId": "post_test_api_v1_system_test_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SystemIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemTestOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/x": {
+   "post": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Post X",
+    "description": "Whether the X session on this page still carries a search: one profile read, no query.\n\nThe same rule as the gateway's probes - the rows as they stand on screen, not the file - and\nthe same reason: an operator who had to save a cookie before finding out whether it works\nwould be storing it in order to test it. Nothing is written, and nothing is recorded: a\nsearch spends a rate budget a round needs, so this asks the one cheap question that tells a\nsession from two strings that look like one.",
+    "operationId": "post_x_api_v1_system_x_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SystemIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemXOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
   "schemas": {
+   "ActionOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "ActionOut",
+    "description": "A button a group carries. What it does is the page's business; what it says is not.\n\nThe label travels with it (2.3.3), and the id is the one word the page does act on - it is\nthe map from a name to a handler, which is behaviour and belongs to the page. A group with\nno actions draws no strip."
+   },
    "BatchOut": {
     "properties": {
      "run": {
@@ -2366,6 +2574,14 @@
       "type": "array",
       "title": "Checks"
      },
+     "presets": {
+      "items": {
+       "$ref": "#/components/schemas/FieldOptionOut"
+      },
+      "type": "array",
+      "title": "Presets",
+      "default": []
+     },
      "drop_count": {
       "anyOf": [
        {
@@ -2592,6 +2808,14 @@
       },
       "type": "array",
       "title": "Fields"
+     },
+     "actions": {
+      "items": {
+       "$ref": "#/components/schemas/ActionOut"
+      },
+      "type": "array",
+      "title": "Actions",
+      "default": []
      },
      "note": {
       "type": "string",
@@ -3808,6 +4032,175 @@
      "trend"
     ],
     "title": "SparkOut"
+   },
+   "SystemFormOut": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/BlockOut"
+      },
+      "type": "array",
+      "title": "Blocks"
+     }
+    },
+    "type": "object",
+    "required": [
+     "path",
+     "blocks"
+    ],
+    "title": "SystemFormOut",
+    "description": "系统设置: this machine's own wiring - the LLM endpoint, the X session, the log level.\n\nThe blocks are a chain's 设定 blocks on purpose: one shape, so the two pages are drawn by\nthe same renderer and a row cannot mean one thing here and another there. `path` is the\nfile the rows are written to, which is the one thing this page has and a chain's does not."
+   },
+   "SystemIn": {
+    "properties": {
+     "patch": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Patch"
+     }
+    },
+    "type": "object",
+    "title": "SystemIn",
+    "description": "A patch keyed by each row's own path in the file (`llm.base_url`)."
+   },
+   "SystemModelsOut": {
+    "properties": {
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "models": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Models",
+      "default": []
+     },
+     "apply_to": {
+      "type": "string",
+      "title": "Apply To",
+      "default": ""
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "ok"
+    ],
+    "title": "SystemModelsOut",
+    "description": "What `/models` answered, and which row the answer is for.\n\n`apply_to` travels so the page can offer the list on the right row without learning a key\nname - the same reason the rows themselves arrive composed (8.9.1)."
+   },
+   "SystemTestLineOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     },
+     "latency_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latency Ms"
+     },
+     "chars": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chars"
+     },
+     "finish_reason": {
+      "type": "string",
+      "title": "Finish Reason",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "label",
+     "ok",
+     "note"
+    ],
+    "title": "SystemTestLineOut",
+    "description": "One key's probe: the row it came from, and what the gateway answered it."
+   },
+   "SystemTestOut": {
+    "properties": {
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/SystemTestLineOut"
+      },
+      "type": "array",
+      "title": "Lines"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ok",
+     "lines"
+    ],
+    "title": "SystemTestOut",
+    "description": "One small real call per configured key, in the order a round would try them (8.9.7)."
+   },
+   "SystemXOut": {
+    "properties": {
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ok",
+     "note"
+    ],
+    "title": "SystemXOut",
+    "description": "Whether the X session still works, in the client's own words (8.9.10).\n\nOne sentence rather than 测试连接's line per key: there is one session, and it either is\nlogged in or says why it is not."
    },
    "ValidationError": {
     "properties": {

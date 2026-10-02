@@ -23,6 +23,10 @@ export type SettingsForm = components["schemas"]["SettingsFormOut"];
 export type SettingsBlock = components["schemas"]["BlockOut"];
 export type SettingsGroup = components["schemas"]["GroupOut"];
 export type SettingsField = components["schemas"]["FieldOut"];
+export type SystemForm = components["schemas"]["SystemFormOut"];
+export type SystemModels = components["schemas"]["SystemModelsOut"];
+export type SystemTest = components["schemas"]["SystemTestOut"];
+export type SystemX = components["schemas"]["SystemXOut"];
 export type Segment = components["schemas"]["SegmentOut"];
 export type ChangeOut = components["schemas"]["ChangeOut"];
 export type RuleCount = components["schemas"]["RuleCountOut"];
@@ -241,3 +245,30 @@ export const collectFavorite = (chainId: string, ca: string) =>
     "/favorites/" + encodeURIComponent(chainId) + "/" + encodeURIComponent(ca),
     { method: "POST" },
   );
+
+/** 系统设置: this machine's wiring - the gateway, the X session, the log level.
+ *
+ *  Not scoped by a chain or a set of settings: there is one of each per install, and the rows
+ *  are the keys of one file (config/system.yaml). A patch is keyed by a row's own path in that
+ *  file, so a save writes exactly the lines it names. */
+export const getSystemForm = () => request<SystemForm>("/system/form");
+
+export const putSystem = (patch: Record<string, unknown>) =>
+  request<SystemForm>("/system", { method: "PUT", body: JSON.stringify({ patch }) });
+
+/** Ask the endpoint what it serves. Read with the rows as they stand on screen, unsaved: a
+ *  form that had to be saved before it could be tested would make the operator store an
+ *  endpoint in order to find out whether it is the right one. Nothing is written. */
+export const getSystemModels = (patch: Record<string, unknown>) =>
+  request<SystemModels>("/system/models", { method: "POST", body: JSON.stringify({ patch }) });
+
+/** One really small real call to the endpoint: whether it answers, and whether text comes
+ *  back. Also unrecorded - it is a button, not a round. */
+export const testSystem = (patch: Record<string, unknown>) =>
+  request<SystemTest>("/system/test", { method: "POST", body: JSON.stringify({ patch }) });
+
+/** The X session's own probe: one read of the account the cookies claim to be, which is the
+ *  cheapest question that tells a session from two strings that look like one. Asked with the
+ *  page's unsaved rows, and unrecorded - a search spends a rate budget a round needs. */
+export const probeXSession = (patch: Record<string, unknown>) =>
+  request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch }) });

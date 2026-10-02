@@ -14,6 +14,7 @@ import { RunPanel } from "./features/run/RunPanel";
 import { ConfigManager } from "./features/settings/ConfigManager";
 import { SettingsView } from "./features/settings/SettingsView";
 import { useSettingsState } from "./features/settings/useSettingsState";
+import { SystemView } from "./features/system/SystemView";
 import { readPref, savePref } from "./prefs";
 import { applyTheme, readTheme, saveTheme, type Theme } from "./theme";
 
@@ -53,12 +54,12 @@ export default function App() {
   const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
-  // 雷达, 收藏 or 搜索. The three are places, not tabs: the last two are scoped by neither
-  // the selected chain nor a set of settings, so neither can live under 报告 / 设定 - see
-  // Rail's Place.
+  // 雷达, 收藏, 搜索 or 系统设置. All four are places, not tabs: the last three are scoped by
+  // neither the selected chain nor a set of settings, so none of them can live under
+  // 报告 / 设定 - see Rail's Place.
   const [place, setPlace] = useState<Place>(() => {
     const kept = readPref(PLACE_KEY);
-    return kept === "favorites" || kept === "lookup" ? kept : "radar";
+    return kept === "favorites" || kept === "lookup" || kept === "system" ? kept : "radar";
   });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
@@ -251,6 +252,10 @@ export default function App() {
           // The whole list, not just the names: the shelf's chain switcher is a fixed row
           // read off these (8.7.4), so it needs the order and which of them the rail draws.
           <FavoritesView chains={chains.data ?? []} />
+        ) : place === "system" ? (
+          // This machine's own wiring: no chain and no set of settings is in scope, which is
+          // exactly why it is a place and not a third tab under a radar.
+          <SystemView />
         ) : place === "lookup" ? (
           // The chain list is passed for the same kind of reading: a searched card can be on
           // a chain this app does not screen, and its foot still has to name the one it has

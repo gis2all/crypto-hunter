@@ -92,6 +92,12 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   line-height:1}
 .flag-new{border-color:var(--ok-border);color:var(--ok-fg)}
 .head-r{margin-left:auto;flex:0 0 auto;text-align:right;display:flex;align-items:baseline;gap:5px}
+/* The score and the rank share the head's right corner, one line each (Card.tsx). Both lines
+   are line-height:1 so the stack is 21px + 11.5px + 3px and still clears the 40px mark on the
+   other side of the head: at the body's 1.55 the two would come to 51.5px and every card in
+   the round - and on the shelf, the searched cards beside them - would grow with them. */
+.score-stack{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.score-line{display:flex;align-items:baseline;gap:5px;line-height:1}
 .score{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.02em}
 .score-label{font-size:10.5px;color:var(--muted);white-space:nowrap}
 /* margin-left is an optical nudge (2026-10-01, user): the 19px symbol's first glyph starts a

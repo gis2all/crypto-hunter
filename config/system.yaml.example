@@ -1,0 +1,44 @@
+# 本机接线：写手的网关、X 搜索的会话、日志等级。
+# 页面上也能改（左栏最下面的「系统设置」），真实环境变量优先于这个文件。
+# 复制成 system.yaml 再填：system.yaml 不入库，这个模板入库。
+#
+# 改完下次调用生效，不用重启：写手每次调用、X 搜索每次搜索都会重读这个文件。
+# 日志等级保存后当场生效。
+
+llm:
+  # 网关地址（OpenAI 兼容），例如 https://opencode.ai/zen/go/v1
+  base_url: null
+  # 一个或多个 key，逗号分隔：第一个是主 key，其余的在 401 / 402 / 403 / 429 时依次顶上，
+  # 被顶掉的那个晾 key_cooldown 秒，死 key 每轮只付一次代价。要么整串放这里，要么整串
+  # 放进环境变量（环境里的 CH_LLM_API_KEY 会连备用 key 一起盖掉）。
+  api_key: null
+  api_key_fallback: null
+  model: null
+  # none / minimal / low / medium / high。只有 none 是真的关掉思考：minimal 与 low 一样
+  # 会花思考 token（实测 680-899 个），none 花 0 个。
+  reasoning: none
+  # 回答上限。0 = 不设。推理模型的思考计入这里，给小了会返回空消息
+  # （finish_reason=length），不是报错。
+  max_tokens: 0
+  # 单次调用的秒数。它和 tries 相乘：超时高于真实回答耗时的时候，重试只会把一次卡死
+  # 翻倍（180s x 2 曾让一次死调用花掉 366s）。
+  timeout: 300
+  tries: 1
+  # 被拒的 key 晾多少秒，0 = 不晾。
+  key_cooldown: 600
+  # 网关要求的额外请求头，写成一个 JSON 对象，例如 {"x-opencode-session": "crypto-hunter"}
+  extra_headers: null
+
+# 一次并行调研几个币（一个币一次模型调用）。网关开始 429 就先调小它。
+research_workers: 12
+
+x:
+  # 一个已登录 x.com 会话的 cookie（DevTools -> Application -> Cookies -> https://x.com）。
+  # 用一个一次性账号：搜索是会被限流的读请求，429 会让币丢掉链接。
+  auth_token: null
+  ct0: null
+  # 承载会话的客户端，默认 twitter（PATH 上的子进程，不花 token）。
+  cli: twitter
+
+# DEBUG / INFO / WARNING / ERROR。日志是唯一记录阶段耗时的地方。
+log_level: INFO

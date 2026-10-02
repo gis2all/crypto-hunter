@@ -54,6 +54,26 @@ export function useSettingsForm(chainId: string, configId: string) {
   });
 }
 
+/** 系统设置's one read. No chain, no set of settings: the rows are this machine's own file. */
+export function useSystemForm() {
+  return useQuery({ queryKey: ["system-form"], queryFn: api.getSystemForm });
+}
+
+/** Save the rows that changed, and answer the file as it now reads.
+ *
+ *  The response replaces the form rather than being thrown away: a save can leave a row looking
+ *  different from what was typed - a credential standing as a fingerprint, a box cleared back to
+ *  its default - and the page has to draw what was written. */
+export function useSaveSystem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.putSystem(patch),
+    onSuccess: (form) => {
+      qc.setQueryData(["system-form"], form);
+    },
+  });
+}
+
 /** Save the draft, and make this set of settings the live one. `chains` is refetched too:
  *  the flag that says which set is live moved, and the rail and the switcher read it from
  *  there. */

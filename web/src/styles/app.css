@@ -232,20 +232,26 @@ html{scrollbar-gutter:stable}
 #view-favorites .scorebar{min-height:40px}
 .scorebar.blank{padding:0}
 
-/* A card's mark, in the box the head keeps for it (Card.tsx). Square: proto.css carries one
-   global zero radius, and the only circle in this app is the 6px run dot. 40px - the height of
-   the two lines it stands beside - and centered rather than on the baseline the head's text
-   sits on, because a box has no baseline. An empty box keeps the fill of the theme's own
-   black or white (--logo-empty) rather than collapsing, so a card with no mark is the same
-   card with nothing in that box - not a card of a different height. The ring is the accent at
-   2px: a hairline in --border was invisible in the light theme, where an empty box is white on
-   a near-white card, so it is drawn at the weight of a thing you are meant to notice rather
-   than of a thing meant to disappear. The 6px radius is the second !important exception to
-   8.4.5 after .cfg-dot (2026-10-01, user), and the box clips its own picture (overflow) so a
-   mark cannot paint out of the corners the ring draws. */
-.card-head .logo{flex:0 0 auto;align-self:center;width:40px;height:40px;background:var(--logo-empty);
+/* A token's mark, in the box a head keeps for it (components/Logo.tsx). Square: proto.css
+   carries one global zero radius, and the only circle in this app is the 6px run dot. Centered
+   rather than on the baseline the head's text sits on, because a box has no baseline. An empty
+   box keeps the fill of the theme's own black or white (--logo-empty) rather than collapsing,
+   so a head with no mark is the same head with nothing in that box - not a card of a
+   different height. The ring is the accent at 2px: a hairline in --border was invisible in the
+   light theme, where an empty box is white on a near-white card, so it is drawn at the weight
+   of a thing you are meant to notice rather than of a thing meant to disappear. The 6px
+   radius is the second !important exception to 8.4.5 after .cfg-dot (2026-10-01, user), and
+   the box clips its own picture (overflow) so a mark cannot paint out of the corners the ring
+   draws.
+
+   The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the
+   two lines it stands beside, and 19px in a 最近搜索 row - inside the 19.4px that row's own
+   text line already stands at, so the mark rides in the row instead of setting its height and
+   the list keeps its 33.4px. Everything else about the box is this one rule, so the two sizes
+   cannot drift apart. */
+.logo{flex:0 0 auto;align-self:center;background:var(--logo-empty);
   border:2px solid var(--accent);border-radius:6px!important;overflow:hidden}
-.card-head .logo img{display:block;width:100%;height:100%;object-fit:cover}
+.logo img{display:block;width:100%;height:100%;object-fit:cover}
 
 /* Equal cards, approved 2026-09-26 - the 结论 box, and it now says when it is cut.
 
@@ -332,6 +338,22 @@ html{scrollbar-gutter:stable}
    checkbox group is a stacked row by design and its second line starts at the title's edge
    (see the block below). */
 .blk-cols .pgroup .prow:not(.wide)>.field{justify-content:flex-end}
+
+/* A row that ends in a unit and a row that ends in a number put that number on two
+   different lines: the unit rides in the flow, so 市值's 200000 box ends at 903 while
+   捆绑率's 25 ends at 887 with  %  in the last 10px (measured at 1726). 硬过滤's two columns
+   each hold both kinds (市值/流动性/24h 成交 against Top10/捆绑率/零数据淘汰/距高回撤), and that
+   is the whole defect: the boxes were sized by the neighbour they happened to have, which is
+   the same 病根 the system page's rows had.
+
+   So where a group has a row ending in a unit, the rows that end in a number reserve it too:
+   a 10px  ::after  ( field  own 6px gap  =  the 16px a unit's row leaves) and the column lines
+   up. Only a number ends a value column - a row that ends in a choice or a checkbox is not one,
+   and insetting it would pull a control off the panel's edge to align with nothing. Rows already
+   ending in a unit, groups with no trailing unit (两个评分口径, 调研), and  .wide  rows (a
+   checkbox group starts at the label's edge) are all untouched. */
+#view-params .pgroup:has(.field>.unit:last-child) .prow:not(.wide)>.field:has(>input.num:last-child)::after{
+  content:"";flex:0 0 10px}
 
 /* An empty drop cell gives its width back (2026-09-26).
 
@@ -430,6 +452,70 @@ html{scrollbar-gutter:stable}
    starts at the row's left edge, so nothing else in the column moves. */
 .prow.wide>label{min-width:0}
 .prow.wide .field:has(input[type=checkbox]):not(:has(input[type=text], input[type=number])){flex:1 0 auto;max-width:100%;margin-left:0;padding-left:0;justify-content:flex-end}
+
+/* 系统设置's editable string rows (2026-10-02). `.prow input` is sized and aligned for a
+   threshold - 108px, right-aligned - and a gateway address is neither: it is the one box on
+   the page holding a sentence rather than a number. So it takes the room the row leaves and
+   reads left to right. Nothing else draws one: a chain's rows are numbers, choices and boxes. */
+.prow .field>input.str{flex:1 1 auto;width:auto;min-width:0;text-align:left}
+
+/* 系统设置 draws every row as two tracks: one column of controls, and one column for the marks
+   that follow them (2026-10-02, user: 调用右侧，输入框应该左右对齐, then 端点、搜索也要做成类似调用
+   这种对齐，目前输入框太长了).
+
+   Two things used to break the column. A unit is a flex item after the box, so 单次超时's box
+   ended 16px left of 重试次数's (measured on 调用 at 1440: right edge 1380 with a unit, 1396
+   without); and a text box took whatever the row had left, so 网关地址 stretched to 903px while
+   the 模型 row under it stretched to 979 the moment nothing sat beside it. Both are the same
+   mistake: the box was sized by what happened to sit next to it instead of by its group.
+
+   So a group names its own control width - 260 for a row holding a sentence, 80 for a number
+   (the box's own width, `proto.css`), 112 for a choice, because 默认（INFO） is the longest label
+   this page draws - and, in `--mark-w`, the room its marks need: the widest is 已配置 · <首6…尾4>
+   at 104px, 秒 is 11px, 日志等级 has no mark at all. The grid then does what flex rows could
+   not: the control holds track one wherever the marks are, a mark starts 6px after it and reads
+   left to right, and a row with nothing to put there leaves the track empty rather than pulling
+   the control to the right edge and 预设 40px away from the box it types into.
+
+   `:has()` is what lets a group say this instead of each row: a page that adds a row cannot land
+   it in a column of its own. */
+#view-system .pgroup{--ctl-w:112px;--mark-w:0px}
+#view-system .pgroup:has(.prow .field>input.str){--ctl-w:260px;--mark-w:112px}
+#view-system .pgroup:has(.prow .field>.unit){--ctl-w:80px;--mark-w:17px}
+
+/* Only a field with something drawn in it is a grid: an environment-owned row arrives as one bare
+   text node (`Widget`'s last branch), which has no box to line up and reads at the row's right
+   edge the way it always has. */
+#view-system .prow .field:has(> *){display:grid;align-items:center;justify-content:end;
+  column-gap:0;grid-template-columns:var(--ctl-w) minmax(0, var(--mark-w))}
+#view-system .prow .field>*:first-child{grid-column:1;width:var(--ctl-w);min-width:0}
+#view-system .prow .field>*:not(:first-child){grid-column:2;min-width:0;padding-left:6px;
+  white-space:nowrap}
+#view-system .prow .field>.pick-wrap .pick-cur{overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* Where the picker *is* the control, it takes the group's column and holds its label the same
+   way the number boxes hold theirs. */
+#view-system .pgroup:not(:has(.prow .field>input.str)) .prow .field>.pick-wrap>.btn{
+  width:var(--ctl-w);padding:0 6px;gap:4px;justify-content:space-between}
+
+/* The endpoint's two probes - 获取模型 / 测试连接 - sit on a strip of their own under the rows
+   they act on rather than in the group header: what a gateway answers is a sentence, and a
+   header strip has no room for one. */
+.pgroup-acts{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap}
+.pact-note{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:0;
+  overflow-wrap:anywhere}
+.pact-note.bad{color:var(--danger-fg)}
+
+/* 测试连接 asks every configured key (8.9.7), so its answer is a line per key instead of one
+   sentence: the row the key came from, then the sentence it earned. The block takes the room
+   left of the buttons and drops under them when there is none; only the verdict wears the red,
+   so which key failed stays legible at a glance. */
+.pact-lines{display:flex;flex-direction:column;gap:2px;flex:1 1 260px;min-width:0}
+.pact-line{display:flex;align-items:baseline;gap:5px;min-width:0;
+  font-family:var(--mono);font-size:10.5px}
+.pact-line>b{flex:0 0 auto;color:var(--fg-2);font-weight:400}
+.pact-line>span{color:var(--muted);overflow-wrap:anywhere}
+.pact-line.bad>span{color:var(--danger-fg)}
 
 /* The medal strip is an overlay, not a thicker border. A 2px top border left the three
    podium cards 1px taller than the other two, and 1px is a difference a reader looking
@@ -628,8 +714,17 @@ div.pgroup>.pset{margin-top:auto}
    offers a choice - the topbar's config picker and the settings rows wear this same list, so
    the two cannot drift apart. Pick.tsx owns the behaviour; these are its lines. */
 .pick-wrap{position:relative;display:inline-flex}
+/* A menu long enough to leave the screen (2026-10-02, user): the 36-model candidate list ran
+   past the panel's bottom edge and its tail could not be reached. A menu's length is now the
+   menu's own problem - it scrolls in here - and the bar is drawn by hand, because nothing else
+   in this app scrolls inside itself and the platform's bar is an overlay: a list that stops
+   mid-air with no bar on it reads as a list that was cut off, which is the report this fixes. */
 .pick-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:40;min-width:100%;padding:4px;
-  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow)}
+  background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);
+  max-height:264px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.pick-menu::-webkit-scrollbar{width:9px}
+.pick-menu::-webkit-scrollbar-track{background:transparent}
+.pick-menu::-webkit-scrollbar-thumb{background:var(--border)}
 .pick-item{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border:0;
   background:none;color:var(--fg);font:inherit;font-size:11.5px;white-space:nowrap;
   text-align:left;cursor:pointer}
@@ -704,23 +799,31 @@ div.pgroup>.pset{margin-top:auto}
    a second shade of text. */
 .nav-shelf{padding:0}
 
+/* 系统设置 is a rail row because it belongs to no chain (user, 2026-10-02), and it is pinned
+   under the list rather than in it: the chains and the two shelves are things you read, and
+   this is the machine they read with - the theme switch below it is the other global row.
+   .nav is a flex *item*, so margin-top:auto on a child of it does nothing until the list
+   itself is a column flex box - that pair is the whole rule, and a rail with three chains
+   and a rail with one both put this row at the bottom of the list. */
+.nav{display:flex;flex-direction:column}
+.nav-foot{margin-top:auto}
+
 /* The shelf's own strip, standing where the topbar stands so the page does not jump between a
-   radar and the shelf. The title carries no count: the cards are the count, and the chips and
-   the sort are what a reader reads off this bar. */
-#view-favorites .fav-bar,#view-lookup .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+   radar and the shelf. The title carries no count: the cards are the count. The shelf's 来源
+   chips and its sort came out of this bar and into the panel beside its cards (2026-10-02,
+   user), so what is left on it is the bulk fold, the box and 导出. */
+#view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
   gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
 .fav-title{display:flex;align-items:center;gap:7px}
 .fav-title b{font-size:15px;font-weight:600}
 .fav-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
-.fav-chips{display:flex}
 .chip{height:var(--ctrl-h);padding:0 9px;border:1px solid var(--border);background:var(--surface);
   color:var(--muted);font-family:var(--mono);font-size:10.5px;line-height:1;cursor:pointer;white-space:nowrap}
 .chip+.chip{margin-left:-1px}
+/* What is left is the card's own chip (Card.tsx, `.chips .chip`): the bar no longer wears one,
+   because 来源 is a list of rows like 排序 (2026-10-02, user). The hover stays for the card;
+   `.on` went with the row that was the only thing able to be selected. */
 .chip:hover{background:var(--surface-warm);color:var(--fg-2)}
-.chip.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
-/* The trigger keeps one width, the longer label's: a control that changes size when the
-   reader picks the other sort drags the button beside it back and forth. */
-.fav-sort{width:106px}
 /* Wide enough for a whole CA - a filter box that cannot show the thing being filtered on the
    one screen where CAs are what you copy is a box that hides its own answer. */
 .fav-search{height:var(--ctrl-h);width:322px;padding:0 7px;border:1px solid var(--border);
@@ -732,6 +835,53 @@ div.pgroup>.pset{margin-top:auto}
    delete-confirm field in the settings drawer - must not look like a value already in it. */
 .fav-search::placeholder{color:var(--muted)}
 .fav-search:focus{outline:none;border-color:var(--accent)}
+/* The shelf's two controls, in the panel beside its cards (features/favorites/FavoritesView
+   .tsx). It is the 搜索 page's shape: the body is the radar's own grid, the panel stands in
+   its first track and the cards take the rest - which is what keeps a card here the width the
+   same number of columns gives a card on a radar (see .look-body below).
+
+   The cost is one column of cards at every width, measured at 1440: three tracks of 370 become
+   two of 395, because the panel takes 320px of the 1133px this grid has in hand and three
+   tracks want 1059. Accepted for four sort keys and two directions being visible at once
+   (2026-10-02, user).
+
+   The first track is the panel's own width rather than an auto-fill track: those are floored at
+   345 and grow, so the panel would stand in a track wider than itself and leave a dead gutter
+   before the cards start - measured 62px at a 1440 window and 173 at 1280, against the 12px
+   the grid gap draws. Fixing the track hands that width to the cards.
+
+   Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
+   and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
+   row rather than a chip that has to fit inside the one above it. */
+#view-favorites .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+.fav-side{display:flex;flex-direction:column;width:320px}
+.fav-side .look-h{margin:10px 0 6px}
+.fav-cards{grid-column:2/-1;min-width:0}
+.fav-cards .grid{padding:0}
+.fav-opts{display:flex;flex-direction:column;gap:2px}
+/* An option row borrows the shape of a 最近搜索 row (.look-row): a box that appears on hover
+   and stays on the one in force, so the panel says what the shelf is ordered by without a
+   word of its own.
+
+   It is a row rather than a block now that each one opens with its glyph (2026-10-02, user):
+   the glyph comes first, the word hangs off it at the 7px the rail opens an icon and a label
+   with, and the glyph is the 14px the rail's own rows use. The stroke is the rail's 2.5 rather
+   than the .ico default of 1.5, and for the same reason the rail raised it there: the 来源
+   list holds the same filled Arc and Robinhood marks the rail does, and a hairline beside a
+   silhouette reads as another set of icons. The 排序 rows take the same weight so the panel
+   reads as one. */
+.fav-opt{display:flex;align-items:center;gap:7px;width:100%;padding:5px 8px;border:1px solid transparent;
+  background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
+.fav-opt svg{flex:0 0 auto}
+.fav-opt .ico{stroke-width:2.5}
+.fav-opt:hover{background:var(--surface-warm)}
+.fav-opt.on{border-color:var(--border);background:var(--surface);color:var(--fg)}
+/* The direction is fenced off from the four keys above it - it reads as the chosen key's own
+   second half rather than as a fifth key - and it is always two rows, so the panel cannot
+   change height when another sort is picked. The fence is --border rather than the --hair an
+   inner divider wears: this line stands on the page ground, not inside a card, and --hair on
+   --bg is a line nobody can see (same reason the bars end in --border). */
+.fav-dirs{margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
 /* A kept card's second footer band: which chain and which set of settings the card was read
    as, and the two timestamps - what a bookmark cannot tell you. It is inside the card, under
    the link row and behind a hair-line rather than a full border, so it reads as one more line
@@ -763,19 +913,20 @@ div.pgroup>.pset{margin-top:auto}
 .look-list{display:flex;flex-direction:column;gap:2px;width:320px}
 .look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted)}
-/* A row is two lines because one will not hold it: a symbol, the chain it is on, the address
-   and when it was read. The address is the thing the reader came to copy, so it keeps the
-   monospace register and the second line. */
-.look-row{display:flex;flex-direction:column;gap:2px;width:100%;padding:6px 9px;border:1px solid transparent;
+/* A row is one line: the mark, the name, and the chain it is on. The address and the moment it
+   was read used to stand under it and came out again (2026-10-02, user) - the card beside the
+   list prints both, and a reader picks a row by name rather than by the address it is about.
+   The mark is the card's own box at 19px (2026-10-02, user): it rides inside the row's own
+   text line rather than setting the height, so the 33.4px row is unchanged. It is the one part
+   of a card a one-line row can carry, and it is what tells two rows with the same symbol
+   apart. */
+.look-row{display:flex;align-items:center;width:100%;padding:6px 9px;border:1px solid transparent;
   background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
 .look-row:hover{background:var(--surface-warm)}
 .look-row.on{border-color:var(--border);background:var(--surface)}
-.look-top{display:flex;align-items:baseline;gap:7px;min-width:0}
+.look-top{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0}
 .look-top b{font-size:12.5px;font-weight:600;color:var(--fg)}
 .look-top i{margin-left:auto;font-style:normal;font-size:10.5px;color:var(--muted)}
-.look-sub{display:flex;align-items:baseline;gap:8px;font-family:var(--mono);font-size:10.5px;
-  color:var(--muted)}
-.look-sub span{margin-left:auto}
 /* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
    the columns under it rather than flush against the window. */
 #view-lookup>.note-bar{margin:12px 16px}

@@ -1,11 +1,15 @@
-import { Star, TriangleAlert } from "lucide-react";
+import {
+  ArrowDownAZ, ArrowDownWideNarrow, ArrowUpAZ, ArrowUpNarrowWide, Clock, FoldVertical, Gauge,
+  Layers, Search, Star, TriangleAlert, UnfoldVertical,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { errorText } from "../../api/client";
 import type { Chain, Favorite } from "../../api/client";
 import { useFavorites, useForgetFavorite } from "../../api/hooks";
 import { Icon } from "../../components/Icon";
-import { Pick } from "../../components/Pick";
+import { chainIdMark } from "../../components/chainMark";
 import { whole } from "../../format";
 import { Card } from "../report/Card";
 import { chainName, field, parts, stamp } from "../report/foot";
@@ -82,14 +86,56 @@ function provenance(row: Favorite, labels: Map<string, string>) {
   );
 }
 
+/** 来源 / 排序, and the direction under the sort: the shelf's controls, standing in the
+ *  first track the way 最近搜索 does on the 搜索 page (2026-10-02, user). The chips filter by
+ *  where a card came from - a chain, or 搜索 for a CA that came back from anywhere - and the
+ *  sort is a list rather than a dropdown because it is four keys and two directions. */
+type SortKey = "saved" | "origin" | "score" | "name";
+type SortDir = "asc" | "desc";
+
+/** The first direction is the one a key opens on, so a key is never shown with its second
+ *  choice highlighted: 时间 opens on 从新到旧, 分数 on 从高到低, 名称 on A–Z.
+ *
+ *  生成时间 and 收藏时间 are the pair the card's own foot prints (provenance): a round that
+ *  writes this token again hands the shelf a newer card while the moment the reader kept it
+ *  stands still, so the two orders answer two different questions.
+ *
+ *  Every row carries its glyph here rather than in the view (2026-10-02, user): a key and its
+ *  two directions are one fact, so the icon that says 收藏时间 and the pair that says 从新到旧
+ *  are declared on the same line. 收藏时间 wears the star the rail and the card's own control
+ *  wear for the same word, and the directions wear the arrow the sort reads with - the two
+ *  keys that count a quantity share one pair, and 名称 says the alphabet it sorts by. */
+const SORTS: {
+  value: SortKey;
+  label: string;
+  icon: LucideIcon;
+  dirs: [SortDir, string, LucideIcon][];
+}[] = [
+  { value: "saved", label: "收藏时间", icon: Star,
+    dirs: [["desc", "从新到旧", ArrowDownWideNarrow], ["asc", "从旧到新", ArrowUpNarrowWide]] },
+  { value: "origin", label: "生成时间", icon: Clock,
+    dirs: [["desc", "从新到旧", ArrowDownWideNarrow], ["asc", "从旧到新", ArrowUpNarrowWide]] },
+  { value: "score", label: "分数", icon: Gauge,
+    dirs: [["desc", "从高到低", ArrowDownWideNarrow], ["asc", "从低到高", ArrowUpNarrowWide]] },
+  { value: "name", label: "名称", icon: ArrowDownAZ,
+    dirs: [["asc", "A–Z", ArrowDownAZ], ["desc", "Z–A", ArrowUpAZ]] },
+];
+
+
 export function FavoritesView({ chains }: { chains: Chain[] }) {
   const shelf = useFavorites();
   const forget = useForgetFavorite();
-  // Empty means 全部. A filter and a sort are view state, not kept anywhere: the shelf is
-  // ordered by when a card was kept, which is the order the API answers in.
+  // Empty means 全部. A filter and a sort are view state, not kept anywhere: the shelf
+  // arrives in the order it was kept (the API's own), which is exactly 收藏时间 / 从新到旧,
+  // so the defaults below are the page not asking for anything.
   const [chain, setChain] = useState("");
   const [query, setQuery] = useState("");
-  const [byScore, setByScore] = useState(false);
+  const [key, setKey] = useState<SortKey>("saved");
+  const [dir, setDir] = useState<SortDir>("desc");
+  /** 展开卡片 / 收起卡片 reaches every card at once - the same bulk edit a radar bar and
+   *  the 搜索 page make (8.3.7). The folds are uncontrolled <details>, so the tick is what
+   *  remounts them and a manual toggle keeps working until the next click. */
+  const [bulk, setBulk] = useState({ open: false, tick: 0 });
 
   const rows = useMemo(() => shelf.data ?? [], [shelf.data]);
 
@@ -124,9 +170,34 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
       return (row.symbol ?? "").toLowerCase().includes(needle)
         || row.ca.toLowerCase().includes(needle);
     });
-    if (!byScore) return list;
-    return [...list].sort((a, b) => (b.card.score ?? -1) - (a.card.score ?? -1));
-  }, [rows, chain, query, byScore]);
+
+    const flip = dir === "asc" ? 1 : -1;
+    // Two cards that compare equal keep one fixed order (CA), so the two directions are two
+    // readings of the same list rather than two different shuffles of the equal ones.
+    const tie = (a: Favorite, b: Favorite) =>
+      a.ca.localeCompare(b.ca) || a.chain_id.localeCompare(b.chain_id);
+    const cmp = (a: Favorite, b: Favorite): number => {
+      if (key === "score") {
+        const x = a.card.score ?? null;
+        const y = b.card.score ?? null;
+        // A card with no score is not a card on 0 (8.8.2) - a searched token has no pool to
+        // be a percentile of - so it sinks in both directions instead of leading 从低到高.
+        if (x === null || y === null) return x === y ? tie(a, b) : x === null ? 1 : -1;
+        return flip * (x - y) || tie(a, b);
+      }
+      if (key === "name") {
+        const x = a.symbol ?? a.card.sym;
+        const y = b.symbol ?? b.card.sym;
+        return flip * x.localeCompare(y) || tie(a, b);
+      }
+      const x = key === "saved" ? a.saved_at : a.origin_label;
+      const y = key === "saved" ? b.saved_at : b.origin_label;
+      return flip * x.localeCompare(y) || tie(a, b);
+    };
+    return [...list].sort(cmp);
+  }, [rows, chain, query, key, dir]);
+
+  const sortNow = SORTS.find((sort) => sort.value === key) ?? SORTS[0];
 
   return (
     <div id="view-favorites">
@@ -136,32 +207,18 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
           <b>收藏</b>
         </div>
         <div className="fav-tools">
-          <div className="fav-chips">
-              <button type="button" className={"chip" + (chain === "" ? " on" : "")}
-                onClick={() => setChain("")}>全部</button>
-              {chainIds.map((id) => (
-                <button type="button" key={id} className={"chip" + (chain === id ? " on" : "")}
-                  onClick={() => setChain(id)}>
-                  {chainName(labels, id)}
-                </button>
-              ))}
-              {/* A card a CA search left behind is on the shelf like any other once it is
-                  collected, and no chain chip can find it when its chain has no radar - so
-                  the source is its own chip, standing after the chains (user, 2026-10-01). */}
-              <button type="button" className={"chip" + (chain === SEARCHED ? " on" : "")}
-                onClick={() => setChain(SEARCHED)}>搜索</button>
-          </div>
+          {/* The same bulk edit a radar bar makes (8.3.7). One label, two states, so the
+              reader learns it once and it always says what the next click does. */}
+          <button className="btn sec"
+            onClick={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}>
+            <Icon as={bulk.open ? FoldVertical : UnfoldVertical} size={14} />
+            {bulk.open ? "收起卡片" : "展开卡片"}
+          </button>
+          {/* The box stays in the bar rather than moving into the panel: it is a filter like
+              the chips, but it is typed into and answered as it is typed, and that belongs
+              beside 导出 rather than under a heading (2026-10-02, user). */}
           <input className="fav-search" value={query} placeholder="过滤 symbol / CA"
             onChange={(event) => setQuery(event.target.value)} />
-          <Pick
-            className="btn sec fav-sort"
-            label="排序"
-            current={byScore ? "score" : "time"}
-            trigger={byScore ? "按分数" : "按收藏时间"}
-            options={[{ value: "time", label: "按收藏时间" },
-              { value: "score", label: "按分数" }]}
-            onPick={(value) => setByScore(value === "score")}
-          />
           {/* Locked like the topbar's 导出 and for the same reason (9.5.1): the handler is
               wired, the control says so. */}
           <button type="button" className="btn sec demo" disabled
@@ -174,23 +231,88 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
           <Icon as={TriangleAlert} size={14} />
           <span>收藏读取失败：{errorText(shelf.error)}</span>
         </div>
-      ) : shown.length ? (
-        <div className="grid">
-          {shown.map((row) => (
-            <Card
-              key={row.chain_id + ":" + row.ca}
-              card={row.card}
-              openAll={false}
-              bulkTick={0}
-              favorited
-              onFavorite={() => forget.mutate({ chainId: row.chain_id, ca: row.ca })}
-              foot={provenance(row, labels)}
-            />
-          ))}
-        </div>
       ) : (
-        <div className="note-bar">
-          {rows.length ? "没有符合条件的收藏。" : "还没有收藏。在任意报告卡上点星标收进来。"}
+        /* The controls stand in the first track, the way 最近搜索 stands on the 搜索 page.
+           The panel keeps its width whether or not the shelf holds anything, so the cards
+           beside it do not move when the last card is unstarred. */
+        <div className="grid fav-body">
+          <aside className="fav-side">
+            {/* One list per group, 来源 and 排序 alike (2026-10-02, user): the segmented row
+                becomes one more list, so the two read the same and a chain the rail does not
+                list is one more row instead of a chip that has to fit in the row above.
+
+                Each row opens with its own glyph (2026-10-02, user): a 来源 row wears what the
+                rail wears for that source - the chain's own mark, or 搜索's own glyph - and a
+                排序 row wears its key or the direction it reads in. */}
+            <h4 className="look-h">来源</h4>
+            <div className="fav-opts">
+              <button type="button" className={"fav-opt" + (chain === "" ? " on" : "")}
+                onClick={() => setChain("")}>
+                <Icon as={Layers} size={14} />
+                全部
+              </button>
+              {chainIds.map((id) => (
+                <button type="button" key={id} className={"fav-opt" + (chain === id ? " on" : "")}
+                  onClick={() => setChain(id)}>
+                  {chainIdMark(id)}
+                  {chainName(labels, id)}
+                </button>
+              ))}
+              {/* A card a CA search left behind is on the shelf like any other once it is
+                  collected, and no chain row can find it when its chain has no radar - so the
+                  source is its own row, standing after the chains (user, 2026-10-01). */}
+              <button type="button" className={"fav-opt" + (chain === SEARCHED ? " on" : "")}
+                onClick={() => setChain(SEARCHED)}>
+                <Icon as={Search} size={14} />
+                搜索
+              </button>
+            </div>
+            <h4 className="look-h">排序</h4>
+            <div className="fav-opts">
+              {SORTS.map((sort) => (
+                <button type="button" key={sort.value}
+                  className={"fav-opt" + (key === sort.value ? " on" : "")}
+                  onClick={() => { setKey(sort.value); setDir(sort.dirs[0][0]); }}>
+                  <Icon as={sort.icon} size={14} />
+                  {sort.label}
+                </button>
+              ))}
+            </div>
+            {/* The direction reads as the sort's own second half rather than as two more keys:
+                it is fenced off from the four and it says what the key above it means. It is
+                always two rows, so picking another sort cannot make the panel jump. */}
+            <div className="fav-opts fav-dirs">
+              {sortNow.dirs.map(([value, label, icon]) => (
+                <button type="button" key={value}
+                  className={"fav-opt" + (dir === value ? " on" : "")}
+                  onClick={() => setDir(value)}>
+                  <Icon as={icon} size={14} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </aside>
+          <section className="fav-cards">
+            {shown.length ? (
+              <div className="grid">
+                {shown.map((row) => (
+                  <Card
+                    key={row.chain_id + ":" + row.ca}
+                    card={row.card}
+                    openAll={bulk.open}
+                    bulkTick={bulk.tick}
+                    favorited
+                    onFavorite={() => forget.mutate({ chainId: row.chain_id, ca: row.ca })}
+                    foot={provenance(row, labels)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="note-bar">
+                {rows.length ? "没有符合条件的收藏。" : "还没有收藏。在任意报告卡上点星标收进来。"}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

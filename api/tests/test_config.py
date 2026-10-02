@@ -5,29 +5,61 @@ import os
 from app import config
 
 
-def test_reloading_one_env_file_keeps_what_the_other_put_in(tmp_path):
-    """The LLM file is re-read on every model call; the search file is read once, at
-    import. While the record of what came from a file was one flat dict, that reload
-    withdrew the search file's credentials too - so from the first model call of every
-    process, every X search and every timeline failed "needs CH_X_AUTH_TOKEN" and the round
-    looked like it had simply found nothing."""
-    first = tmp_path / "llm.env"
-    second = tmp_path / "search.env"
-    first.write_text("CH_TEST_LLM_KEY=1\n", encoding="utf-8")
-    second.write_text("CH_TEST_SEARCH_KEY=2\n", encoding="utf-8")
-    os.environ.pop("CH_TEST_LLM_KEY", None)
-    os.environ.pop("CH_TEST_SEARCH_KEY", None)
-    try:
-        assert config.load_env_file(first) == 1
-        assert config.load_env_file(second) == 1
-        assert config.load_env_file(first) == 1
-        assert os.environ["CH_TEST_SEARCH_KEY"] == "2"
-        assert os.environ["CH_TEST_LLM_KEY"] == "1"
-    finally:
-        for path in (first, second):
-            config._FROM_FILE.pop(path, None)
-        os.environ.pop("CH_TEST_LLM_KEY", None)
-        os.environ.pop("CH_TEST_SEARCH_KEY", None)
+def test_the_file_is_the_install_step(tmp_path, monkeypatch):
+    """Read, re-read, edit and delete `system.yaml`, which is the whole install step.
+
+    Called on every model call rather than once at import: an edit lands on the next round, a
+    deleted value is withdrawn from the environment, and a key that never went in cannot linger.
+    """
+    path = tmp_path / "system.yaml"
+    monkeypatch.setattr(config, "SYSTEM_PATH", path)
+    monkeypatch.setattr(config, "_FROM_FILE", {})
+    # Importing this module already applied the real file, so every key this test writes has to
+    # start out unset - otherwise "the shell owns it" is what the loader would be answering.
+    for name in ("CH_LLM_MODEL", "CH_LLM_TIMEOUT", "CH_LLM_EXTRA_HEADERS", "CH_LLM_REASONING"):
+        monkeypatch.delenv(name, raising=False)
+
+    path.write_text("llm:\n  model: from-file\n", encoding="utf-8")
+    assert config.load_env_file() == 1
+    assert os.environ["CH_LLM_MODEL"] == "from-file"
+
+    path.write_text("llm:\n  model: null\n", encoding="utf-8")
+    assert config.load_env_file() == 0
+    assert "CH_LLM_MODEL" not in os.environ
+
+    # The file's own values are read as the file wrote them: an integer stays one, a JSON
+    # object arrives as the string the client parses, and an empty box is not a value at all.
+    path.write_text(
+        "llm:\n  timeout: 300\n  extra_headers:\n    a: b\n  reasoning:\n",
+        encoding="utf-8",
+    )
+    assert config.load_env_file() == 2
+    assert os.environ["CH_LLM_TIMEOUT"] == "300"
+    assert os.environ["CH_LLM_EXTRA_HEADERS"] == '{"a": "b"}'
+    assert "CH_LLM_REASONING" not in os.environ
+
+
+def test_a_real_environment_variable_is_never_touched(tmp_path, monkeypatch):
+    """A variable the shell exported beats the file, including after a re-read.
+
+    The re-read is on every model call, so the record of what the file owns is what keeps that
+    reload from withdrawing a variable it never set - the bug that once deleted the search
+    file's credentials on the first call of every process, and left every X search after it
+    failing "needs CH_X_AUTH_TOKEN" in a round that looked like it had found nothing.
+    """
+    path = tmp_path / "system.yaml"
+    monkeypatch.setattr(config, "SYSTEM_PATH", path)
+    monkeypatch.setattr(config, "_FROM_FILE", {})
+    monkeypatch.setenv("CH_LLM_MODEL", "from-shell")
+
+    path.write_text("llm:\n  model: from-file\n", encoding="utf-8")
+    assert config.load_env_file() == 0
+    assert os.environ["CH_LLM_MODEL"] == "from-shell"
+
+    # And a file that stops setting a key does not reach for the shell's version of it.
+    path.write_text("llm:\n  model: null\n", encoding="utf-8")
+    assert config.load_env_file() == 0
+    assert os.environ["CH_LLM_MODEL"] == "from-shell"
 
 
 def test_every_chain_declared():
