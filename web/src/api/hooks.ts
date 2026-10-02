@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as api from "./client";
+import type { Run } from "./client";
 
 export function useChains() {
   return useQuery({ queryKey: ["chains"], queryFn: api.listChains, staleTime: 60_000 });
@@ -103,12 +104,16 @@ export function useCancelRun(chainId: string, configId: string) {
   });
 }
 
-export function useRunNow(chainId: string, configId: string) {
+/** Start a round now. `onStarted` answers the round that was just created: the page
+ *  points its pager at it and opens the panel, otherwise a reader paged back to an
+ *  older round keeps looking at that round and the click looks dead. */
+export function useRunNow(chainId: string, configId: string, onStarted?: (run: Run) => void) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.runNow(chainId, configId),
-    onSuccess: () => {
+    onSuccess: (run) => {
       void qc.invalidateQueries({ queryKey: ["runs", chainId, configId] });
+      onStarted?.(run);
     },
   });
 }

@@ -26,7 +26,8 @@ llm:
   tries: 1
   # 被拒的 key 晾多少秒，0 = 不晾。
   key_cooldown: 600
-  # 网关要求的额外请求头，写成一个 JSON 对象，例如 {"x-opencode-session": "crypto-hunter"}
+  # 高级：界面不再提供该项。网关要的固定头由客户端自动带（opencode 网关的 session 头），
+  # 只有网关点名要别的头时才写这里，写成一个 JSON 对象；这里写的同名头优先。
   extra_headers: null
 
 # 一次并行调研几个币（一个币一次模型调用）。网关开始 429 就先调小它。

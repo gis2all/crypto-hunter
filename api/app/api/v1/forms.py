@@ -643,7 +643,6 @@ SYSTEM_LABELS = {
     "llm.api_key": "API Key",
     "llm.api_key_fallback": "备用 Key",
     "llm.model": "模型",
-    "llm.extra_headers": "额外请求头",
     "llm.reasoning": "推理档位",
     "llm.max_tokens": "回答上限",
     "llm.timeout": "单次超时",
@@ -703,14 +702,13 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
                 "actions": actions or []}
 
     endpoint = group("llm-endpoint", "端点", (
-        "网关、Key、模型。改完下次调用生效，不用重启。额外请求头写成 JSON 对象，例如"
-        " {\"x-opencode-session\": \"crypto-hunter\"}。"
+        "网关、Key、模型。改完下次调用生效，不用重启。网关要的固定请求头由客户端"
+        "按网关自动带，不用填。"
     ), [
         row("llm.base_url", presets=_options(list(SYSTEM_ENDPOINTS))),
         row("llm.api_key"),
         row("llm.api_key_fallback"),
         row("llm.model"),
-        row("llm.extra_headers"),
     ], actions=[
         {"id": "models", "label": "获取模型"},
         {"id": "test", "label": "测试连接"},

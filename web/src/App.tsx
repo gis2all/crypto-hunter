@@ -133,7 +133,14 @@ export default function App() {
   const liveRun = useLiveRun(run?.id, live ? "running" : "off");
   const batch = useBatch(run?.id);
   // Held here, not in the page: the two buttons that act on it stand in the topbar.
-  const settings = useSettingsState(chainId, configId);
+  // A run just started is always the list head (the backend sorts newest first): point
+  // the pager at it and open the panel at once. Without this the page keeps showing the
+  // older round the reader had paged to, and the click looks dead until a reload
+  // re-answers the pager.
+  const settings = useSettingsState(chainId, configId, () => {
+    setBatchIndex(0);
+    setRunPanelOpen(true);
+  });
   const cancel = useCancelRun(chainId, configId);
 
   // Which round the page opens on, answered once per chain by the first list that arrives.

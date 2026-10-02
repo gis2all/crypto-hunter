@@ -156,6 +156,7 @@ def _probe_current(patch: Mapping[str, Any]) -> dict:
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             current["headers"] = {str(key): str(value) for key, value in parsed.items()}
+    llm.preset_headers(current["base_url"], current["headers"])
     return current
 
 

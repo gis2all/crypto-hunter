@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { SettingsField } from "../../api/client";
+import type { Run } from "../../api/client";
 import { useRunNow, useSaveSettings, useSettingsForm } from "../../api/hooks";
 import type { FieldValue } from "./Widget";
 
@@ -47,10 +48,10 @@ function toPatch(
  *  mutations and the one rule that joins them (save, then run) live here, and both
  *  surfaces read the same object. Both ids travel, because a report library and a round are
  *  scoped by a chain *and* a set of settings - never by the chain alone. */
-export function useSettingsState(chainId: string, configId: string) {
+export function useSettingsState(chainId: string, configId: string, onRunStarted?: (run: Run) => void) {
   const query = useSettingsForm(chainId, configId);
   const save = useSaveSettings(chainId, configId);
-  const runNow = useRunNow(chainId, configId);
+  const runNow = useRunNow(chainId, configId, onRunStarted);
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
   const [enabledDraft, setEnabledDraft] = useState<Record<string, boolean>>({});
   const data = query.data;
