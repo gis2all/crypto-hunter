@@ -339,6 +339,22 @@ html{scrollbar-gutter:stable}
    (see the block below). */
 .blk-cols .pgroup .prow:not(.wide)>.field{justify-content:flex-end}
 
+/* A row that ends in a unit and a row that ends in a number put that number on two
+   different lines: the unit rides in the flow, so 市值's 200000 box ends at 903 while
+   捆绑率's 25 ends at 887 with  %  in the last 10px (measured at 1726). 硬过滤's two columns
+   each hold both kinds (市值/流动性/24h 成交 against Top10/捆绑率/零数据淘汰/距高回撤), and that
+   is the whole defect: the boxes were sized by the neighbour they happened to have, which is
+   the same 病根 the system page's rows had.
+
+   So where a group has a row ending in a unit, the rows that end in a number reserve it too:
+   a 10px  ::after  ( field  own 6px gap  =  the 16px a unit's row leaves) and the column lines
+   up. Only a number ends a value column - a row that ends in a choice or a checkbox is not one,
+   and insetting it would pull a control off the panel's edge to align with nothing. Rows already
+   ending in a unit, groups with no trailing unit (两个评分口径, 调研), and  .wide  rows (a
+   checkbox group starts at the label's edge) are all untouched. */
+#view-params .pgroup:has(.field>.unit:last-child) .prow:not(.wide)>.field:has(>input.num:last-child)::after{
+  content:"";flex:0 0 10px}
+
 /* An empty drop cell gives its width back (2026-09-26).
 
    `.prow .drop` reserves `min-width:54px` for a group's trailing cell, and
