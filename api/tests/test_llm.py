@@ -46,6 +46,7 @@ def env_file(tmp_path, monkeypatch):
     # The cooldown of a refused key is process-local state, so a test that left one behind
     # would silently skip a key in the next test. A fresh map per test is the whole fix.
     monkeypatch.setattr(llm_client, "_DOWN", {})
+    monkeypatch.setattr(llm_client, "_ANSWERED_BY", {})
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     return path
@@ -164,6 +165,10 @@ def calls(monkeypatch):
             reply = replies.pop(0) if replies else _ok("ok")
             return _Streamed(reply, ns.on_chunk)
 
+        def post(self, url, headers=None, json=None):
+            sent.append({"url": url, "headers": headers or {}, "body": json or {}})
+            return replies.pop(0) if replies else _ok("ok")
+
     monkeypatch.setattr(llm_client.httpx, "Client", FakeClient)
     monkeypatch.setattr(llm_client.time, "sleep", lambda *_: None)
     return ns
@@ -200,6 +205,23 @@ def test_extra_headers_are_json_and_a_broken_value_is_ignored(env_file):
 
     _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m",
            CH_LLM_EXTRA_HEADERS="not json")
+    assert llm.settings()["headers"] == {}
+
+
+def test_opencode_gateway_brings_its_own_session_header(env_file):
+    _write(env_file, CH_LLM_BASE_URL="https://opencode.ai/zen/go/v1", CH_LLM_API_KEY="k",
+           CH_LLM_MODEL="m")
+    assert llm.settings()["headers"] == {"x-opencode-session": "crypto-hunter"}
+
+
+def test_an_explicit_header_beats_the_gateway_preset(env_file):
+    _write(env_file, CH_LLM_BASE_URL="https://opencode.ai/zen/go/v1", CH_LLM_API_KEY="k",
+           CH_LLM_MODEL="m", CH_LLM_EXTRA_HEADERS='{"x-opencode-session": "mine"}')
+    assert llm.settings()["headers"] == {"x-opencode-session": "mine"}
+
+
+def test_other_gateways_get_no_preset_headers(env_file):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m")
     assert llm.settings()["headers"] == {}
 
 
@@ -378,3 +400,112 @@ def test_the_thinking_budget_is_sent_only_when_the_operator_set_one(env_file, ca
            CH_LLM_REASONING="none")
     llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
     assert calls.sent[1]["body"]["reasoning_effort"] == "none"
+
+def _ok_responses(text):
+    """One answer in the Responses shape, as the gateway writes it: the text is a part of
+    type `output_text` inside an item of type `message`, and the bill counts input/output."""
+    return httpx.Response(
+        200,
+        json={
+            "status": "completed",
+            "output": [
+                {"type": "reasoning", "status": "completed"},
+                {"type": "message", "role": "assistant", "status": "completed",
+                 "content": [{"type": "output_text", "text": text, "annotations": []}]},
+            ],
+            "usage": {"input_tokens": 7, "output_tokens": 3},
+        },
+        request=httpx.Request("POST", "https://endpoint/v1/responses"),
+    )
+
+
+def _protocol_error():
+    """The 400 a model that answers only on the other endpoint gives."""
+    return httpx.Response(
+        400,
+        json={"type": "error", "error": {"type": "ModelProtocolUnsupported",
+                                         "message": "Model does not support this protocol."}},
+        request=httpx.Request("POST", "https://endpoint/v1/chat/completions"),
+    )
+
+
+def _workspace_error():
+    """The 400 that is about the account: the workspace has not allowed a model which trains
+    on request data. The envelope is a server_error and the words are inside the message."""
+    return httpx.Response(
+        400,
+        json={"error": {"type": "server_error",
+                        "message": "Upstream request failed: This Go model trains on request "
+                                   "data. Allow paid endpoints that train on request data in "
+                                   "your workspace Privacy settings to use it."}},
+        request=httpx.Request("POST", "https://endpoint/v1/chat/completions"),
+    )
+
+
+def test_a_model_that_refuses_chat_is_asked_in_the_responses_shape(env_file, calls,
+                                                                   isolated_db):
+    """The gateway serves two shapes and a model answers only one of them. Measured
+    2026-10-02: `muse-spark-1.3-contributor` answers 400 ModelProtocolUnsupported to a chat
+    completion and 200 to the same question on /responses, so a client that knew only the
+    first shape reported a working model as broken."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.extend([_protocol_error(), _ok_responses("from the other shape")])
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == \
+        "from the other shape"
+    assert [call["url"] for call in calls.sent] == \
+        ["https://e/v1/chat/completions", "https://e/v1/responses"]
+
+
+def test_the_shape_that_answered_is_remembered_so_the_guess_is_paid_once(env_file, calls,
+                                                                        isolated_db):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.extend([_protocol_error(), _ok_responses("first")])
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    calls.replies.append(_ok_responses("second"))
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "second"
+    assert [call["url"] for call in calls.sent] == \
+        ["https://e/v1/chat/completions", "https://e/v1/responses", "https://e/v1/responses"]
+
+
+def test_the_second_shape_carries_the_system_prompt_and_the_nested_effort(env_file, calls,
+                                                                         isolated_db):
+    """Two translations that are not cosmetic. The system prompt is `instructions` in this
+    shape; dropping it would ask a model to judge a token with no instructions at all. And the
+    thinking budget is nested `reasoning.effort` - the flat `reasoning_effort` the chat shape
+    takes answers 400 unknown parameter (measured 2026-10-02) - where `none` is not in the
+    family vocabulary and travels as the smallest effort it does accept."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k",
+           CH_LLM_REASONING="none")
+    calls.replies.extend([_protocol_error(), _ok_responses("ok")])
+    llm.complete([{"role": "system", "content": "be terse"},
+                  {"role": "user", "content": "hi"}], purpose="probe")
+    body = calls.sent[1]["body"]
+    assert body["instructions"] == "be terse"
+    assert body["input"] == [{"role": "user", "content": "hi"}]
+    assert body["reasoning"] == {"effort": "minimal"}
+    assert "reasoning_effort" not in body
+
+
+def test_a_workspace_refusal_is_a_key_problem_and_the_standby_answers(env_file, calls,
+                                                                     isolated_db):
+    """The 400 that says the workspace has not allowed a model which trains on request data is
+    about the account, not the request - and an account belongs to a key. Measured 2026-10-02:
+    the same call was refused for the primary key with this text and answered 200 for the
+    standby, so treating it as the request fault is what kept a working key unused."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    calls.replies.extend([_workspace_error(), _protocol_error(), _ok_responses("from standby")])
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "from standby"
+    assert [call["headers"]["Authorization"] for call in calls.sent] == \
+        ["Bearer primary", "Bearer standby", "Bearer standby"]
+
+
+def test_a_probe_reports_the_shape_that_answered(env_file, calls, isolated_db):
+    """The button an operator presses must not call a served model broken."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.extend([_protocol_error(), _ok_responses("ok")])
+    out = llm_client.probe(llm.settings())
+    assert out["error"] is None
+    assert out["protocol"] == "responses"
+    assert out["chars"] == 2
+    assert out["finish_reason"] == "completed"

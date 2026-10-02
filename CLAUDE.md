@@ -162,7 +162,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `api/app/system_settings.py` | 系统设置页的那张表：读写 `config/system.yaml`（行级往返，没改的行逐字节不变）、把值灌进 `os.environ`；键表 `config.SYSTEM_KEYS` 同时喂 loader 与页面，页面因此提不出一个没人读的旋钮（8.9） |
 | `api/app/lookup.py` | CA 搜索的全部工作，一个地址一条链：认链 -> 逐源读这一个币 -> 链上 LP 判定 -> 链下调研 -> 出卡并落成一行搜索记录；`STAGES` / `start` / `drive` / `submit` 把它包成一个可轮询的 job（表 `search_jobs`）。**不在一轮的编排里**，也不碰 `runs` |
 | `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models`（**不许有 IO**） |
-| `api/app/llm/` | 写手客户端：对 OpenAI 兼容端点的一次调用（`settings()` 每次现读、key 轮换与冷却、记账 `llm_calls`）。另外两个入口不记账、不吃冷却，只服务系统设置页那两个按钮：`list_models()`（拉 `/models`）与 `probe_keys()`（每把 key 各一次真的最小调用，8.9.7） |
+| `api/app/llm/` | 写手客户端：对 OpenAI 兼容端点的一次调用（`settings()` 每次现读、key 轮换与冷却、两种请求形状自动选、记账 `llm_calls`）。另外两个入口不记账、不吃冷却，只服务系统设置页那两个按钮：`list_models()`（拉 `/models`）与 `probe_keys()`（每把 key 各一次真的最小调用，8.9.7） |
 | `api/app/pipeline/` | 一轮的编排：`collect` / `decide` / `states` / `progress` / `run` / `schedule` / `write` |
 | `api/app/report/` | 报告：`facts`（唯一事实表）/ `cards` / `assemble` / `lexicon` / `research` / `segments` / `prompts`（CA 搜索复用 `cards` ＋ `lexicon.report_payload`，形状不许分家） |
 | `api/app/search/` | 挖链：`base`（命中与 URL 归一）/ `identify`（读页面定 tier）/ `discover`（搜索 ＋ 互证）/ `harvest` / `engines/xsearch` |
@@ -244,12 +244,12 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | 6.4.5 | 读页面的素材有上限：正文合计 **15000 字符**，链接最多 **8 个**；官方 X 时间线另给 **15000 字符**（约最近 20 条，带时间戳与互动数）。`READABLE_SOCIALS` **含 TG** —— `t.me/<name>` 的公开预览页带频道名、成员数与最近几条帖子。 | 上限压到「够写一段」的量，模型就只能凭事实表写，叙事退化成数字堆砌。 |
 | 6.4.6 | 空壳页面交浏览器画，账号页永远不画：静态 lane 不跑 JS，而 Arc 上的发射台官网多是 React 空壳，判定阈值 `identify.SHELL_WORDS`。渲染只在**已证明是空壳**时发生，且只有**候选官网**走这条路；X 与 TG 是例外（`NO_RENDER`）—— X 只把 bio 给静态客户端、浏览器看到的是登录墙。 | 实测几个 Meme 站静态只有 8–10 个词、连 CA 都搜不到，渲染后是几百个词且带 CA —— 曾经因此判成 `none`，卡片上挂的是第三方站。`networkidle` 与第三方渲染服务都试过并放弃（太慢 / 会把 SPA 打残）。 |
 | 6.4.7 | 写词条是**一个币一次调用**，宽度是实测值（找链接 15 并发、写词条 12 并发）。「一次调用写完所有条目」必然撞天花板，已废弃。 | 并发提到 20 实测有 429 而且更慢；一个币失败只丢它自己那条，原因进本轮 note，不阻塞整轮。 |
-| 6.4.8 | LLM 客户端走一个 OpenAI 兼容端点：配置在 `config/system.yaml`（页面「系统设置」）、**真实环境变量优先**，这个文件**每次调用时重读**，所以改完下一轮生效、不用重启。换 key 只在 401 / 403 / 429 时发生（并把换掉的那个晾 `CH_LLM_KEY_COOLDOWN` 秒）；别的 4xx 直接失败；5xx 与网络错误在同一 key 内按 `CH_LLM_TRIES` 重试。 | **日志里只出现 key 的 sha256 前 8 位指纹，不出现 key 本身。** 三个坑都已踩过：① **推理模型的思考计入 `max_tokens`** —— 额度给小了返回**空消息**（`finish_reason = length`），不是报错，客户端把空消息当失败，于是额度调小会静默降级成「没有文字」；② 该网点偶发 503，所以有上面那条重试；③ 一次调用只写一个币。 |
+| 6.4.8 | LLM 客户端走一个 OpenAI 兼容端点、**两种请求形状**（`/chat/completions` 与 `/responses`）：配置在 `config/system.yaml`（页面「系统设置」）、**真实环境变量优先**，文件**每次调用时重读**，改完下一轮生效、不用重启。形状**先 chat 再 responses**，答过的按「端点＋模型」记住，猜错只花一次被拒的调用（`muse-spark-1.3-contributor` 只服务 `/responses`，问 chat 回 `ModelProtocolUnsupported`）；正文带 `protocol` 的 400 是**形状**不对 —— 换形状、不换 key。换 key 只在 401 / 403 / 429，**外加一种 400**：正文说 workspace 没放行「拿请求数据训练」的模型（`trains on request data` / `privacy settings`）—— workspace 属于 key，同一请求在备用 key 上会 200（实测 2026-10-02）—— 换掉的那个晾 `CH_LLM_KEY_COOLDOWN` 秒；别的 4xx 直接失败；5xx 与网络错误在同一 key 内按 `CH_LLM_TRIES` 重试。 | **日志里只出现 key 的 sha256 前 8 位指纹，不出现 key 本身。** 四个坑都踩过：① **推理模型的思考计入输出额度** —— 额度给小了返回**空消息**（`finish_reason = length`），不是报错，客户端把空消息当失败，于是额度调小会静默降级成「没有文字」；② 该网点偶发 503，所以有上面那条重试；③ 一次调用只写一个币；④ 两种形状参数名不同：系统提示在 responses 里叫 `instructions`，思考预算是嵌套的 `reasoning.effort`（扁平的回 400 `unknown parameter`），且该系列不认 `none`、最低 `minimal` —— 所以 `none` 在 responses 上发 `minimal`；不发这个字段则默认高思考，256 额度里 253 个烧在思考上、正文空。 |
 | 6.4.9 | **官网候选不只吃引擎命中**：`harvest.site_candidates()` 从本轮项目自己的页面里按 host 取候选（X 主页的 `expanded_url` 也算），读并挣 tier；**只有 `tier = own` 的**才落到 `metrics.websites` 首位，卡片才印得出官网。「项目自己的页面」有两处：挣到 `own` 的账号页，以及本轮记录点名的账号页（`discover.named_handles(known)`）—— 多数项目的 bio 只写自己的名字、从不写 CA，这种账号一条 tier 都挣不到，只有被点名才读得到。 | 候选只来自引擎时，项目写在自己 X 主页上的官网（引擎从没索引过）根本不是候选，卡片就没有官网行。 |
 
 | 变量 | 作用 |
 | --- | --- |
-| `CH_LLM_BASE_URL` | 端点，客户端自己拼 `/chat/completions` |
+| `CH_LLM_BASE_URL` | 端点，客户端自己拼两种形状之一（6.4.8） |
 | `CH_LLM_API_KEY` / `_FALLBACK` | Bearer。**逗号分隔可写多个**：第一个是主 key，后面是备用，按顺序试 |
 | `CH_LLM_KEY_COOLDOWN` | 被拒的 key 跳过多少秒，默认 600；0 关闭 |
 | `CH_LLM_MODEL` | 模型名；有没有写手看 `/api/v1/health` 的 `llm` / `llm_model` |
@@ -397,7 +397,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 8.9.4 | **密钥页面只给两端，不给值**：写成 `已配置 · sk-liv…6789`（首 6 尾 4，短于 12 位只给尾），没配的写「未配置」，输入框本身是 password 框。日志那边仍旧只印 sha256 前 8 位（6.4.8）。 | 值进了 HTTP 响应，就等于进了浏览器缓存、截图和每一次复制；而两端已经够回答「用的是不是我记的那把」。 |
 | 8.9.5 | **写回是行级往返**：`ruamel.yaml` ＋ 临时文件 ＋ `os.replace`，没改的行逐字节相同（保注释、保引号、保 CRLF）。非法值（枚举写错 / 数字不是数字 / 不是 JSON / `NaN`）一律 422 且**文件不动**。 | 整份重写会吃掉注释与排版；先写坏再报错，就是把文件留在一个没人验过的状态。 |
 | 8.9.6 | **保存即生效**：写完重读环境变量，还调一次 `logging_setup.setup()`（幂等、不碰 uvicorn），所以日志等级**当场**换档；LLM 与 X 会话是**下次调用**换 —— 读方本来就是用时才读。 | 写完要重启才看得见，操作者会以为没存上。 |
-| 8.9.7 | **探测走草稿，不是文件**：`POST /system/models`（拉端点自己的 `/models`）与 `POST /system/test` 都带 draft，用 `effective()` 把草稿盖在文件上、走保存那一套同款校验 —— 一个存不进去的值在这里也是 422，而且**什么都没写**。**它也不是一轮**：`api_keys` 里**每一把各打一次**（最多 3 把）、不重试、20s 超时、**不写 `llm_calls`、不把任何一把 key 晾冷却**；网关的拒绝是**答案不是异常**，原话印在按钮旁边，表单一动不动。 | 要先保存才能测，操作者就得把一个错的端点写进文件才能发现它错；一次点错按钮就把真 key 晾 600 秒，比不打这个按钮还糟。备用 key 从没答过话，一轮只在主 key 被拒的那天才第一次用它 —— 那时才发现它也是坏的，代价是一整轮。 |
+| 8.9.7 | **探测走草稿，不是文件**：`POST /system/models`（拉端点自己的 `/models`）与 `POST /system/test` 都带 draft，用 `effective()` 把草稿盖在文件上、走保存那一套同款校验 —— 一个存不进去的值在这里也是 422，而且**什么都没写**。**它也不是一轮**：`api_keys` 里**每一把各打一次**（最多 3 把）、不重试、60s 超时、**不写 `llm_calls`、不把任何一把 key 晾冷却**；网关的拒绝是**答案不是异常**，原话印在按钮旁边，表单一动不动。 | 要先保存才能测，操作者就得把一个错的端点写进文件才能发现它错；一次点错按钮就把真 key 晾 600 秒，比不打这个按钮还糟。备用 key 从没答过话，一轮只在主 key 被拒的那天才第一次用它 —— 那时才发现它也是坏的，代价是一整轮。超时要盖住真的 `/responses` 调用（实测 14-33s），20s 会把能用的模型报成不可达。 |
 | 8.9.8 | **测的是「能不能写」，不是「通不通」**：`/models` 只证明门开着，所以 `test` 每把各打一次**真的最小调用**（`max_tokens=256`，按配置发 `reasoning_effort`），把 `finish_reason` 与字数一起回报。 | 只看连通性，会把一个「200 + 空正文」的端点判成健康 —— 那正是 6.4.8 坑①。 |
 | 8.9.9 | **候选只往框里打字**：端点预设（`forms.SYSTEM_ENDPOINTS`）与端点回的模型列表都是 `Pick`，点一下写进旁边的输入框，**框还是框**。按钮与结果行由后端的 `ActionOut` 给，`id` 是这一页唯一认识的词，键名一个不认识。 | 做成纯下拉 = 自建 vLLM、或端点没列出的模型，都进不来。 |
 | 8.9.10 | **X 会话的「测试连接」问的是「这串 cookie 还是登录态吗」**：`POST /system/x` → `XEngine.probe()` 跑一次 `twitter whoami --json`，30s（`PROBE_TIMEOUT`，不是一轮的 120s）、不搜关键词、不记账、不碰冷却；拒绝的原话回页面，缺凭据 / 没装客户端 / 超时都各自成句而不是 500。 | X 没有 `/models` 那种「门开着」的免费探针；用一次真搜索来验会话，点错一次就花掉一轮要用的额度（429 会让币丢链接）。 |
