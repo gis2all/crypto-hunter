@@ -22,9 +22,14 @@
   --ok:#26de81;--ok-fg:#26de81;--ok-border:#195d43;--ok-bg:#15332f;
   --warn:#fbbf24;--warn-fg:#fbbf24;--warn-border:#645223;--warn-bg:#332f22;
   --danger:#ff4757;--danger-fg:#ff6b78;--danger-border:#652835;--danger-bg:#331e29;
+  /* Three hues, not three medals (2026-10-02, user): gold / teal / violet. Silver was --fg-2
+     in dark and --muted's neighbour in light, so 2nd place read as ordinary card text; copper
+     sat ~20 degrees from the gold, so 3rd read as a darker 1st. Ordered warm -> cool -> cold,
+     so the top of the board still opens on the warmest colour, and no two positions can be
+     confused at 11.5px. Each numeral is held above 4.5:1 against its own tint, both themes. */
   --podium-1:#e8bf4a;--podium-1-bg:#2f2712;
-  --podium-2:#cbd5e1;--podium-2-bg:#242c38;
-  --podium-3:#c8825a;--podium-3-bg:#2b1d13;
+  --podium-2:#4fd1c5;--podium-2-bg:#16302e;
+  --podium-3:#b48cf0;--podium-3-bg:#2a2340;
   --ctrl-h:26px;--ctrl-h-sm:20px;
   color-scheme:dark;
   --sans:Inter,'Inter var',system-ui,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif;
@@ -76,7 +81,7 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   --warn:#a16207;--warn-fg:#8a5a06;--warn-border:#ad7f16;--warn-bg:#fdf6e4;
   --danger:#c81e1e;--danger-fg:#b91c1c;--danger-border:#d47272;--danger-bg:#fdecec;
   --podium-1:#8a6100;--podium-1-bg:#fdf2d5;
-  --podium-2:#5f6b7c;--podium-2-bg:#eef1f5;
-  --podium-3:#9a5220;--podium-3-bg:#fbeee3;
+  --podium-2:#0e6e6a;--podium-2-bg:#e3f1f0;
+  --podium-3:#6b2fbf;--podium-3-bg:#f1eafc;
   color-scheme:light;
 }
