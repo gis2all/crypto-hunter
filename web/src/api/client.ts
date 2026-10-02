@@ -272,3 +272,54 @@ export const testSystem = (patch: Record<string, unknown>) =>
  *  page's unsaved rows, and unrecorded - a search spends a rate budget a round needs. */
 export const probeXSession = (patch: Record<string, unknown>) =>
   request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch }) });
+
+/** Macro track: coin-news hotspots. Types come from types.gen like everything else. */
+export type MacroItem = components["schemas"]["MacroItemOut"];
+export type MacroEvent = components["schemas"]["MacroEventOut"];
+export type MacroEventDetail = components["schemas"]["MacroEventDetailOut"];
+export type MacroDigest = components["schemas"]["MacroDigestOut"];
+export type MacroTopic = components["schemas"]["MacroTopicOut"];
+export type MacroCollect = components["schemas"]["MacroCollectOut"];
+
+/** The feed: raw items, or the picked ones only. `q` matches title/summary. */
+export const listMacroItems = (selectedOnly = false, limit = 50, q?: string) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (selectedOnly) params.set("selected_only", "true");
+  if (q) params.set("q", q);
+  return request<MacroItem[]>(`/macro/items?${params.toString()}`);
+};
+
+/** The hotspot board, hottest first or latest first. */
+export const listMacroEvents = (sort: "heat" | "latest" = "heat", limit = 50) =>
+  request<MacroEvent[]>(`/macro/events?sort=${sort}&limit=${limit}`);
+
+export const getMacroEvent = (eventId: string) =>
+  request<MacroEventDetail>(`/macro/events/${encodeURIComponent(eventId)}`);
+
+/** The daily briefing. 404 before the first 08:00 slot has assembled one. */
+export const latestMacroDigest = (kind = "daily") =>
+  request<MacroDigest>(`/macro/digests/latest?kind=${encodeURIComponent(kind)}`);
+
+/** The three label dimensions with counts, over the picked items. */
+export const listMacroTopics = () => request<MacroTopic[]>("/macro/topics");
+
+export const searchMacro = (q: string, limit = 30) =>
+  request<MacroItem[]>(`/macro/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+
+/** The event half of the shelf: coin cards stay on /favorites. */
+export const listMacroFavorites = () => request<MacroEvent[]>("/macro/favorites");
+
+export const keepMacroFavorite = (eventId: string) =>
+  request<MacroEvent>("/macro/favorites", {
+    method: "POST",
+    body: JSON.stringify({ event_id: eventId }),
+  });
+
+export const forgetMacroFavorite = (eventId: string) =>
+  request<{ removed: boolean }>(`/macro/favorites/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  });
+
+/** Run the current hour slot now. Accepted at once; the slot is idempotent. */
+export const triggerMacroCollect = () =>
+  request<MacroCollect>("/macro/collect", { method: "POST" });

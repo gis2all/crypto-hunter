@@ -268,3 +268,92 @@ export function useCollectFavorite() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
   });
 }
+
+/** Macro track: one hook per hotspot screen. Nothing here is scoped by a chain or
+ *  by a set of settings - news belongs to no radar - so no key carries either. */
+export function useMacroItems(selectedOnly = false, limit = 50) {
+  return useQuery({
+    queryKey: ["macro-items", selectedOnly, limit],
+    queryFn: () => api.listMacroItems(selectedOnly, limit),
+    staleTime: 60_000,
+  });
+}
+
+export function useMacroEvents(sort: "heat" | "latest" = "heat") {
+  return useQuery({
+    queryKey: ["macro-events", sort],
+    queryFn: () => api.listMacroEvents(sort),
+    staleTime: 60_000,
+  });
+}
+
+export function useMacroDigest() {
+  return useQuery({
+    queryKey: ["macro-digest"],
+    queryFn: () => api.latestMacroDigest(),
+    staleTime: 300_000,
+    retry: false,
+  });
+}
+
+export function useMacroTopics() {
+  return useQuery({
+    queryKey: ["macro-topics"],
+    queryFn: api.listMacroTopics,
+    staleTime: 300_000,
+  });
+}
+
+export function useMacroSearch(q: string) {
+  const query = q.trim();
+  return useQuery({
+    queryKey: ["macro-search", query],
+    queryFn: () => api.searchMacro(query),
+    enabled: query.length >= 2,
+  });
+}
+
+/** The event half of the shelf. Coin cards stay on useFavorites. */
+export function useMacroFavorites() {
+  return useQuery({
+    queryKey: ["macro-favorites"],
+    queryFn: api.listMacroFavorites,
+    staleTime: 30_000,
+  });
+}
+
+export function useKeepMacroFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) => api.keepMacroFavorite(eventId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["macro-favorites"] }),
+  });
+}
+
+export function useForgetMacroFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) => api.forgetMacroFavorite(eventId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["macro-favorites"] }),
+  });
+}
+
+/** Run the current hour slot now. The feed and the board are what a finished slot
+ *  changes, so both are refetched on success. */
+export function useTriggerMacroCollect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.triggerMacroCollect,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["macro-items"] });
+      void qc.invalidateQueries({ queryKey: ["macro-events"] });
+    },
+  });
+}
+export function useMacroEvent(eventId: string | undefined) {
+  return useQuery({
+    queryKey: ["macro-event", eventId],
+    queryFn: () => api.getMacroEvent(eventId as string),
+    enabled: Boolean(eventId),
+  });
+}

@@ -1,4 +1,5 @@
-import { Moon, Search, Settings, Star, Sun } from "lucide-react";
+import { CalendarDays, Flame, Moon, Newspaper, Search, Settings, Star, Sun, Tags } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { Icon } from "../../components/Icon";
@@ -11,11 +12,25 @@ import type { Theme } from "../../theme";
  *  the X session, the log level. None of the last three is a row in the chain list: a kept
  *  card, a searched one and a gateway's key can all belong to something this app never
  *  screens. */
-export type Place = "radar" | "favorites" | "lookup" | "system";
+import { MACRO_TABS, type MacroTab } from "../macro/MacroView";
+
+export type Place = "radar" | "favorites" | "lookup" | "macro" | "system";
 
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
  *  chain, not a menu, and a row nobody can open is not a menu item. A chain's 设定 is a tab in
  *  the topbar, not a rail entry - but 系统设置 is one, because it is not a chain's to own. */
+
+
+/** Rail rows for the hotspot track. Labels come from the view so the two can
+ *  never disagree about a name; only the glyphs live here. */
+const MACRO_ENTRIES: { id: MacroTab; icon: LucideIcon; label: string }[] = [
+  { id: "picked", icon: Star, label: MACRO_TABS[0].label },
+  { id: "items", icon: Newspaper, label: MACRO_TABS[1].label },
+  { id: "events", icon: Flame, label: MACRO_TABS[2].label },
+  { id: "digest", icon: CalendarDays, label: MACRO_TABS[3].label },
+  { id: "topics", icon: Tags, label: MACRO_TABS[4].label },
+  { id: "search", icon: Search, label: MACRO_TABS[5].label },
+];
 
 export function Rail({
   chains,
@@ -23,6 +38,8 @@ export function Rail({
   onSelectChain,
   place,
   onSelectPlace,
+  macroTab,
+  onSelectMacro,
   theme,
   onTheme,
 }: {
@@ -32,6 +49,8 @@ export function Rail({
   /** Which of the two places the page is in. 收藏 is not a radar and not a chain. */
   place: Place;
   onSelectPlace: (place: Place) => void;
+  macroTab: MacroTab;
+  onSelectMacro: (tab: MacroTab) => void;
   theme: Theme;
   onTheme: (theme: Theme) => void;
 }) {
@@ -87,6 +106,21 @@ export function Rail({
             at the bottom of the list because it is global, like the theme switch below it, and
             it is a Place all the same - so exactly one row lights (8.3.8) and it can be left
             for on a reload (prefs). */}
+        {/* The hotspot track beside the radars: picked, feed, board, briefing,
+            topics and news search. One more place, six tabs of its own - the entries
+            light exactly while the page stands on them, like the radar rows above. */}
+        <div className="nav-shelf">
+          {MACRO_ENTRIES.map((entry) => (
+            <div
+              key={entry.id}
+              className={"nav-i" + (place === "macro" && macroTab === entry.id ? " on" : "")}
+              onClick={() => onSelectMacro(entry.id)}
+            >
+              <Icon as={entry.icon} size={14} />
+              {entry.label}
+            </div>
+          ))}
+        </div>
         <div className="nav-foot">
           <div
             className={"nav-i" + (place === "system" ? " on" : "")}

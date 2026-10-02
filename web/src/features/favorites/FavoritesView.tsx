@@ -7,7 +7,8 @@ import { useMemo, useState } from "react";
 
 import { errorText } from "../../api/client";
 import type { Chain, Favorite } from "../../api/client";
-import { useFavorites, useForgetFavorite } from "../../api/hooks";
+import { useFavorites, useForgetFavorite, useForgetMacroFavorite, useMacroFavorites } from "../../api/hooks";
+import { zh } from "../macro/MacroView";
 import { Icon } from "../../components/Icon";
 import { chainIdMark } from "../../components/chainMark";
 import { whole } from "../../format";
@@ -122,12 +123,54 @@ const SORTS: {
 ];
 
 
+/** The event half of the shelf. Coin cards stay on the shelf query above: one tab
+ *  per half, and a kept event is never a kept coin card, so neither list can show the
+ *  other's rows. */
+function EventsShelf() {
+  const shelf = useMacroFavorites();
+  const forget = useForgetMacroFavorite();
+  if (shelf.isPending) {
+    return <div className="note-bar">{zh(0x52a0, 0x8f7d, 0x4e2d) + "..."}</div>;
+  }
+  if (shelf.isError) {
+    return <div className="note-bar bad">{errorText(shelf.error)}</div>;
+  }
+  const rows = shelf.data ?? [];
+  if (!rows.length) {
+    return (
+      <div className="note-bar">
+        {zh(0x6682, 0x65e0, 0x6536, 0x85cf, 0x7684, 0x4e8b, 0x4ef6)}
+      </div>
+    );
+  }
+  return (
+    <div className="macro-list">
+      {rows.map((event) => (
+        <article key={event.id} className="macro-item">
+          <div className="macro-title">{event.title}</div>
+          <div className="macro-meta">
+            <span>{zh(0x70ed, 0x5ea6)} {event.heat.toFixed(1)}</span>
+            <span>{event.sources_count}{zh(0x5bb6, 0x6765, 0x6e90)}</span>
+            <span>{event.items_count}{zh(0x6761, 0x76f8, 0x5173, 0x62a5, 0x9053)}</span>
+            <button type="button" className="btn sec"
+              onClick={() => forget.mutate(event.id)}>
+              <Icon as={Star} size={14} />
+              {zh(0x53d6, 0x6d88, 0x6536, 0x85cf)}
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function FavoritesView({ chains }: { chains: Chain[] }) {
   const shelf = useFavorites();
   const forget = useForgetFavorite();
   // Empty means 全部. A filter and a sort are view state, not kept anywhere: the shelf
   // arrives in the order it was kept (the API's own), which is exactly 收藏时间 / 从新到旧,
   // so the defaults below are the page not asking for anything.
+  const [kind, setKind] = useState<"coins" | "events">("coins");
   const [chain, setChain] = useState("");
   const [query, setQuery] = useState("");
   const [key, setKey] = useState<SortKey>("saved");
@@ -226,7 +269,19 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
             onClick={() => download(shown, labels)}>导出</button>
         </div>
       </div>
-      {shelf.isError ? (
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={kind === "coins"}
+          className={"tab" + (kind === "coins" ? " on" : "")}
+          onClick={() => setKind("coins")}>
+          {zh(0x5e01, 0x5361)}
+        </button>
+        <button type="button" role="tab" aria-selected={kind === "events"}
+          className={"tab" + (kind === "events" ? " on" : "")}
+          onClick={() => setKind("events")}>
+          {zh(0x4e8b, 0x4ef6)}
+        </button>
+      </div>
+      {kind === "events" ? <EventsShelf /> : shelf.isError ? (
         <div className="note-bar bad">
           <Icon as={TriangleAlert} size={14} />
           <span>收藏读取失败：{errorText(shelf.error)}</span>

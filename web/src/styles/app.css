@@ -957,3 +957,18 @@ div.pgroup>.pset{margin-top:auto}
 /* 清空 is the same two-press arm 中止 uses - the first press says how many go - but it stands
    in a drawer, so it cannot wear the RunPanel's `.rp-h .btn.arm` selector. */
 .btn.lk-clear.arm{border-color:var(--danger-border);background:var(--danger-bg);color:var(--danger-fg)}
+
+/* Macro track: one list of flat rows per tab. Spacing only - the rail and the
+   note bars already own the palette, so nothing here invents a color. */
+#view-macro{display:flex;flex-direction:column;gap:12px}
+.macro-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.macro-list{display:flex;flex-direction:column;gap:12px}
+.macro-item{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surface)}
+.macro-item.dim{opacity:.6}
+.macro-title{font-weight:600;display:flex;align-items:center;gap:6px;cursor:default}
+.macro-title[role=button]{cursor:pointer}
+.macro-title a{color:inherit}
+.macro-sum{margin:8px 0 0}
+.macro-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)}
+.macro-reason{margin-top:6px;font-size:12px;color:var(--muted)}
+.macro-chips{display:flex;flex-wrap:wrap;gap:8px}

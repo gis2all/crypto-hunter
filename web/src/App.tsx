@@ -6,6 +6,7 @@ import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
   useKeepFavorite, useLiveRun, useRuns } from "./api/hooks";
 import { OverviewPanel } from "./features/overview/OverviewPanel";
 import { FavoritesView } from "./features/favorites/FavoritesView";
+import { MacroView, type MacroTab } from "./features/macro/MacroView";
 import { LookupView } from "./features/lookup/LookupView";
 import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
@@ -30,6 +31,7 @@ const CHAIN_KEY = "ch.chain";
 const CONFIG_KEY = "ch.config";
 const VIEW_KEY = "ch.view";
 const PLACE_KEY = "ch.place";
+const MACRO_KEY = "ch.macrotab";
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -59,7 +61,13 @@ export default function App() {
   // 报告 / 设定 - see Rail's Place.
   const [place, setPlace] = useState<Place>(() => {
     const kept = readPref(PLACE_KEY);
-    return kept === "favorites" || kept === "lookup" || kept === "system" ? kept : "radar";
+    return kept === "favorites" || kept === "lookup" || kept === "macro" || kept === "system" ? kept : "radar";
+  });
+  // The hotspot track's own tab. Session-only like the batch index: a reload lands
+  // on the place, and the place remembers its tab while the page lives.
+  const [macroTab, setMacroTab] = useState<MacroTab>(() => {
+    const kept = readPref(MACRO_KEY);
+    return kept === "items" || kept === "events" || kept === "digest" || kept === "topics" || kept === "search" ? kept : "picked";
   });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
@@ -192,6 +200,10 @@ export default function App() {
   }, [place]);
 
   useEffect(() => {
+    savePref(MACRO_KEY, macroTab);
+  }, [macroTab]);
+
+  useEffect(() => {
     if (live) {
       setRunPanelOpen(true);
     }
@@ -244,6 +256,11 @@ export default function App() {
         activeChainId={chainId}
         place={place}
         onSelectPlace={setPlace}
+        macroTab={macroTab}
+        onSelectMacro={(tab) => {
+          setMacroTab(tab);
+          setPlace("macro");
+        }}
         onSelectChain={(id) => {
           setChainId(id);
           setPlace("radar");
@@ -263,6 +280,8 @@ export default function App() {
           // This machine's own wiring: no chain and no set of settings is in scope, which is
           // exactly why it is a place and not a third tab under a radar.
           <SystemView />
+        ) : place === "macro" ? (
+          <MacroView tab={macroTab} onTab={setMacroTab} />
         ) : place === "lookup" ? (
           // The chain list is passed for the same kind of reading: a searched card can be on
           // a chain this app does not screen, and its foot still has to name the one it has
