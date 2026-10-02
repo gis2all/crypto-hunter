@@ -99,6 +99,12 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps"),
     "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps"),
     "renames": ("gmgn",),
+    # The card's mark. DexScreener owns it - it is where a project registers one - and the
+    # pool feed stands behind it for the tokens that host has never been given a logo for
+    # (CASINO on Robinhood, 2026-10-02: not one of its eleven pairs carried an info.imageUrl).
+    # GMGN publishes one too, but its CDN refuses the request a page makes - measured in a
+    # browser: that image loads from nowhere but gmgn.ai, so it is not a field we can print.
+    "logo_url": ("dexscreener", "geckoterminal"),
     "dex_pair": ("geckoterminal",),
     # Only the pool history answers these two, and it is the only reading that can fail to -
     # see `filters.check_drawdown`.

@@ -84,8 +84,8 @@ def test_geckoterminal_remembers_a_token_it_does_not_have(monkeypatch):
     monkeypatch.setattr(geckoterminal, "json_get", four_oh_four)
     source = geckoterminal.GeckoTerminal()
 
-    assert source._pools("arc", "0xdead") is None
-    assert source._pools("arc", "0xdead") is None
+    assert source._pools("arc", "0xdead") == (None, None)
+    assert source._pools("arc", "0xdead") == (None, None)
 
     # One request, then never again: the second call is answered from the cache. The
     # transport's own retries live under `json_get` and are counted in `test_http_stats`.

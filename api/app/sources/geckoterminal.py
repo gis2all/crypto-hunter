@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics
+from .base import web_url
 from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
 BASE = "https://api.geckoterminal.com/api/v2"
@@ -228,10 +229,21 @@ class GeckoTerminal:
                 out.append(row)
         return out
 
-    def _pools(self, chain_id: str, ca: str) -> list[dict] | None:
+    def _pools(self, chain_id: str, ca: str) -> tuple[list[dict] | None, str | None]:
+        """This token's pools, and the mark that rode in with them.
+
+        `include=base_token` puts the token resource beside its pools and the mark lives on
+        that resource, so the one read this adapter already pays for carries it: the fallback
+        costs the round no second request. It is matched by address because `base_token` is not
+        always *this* token - a pool where the CA is the quote side includes the other side's
+        resource, and another token's picture on this card is worse than an empty box (the
+        rule the DexScreener read follows for its own `info`). Rows and mark are cached as one
+        answer, so a hit cannot hand back one without the other.
+        """
+
         def produce():
             payload = self._read(
-                "%s/networks/%s/tokens/%s/pools?page=1" % (BASE, chain_id, ca)
+                "%s/networks/%s/tokens/%s/pools?page=1&include=base_token" % (BASE, chain_id, ca)
             )
             if payload is None or payload is NEGATIVE:
                 return payload
@@ -247,9 +259,25 @@ class GeckoTerminal:
                     "liq": _num(attributes.get("reserve_in_usd")),
                     "vol24": _num((attributes.get("volume_usd") or {}).get("h24")),
                 })
-            return rows or NEGATIVE
+            if not rows:
+                return NEGATIVE
+            mark = None
+            for item in payload.get("included") or []:
+                attributes = item.get("attributes") or {}
+                if str(attributes.get("address") or "").lower() != ca.lower():
+                    continue
+                mark = web_url(attributes.get("image_url"))
+                break
+            return {"rows": rows, "mark": mark}
 
-        return cached("gt:pools:%s" % ca, POOLS_TTL, produce)
+        # `cached` folds both "nothing" and "not ours" into None, so the dict is the only
+        # shape that can come back with rows in it. The key moved to v2 with the mark: a v1
+        # entry is a bare list, and reading one as the new shape says "this token has no
+        # pools" for the rest of the 12-hour TTL.
+        answer = cached("gt:pools:v2:%s" % ca, POOLS_TTL, produce)
+        if not isinstance(answer, dict):
+            return None, None
+        return answer["rows"], answer["mark"]
 
     def journey(self, chain_id: str, pool: str | None) -> dict | None:
         """The six-day price path the card draws, plus how far it is below its historical high."""
@@ -312,7 +340,7 @@ class GeckoTerminal:
         return cached("gt:trades:%s" % pool, TRADES_TTL, produce)
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
-        pools = self._pools(chain_id, ca)
+        pools, mark = self._pools(chain_id, ca)
         metrics = TokenMetrics(ca=ca)
         if not pools:
             return metrics, SafetyFacts()
@@ -334,6 +362,9 @@ class GeckoTerminal:
         metrics.provenance.update({
             "pools": "geckoterminal", "main_pool": "geckoterminal", "dex_pair": "geckoterminal",
         })
+        if mark:
+            metrics.logo_url = mark
+            metrics.provenance["logo_url"] = "geckoterminal"
         if path:
             metrics.price_series = [point[1] for point in path["journey"]]
             metrics.provenance["price_series"] = "geckoterminal"
