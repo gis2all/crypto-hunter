@@ -49,7 +49,7 @@ CEX 交易所营销账号排除；BSC/BNB Chain 等链生态保留。family 6（
 | 类目 | 判据（用户能做什么） | 第一传感器 | 门槛的典型值 | 时间语义 |
 | --- | --- | --- | --- | --- |
 | 打新 | 在窗口里认购 / 申购 / 存入，换新币或份额 | 交易所官方号 + 发射台官方号（X） | 需资金、需持仓、需 KYC | 有明确窗口 |
-| 挖矿 | 跑节点 / 挂机 / 浏览器挖 / 质押 LP，按算力或时长产出 | 项目官方号 + 官方文档 | 需 gas、需设备或挂机、需锁仓 | 多为进行中，常无截止 |
+| 挖矿 | 把资产放进池子 / 合约吃收益：挖矿 / 质押 / 再质押 / LP / 金库，按算力或时长产出 | 项目官方号 + 官方文档 | 需 gas、需资金、需锁仓 | 多为进行中，常无截止 |
 | 节点 | 跑验证者 / 节点 / sequencer / prover，或买节点、委托节点 | 官方文档 + 节点销售页 | 需 VPS、需质押、需设备或挂机 | 多为长期，有申请窗口 |
 | 做任务 | 按清单完成社交 / 链上动作，领积分或白名单 | 任务平台列表页 | 需钱包、需 gas、需社交账号、需邀请码 | 多为活动期，有截止 |
 | 交互 | 在已有协议上做链上动作（swap / bridge / LP / 签到），换积分或潜在空投 | 项目官方号 + 官方文档 | 需 gas、需资金 | 常无截止 |
@@ -292,8 +292,8 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
 | 免费闸 | `rules.py` + `seeds/rules.json` | 规则引擎：资格 / 加分 / 定档 / 硬排除，命中原因落在帖子上。**过闸靠资格规则，不靠总分**：只有具体动作短语（`run a node`、`deposit`、`complete quest`、`mint`）带 `qualify`；`validator`、`yield`、`lending` 这类名词只计 20 分，不能单独过闸。总分（`score >= 30`）只是下限与排序。硬排除覆盖 CEX、交易赛、CEX 活动号与理财、传统金融（信用卡 / 开户）、招聘、新闻观点、事故索赔、能力集成公告、非加密活动、订阅通知、互动抽奖、转发、发射台新币快照（`exclude-launchpad-launch`：只有上线 + 市值 / 24h 量 / 持有人 / sniper 数据、没有任何可执行动作）、事故 / 关停 / 资助通告（`exclude-notice-only`：被入侵、停止运营、敲钟、生态基金、创作者计划、黑客松、被收录，且全文没有一个动作词）、融资通告（`exclude-funding-news`）、已结束的窗口（`exclude-ended-window`：已结束 / 已发放 / 已售罄）、只有预告的帖子（`exclude-preview-only`：待公布 / 预告 / 敬请期待）—— 后三条同样只在全文没有一个动作词时生效。**2026-10-27 起先过一道加密锚点**（`exclude-noncrypto-context`）：链名、代币 / cashtag、EVM 地址、钱包、合约、NFT、DeFi、质押、gas、主网 / 测试网、crypto / web3、加密原生域名等，一个都没有就直接排除 —— 演出、书签 SaaS、健康硬件、订阅、招聘不会再靠 `public sale` / `early access` 过闸。发现机会同样要求官方来源 + 新东西描述 + 加密语境。没过的记 `classified = 'skipped'`（不是 `other`），分数与命中规则一并留着。 |
-| 一次分组 + 一次抽取 | `group.py` + `prompts/group.md`、`prompts/extract.md`（`extract.md@7`） | 分组一次覆盖全部待分组帖，完整正文不截断；缺失/待定最多补两次，仍有剩余的归 `other`。抽取仍按主题、按每轮预算执行；材料里没有任何加密锚点时直接返回空，不写卡。抽取拒绝发射台新币快照（只有行情数据、动作只有买卖）与落不到类目的条目（`其他` 不是答案，直接丢条目）。两次都记账进 `llm_calls`（`purpose` = `opportunity_group` / `opportunity_extract`）；抽取的 `prompt_version` 落进条目的 `extract_version`。 |
-| 类目回填 | `recategorize.py` + `prompts/recategorize.md` | 一次性把已落库的「其他」重新读进闭集（`category` 只写这一列，说不清就留着）。不属于扫描，不建卡、不改摘要。 |
+| 一次分组 + 一次抽取 | `group.py` + `prompts/group.md`、`prompts/extract.md`（`extract.md@8`） | 分组一次覆盖全部待分组帖，完整正文不截断；缺失/待定最多补两次，仍有剩余的归 `other`。抽取仍按主题、按每轮预算执行；材料里没有任何加密锚点时直接返回空，不写卡。抽取拒绝发射台新币快照（只有行情数据、动作只有买卖）与落不到类目的条目（`其他` 不是答案，直接丢条目），并按判定顺序归位（没有动作 → 白名单 → 一次性出钱 → 生息 → 花时间）。两次都记账进 `llm_calls`（`purpose` = `opportunity_group` / `opportunity_extract`）；抽取的 `prompt_version` 落进条目的 `extract_version`。 |
+| 类目回填 | `recategorize.py` + `prompts/recategorize.md` | 一次性重读已落库的卡：`every=True` 读全部活跃卡，否则只读停在「其他」的那些。写 `kind` 与 `category` 两列；说不清的返回 `not_opportunity`，由调用方退休（软删）。不属于扫描，不建卡、不改摘要。 |
 | 补链 | `chainsearch.py` + `probe.py` + `prompts/chain.md` | 抽取后统一处理仍是 `未判定` 的卡：卡片自己的字 → 溯源页 → Exa / Parallel 搜索（每个项目最多两种 query、5 条结果）→ 模型在给出的结果里选。链必须在引用的结果里出现；`not_onchain` 写 `retired` + `reason = offchain`。 |
 | 链核验 | `chainverify.py` + `prompts/chain_verify.md` | Chainlist / CoinGecko / DefiLlama 写入 `chain_registry`；注册表不认识的名字优先用官方页（搜索结果摘要作补充）做证据，由模型给出 `type` / `is_public` / `evidence_url` / `quote`；无证据留 `unverified`，不猜。 |
 | 一轮扫描要多久（实测 2026-10-18） | 42 次 X 调用 = **6.2 分钟**（每次约 9 秒：CLI 8–10 秒 ＋ 节流 5 秒，所以慢在**调用次数**上）；分组（离线 pilot，2026-10-21）390 条完整正文约 **15 秒**、93,455 prompt tokens；抽取按 **4 并发**跑，单个慢调用仍会拉长这一轮。 |
