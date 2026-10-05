@@ -126,6 +126,10 @@ def rows_of(tweets: Sequence[dict]) -> list[TweetRow]:
         handle = str(author.get('screenName') or '').strip()
         if not text or not handle:
             continue
+        quoted = tweet.get('quotedTweet')
+        quoted = quoted if isinstance(quoted, dict) else {}
+        quoted_author = quoted.get('author')
+        quoted_author = quoted_author if isinstance(quoted_author, dict) else {}
         out.append(TweetRow(
             id=str(tweet.get('id') or ''),
             handle=handle,
@@ -136,6 +140,9 @@ def rows_of(tweets: Sequence[dict]) -> list[TweetRow]:
             retweets=_int(metrics.get('retweets')),
             replies=_int(metrics.get('replies')),
             views=_int(metrics.get('views')),
+            quoted_id=str(quoted.get('id') or ''),
+            quoted_text=str(quoted.get('text') or '').strip(),
+            quoted_handle=str(quoted_author.get('screenName') or '').strip(),
         ))
     return out
 

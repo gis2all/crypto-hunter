@@ -67,6 +67,11 @@ class TweetRow:
     retweets: int = 0
     replies: int = 0
     views: int = 0
+    #: 这条引用的那条推, 原样. 只有情报流读它 (摘要要把引用的关键点整合进去), 雷达那一侧不看,
+    #: 所以它空着不影响任何既有判断.
+    quoted_id: str = ""
+    quoted_text: str = ""
+    quoted_handle: str = ""
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.search.engines.xsearch import PROFILE_HITS, XEngine, affinity, root_of
+from app.search.engines.xsearch import PROFILE_HITS, XEngine, affinity, root_of, rows_of
 
 CA = "0xd8d51e2a23fb82fa4b50de3898c7352f108f2246"
 QUESTION = ("Find the official links of the crypto token on the arc chain with contract "
@@ -139,6 +139,18 @@ def test_the_name_lookalike_tiers_are_ordered_and_bounded():
     assert affinity("batpool", "ArcBat launch", "ARCBAT") == 2      # ticker only in the name
     assert affinity("arcan", "something else", "ARCANUM") == 1      # four-letter prefix only
     assert affinity("Usearckit", "ArcKit", "AKIT") == 0             # nothing in common
+
+
+def test_a_quoted_post_is_carried_on_the_row():
+    """客户端把 `quotedTweet` 给了出来, 别在半路丢掉: 情报流要拿它当摘要的上下文 (DESIGN 10.11)."""
+    rows = rows_of([{"id": "1", "text": "main post", "createdAtISO": "2026-10-04T00:00:00Z",
+                     "author": {"screenName": "base", "name": "Base"},
+                     "quotedTweet": {"id": "9", "text": "quoted body",
+                                     "author": {"screenName": "other", "name": "Other"}}}])
+    assert (rows[0].quoted_id, rows[0].quoted_text, rows[0].quoted_handle) == ("9", "quoted body", "other")
+    # 没有引用的那些, 三个格子都空着 —— 空就是没有, 不是"还没取到".
+    plain = rows_of([{"id": "2", "text": "just a post", "author": {"screenName": "base"}}])[0]
+    assert (plain.quoted_id, plain.quoted_text, plain.quoted_handle) == ("", "", "")
 
 
 def test_a_link_is_trimmed_to_its_host():
