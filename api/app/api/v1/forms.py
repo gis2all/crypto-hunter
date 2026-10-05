@@ -11,7 +11,10 @@ coerces each leaf to the type of the current value (`config.coerce_into`).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
+
+from ...feed.sources import pipeline
 
 from ... import config
 from ...core import funnel
@@ -108,6 +111,16 @@ def _field(key: str, label: str, widget: str, value: Any = None, **kw: Any) -> d
     out.update(kw)
     return out
 
+
+def group(key: str, title: str, hint: str, fields: list[dict], detail: str = "") -> dict:
+    """一个组: 标题、一句说明、几行。
+
+    页面上的一张卡片。actions / note / detail 这里先摆空 —— 有的是调用方按需补上
+    (卡片底下的按钮、本轮读数、折进问号里的口径), 没有的就该是空的, 而不是缺一个键
+    (GroupOut 要它们在场)。
+    """
+    return {"key": key, "title": title, "hint": hint, "fields": fields,
+            "actions": [], "note": "", "detail": detail}
 
 def _options(pairs: list[tuple[str, str]]) -> list[dict]:
     return [{"value": value, "label": label} for value, label in pairs]
@@ -648,6 +661,17 @@ SYSTEM_LABELS = {
     "llm.timeout": "单次超时",
     "llm.tries": "重试次数",
     "llm.key_cooldown": "失效冷却",
+    "llm.budgets": "付费请求预算",
+    "llm.extra_headers": "额外请求头",
+    "llm.models.prefilter": "精选预筛",
+    "llm.models.score": "精选评分",
+    "llm.models.understand": "内容理解",
+    "llm.models.summarize": "标题摘要",
+    "llm.models.structure": "结构抽取",
+    "llm.models.translate": "全文翻译",
+    "llm.models.group": "事件归组",
+    "llm.models.groupReview": "归组复核",
+    "llm.models.digest": "事件综述",
     "research_workers": "调研并发",
     "x.auth_token": "auth_token",
     "x.ct0": "ct0",
@@ -741,8 +765,142 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
     ), [
         row("log_level", "select", options=_options(list(SYSTEM_LEVELS))),
     ])
+    # `llm.budgets` and the nine `llm.models.*` rows are deliberately not drawn (2026-10-05,
+    # user): they are the feed's own knobs, set in the file. The keys stay in
+    # `config.SYSTEM_KEYS` so the file still reaches them, which is why `SYSTEM_LABELS` keeps
+    # entries no row draws.
     return [
         {"key": "llm", "title": "模型", "columns": 1, "groups": [endpoint, call]},
         {"key": "x", "title": "搜索", "columns": 1, "groups": [session]},
         {"key": "log", "title": "日志", "columns": 1, "groups": [level]},
     ]
+
+
+#: 信息流设定写的那一份: `config/feed/pipeline.yaml`。和 `chains.yaml` / `system.yaml` 同一类
+#: 门面 (8.9): 文件是唯一真相, 页面只是它的表 —— 所以一行的 key 就是它在文件里的路径, 页面不认
+#: 第二套形状。信息流不属于任何链, 这份表也就不带 chain_id。路径本身问 `pipeline` 要 ——
+#: 它已经在哪儿读过一遍了, 这里再写一个字符串就是第二份会过期的真相。
+FEED_PATH = pipeline.PATH
+
+#: 信息流的档位: 一个下拉定四个站跑哪几档、正文翻译走哪条路。值与 `pipeline.PRESETS` 同一个
+#: 词汇表 —— 这里只放"怎么念", 放行哪几站在那边 (页面上是标签, 文件里是键).
+FEED_PRESETS = (("saver", "节省"), ("standard", "标准"), ("full", "完整"))
+
+#: 一行一个键: 标签、写法、单位。写法决定校验, 也决定页面上画成什么 —— `clock` 是一个时刻
+#: (空 = 这一期不出), `count` 是一个非负整数 (几篇 / 几秒 / 几次), `choice` 是几个之一。
+FEED_FIELDS: tuple[tuple[str, str, str, str], ...] = (
+    ("llm.preset", "档位", "choice", ""),
+    ("schedule.day", "日报", "clock", ""),
+    ("schedule.week", "周报", "clock", ""),
+    ("schedule.month", "月报", "clock", ""),
+    ("detail.maxFetches", "一轮补正文", "count", "篇"),
+    ("detail.minBodyChars", "正文最少字数", "count", "字"),
+    ("detail.timeoutSeconds", "详情页超时", "count", "秒"),
+    ("detail.retryHours", "失败后再试", "count", "小时"),
+    ("llm.maxItems", "一轮写作", "count", "条"),
+    ("llm.concurrency", "并发", "count", "条"),
+    ("llm.timeoutSeconds", "单次超时", "count", "秒"),
+    ("llm.retryHours", "失败后再问", "count", "小时"),
+    ("llm.maxFailures", "连着失败收手", "count", "次"),
+)
+FEED_LABELS: dict[str, str] = {key: label for key, label, _kind, _unit in FEED_FIELDS}
+FEED_KINDS: dict[str, str] = {key: kind for key, _label, kind, _unit in FEED_FIELDS}
+
+
+def _feed_value(document: Mapping, key: str) -> Any:
+    """文件里那一格的现值, 按路径走。没有就回 None —— 出厂值由 `pipeline.DEFAULTS` 给。"""
+    node: Any = document
+    for part in key.split("."):
+        if not isinstance(node, Mapping):
+            return None
+        node = node.get(part)
+    return node
+
+
+def _clock_text(text: str, label: str) -> str:
+    """`8:00` / `08:00` / 空。**空 = 这一期不出** —— 一个时刻能表达的事, 不用再加一个布尔。"""
+    if not text:
+        return ""
+    hour, sep, minute = text.partition(":")
+    if not sep or not hour.isdigit() or not minute.isdigit() or len(minute) != 2:
+        raise ValueError("%s 要写成 08:00 的样子，留空表示这一期不出" % label)
+    found = int(hour), int(minute)
+    if found[0] > 23 or found[1] > 59:
+        raise ValueError("%s 不是一个时刻：%s" % (label, text))
+    return "%02d:%02d" % found
+
+
+def _count(text: str, label: str) -> int:
+    """非负整数。0 有它自己的意思 (`llm.maxItems: 0` 就是这一站关掉), 所以不收负数。"""
+    if not text.isdigit():
+        raise ValueError("%s 要是一个非负整数" % label)
+    return int(text)
+
+
+def feed_blocks(values: Mapping | None = None) -> list[dict]:
+    """信息流设定: 出刊节奏 + 两道预算。
+
+    行直接从 `pipeline.load()` 来, 没有中间层: 文件是那份表, 页面是它的画法。出刊那三行的
+    时刻按北京时间 (`lib/calendar.py`), 到点出的是刚过去的那一期。
+    """
+    document = pipeline.load() if values is None else values
+
+    def rows(prefix: str) -> list[dict]:
+        out = []
+        for key, label, kind, unit in FEED_FIELDS:
+            if not key.startswith(prefix):
+                continue
+            # 档位自己一组: 前缀是 llm. 而已, 它管的却是四个站, 不是 写作 那一格里的旋钮.
+            if key == "llm.preset" and prefix != "llm.preset":
+                continue
+            value = _feed_value(document, key)
+            if kind == "choice":
+                out.append(_field(key, label, "select",
+                                  "" if value is None else str(value),
+                                  options=_options(list(FEED_PRESETS))))
+                continue
+            out.append(_field(key, label, "text" if kind == "clock" else "num",
+                              "" if value is None else str(value), unit=unit or None))
+        return out
+
+    rhythm = group("feed-schedule", "三种刊",
+                   "留空 = 这一期不出。时刻按北京时间。", rows("schedule."),
+                   detail=("到点出的是刚过去的那一期 —— 08:00 的日报讲昨天, 周一的周报讲上周: "
+                           "窗口是一个完整的日子 / 周 / 月, 出刊那一刻那一期才刚开始。"))
+    filling = group("feed-detail", "补正文",
+                    "列表页只给链接, 正文要另外抓 —— 这是它一轮的预算。", rows("detail."))
+    writing = group("feed-llm", "写作",
+                    "整条流水线唯一花钱的一步。", rows("llm."),
+                    detail="一轮写作 填 0 就是这一站关掉 —— 页面照旧, 印的是规则版。")
+    gear = group("feed-preset", "档位",
+                 "一个下拉, 定四个站跑哪几档、正文翻译走哪条路。", rows("llm.preset"),
+                 detail="节省: 只留报刊。标准: 结构＋摘要＋分组＋综述, 正文与引用走本地翻译。"
+                        "完整: 全开。分组站的入场券是写作站写的中文标题 —— 关掉写作站, "
+                        "热点榜与事件页跟着退回规则版, 所以它们是一档一档的, 不是一个一个开关。")
+    return [
+        {"key": "schedule", "title": "出刊", "columns": 1, "groups": [rhythm]},
+        {"key": "budget", "title": "闸门", "columns": 1, "groups": [gear, filling, writing]},
+    ]
+
+
+def feed_save(patch: Mapping[str, Any]) -> None:
+    """校验页面送来的每一格, 然后往返写回 `config/feed/pipeline.yaml` (8.9.5)。
+
+    只认表里的键: 一个不认识的键在这里被拒, 好过落进文件、再让每一轮 tick 都失败在它上面。
+    拒的时候文件不动 —— 先写坏再报错, 就是把文件留在一个没人验过的状态。
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in (patch or {}).items():
+        kind = FEED_KINDS.get(key)
+        if kind is None:
+            raise ValueError("不认识这个键：%s" % key)
+        text = str("" if value is None else value).strip()
+        if kind == "choice":
+            if text not in dict(FEED_PRESETS):
+                raise ValueError("%s 只能是 节省 / 标准 / 完整" % FEED_LABELS[key])
+            cleaned[key] = text
+        elif kind == "clock":
+            cleaned[key] = _clock_text(text, FEED_LABELS[key])
+        else:
+            cleaned[key] = _count(text, FEED_LABELS[key])
+    pipeline.save(cleaned)
