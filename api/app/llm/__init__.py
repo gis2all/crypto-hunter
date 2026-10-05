@@ -6,6 +6,8 @@ Re-exported here so the rest of the code imports the package rather than reachin
 
 from __future__ import annotations
 
-from .client import LLMUnavailable, complete, complete_json, configured, settings
+from .client import (ContentRefused, LLMUnavailable, complete, complete_json, configured,
+                    settings)
 
-__all__ = ["LLMUnavailable", "complete", "complete_json", "configured", "settings"]
+__all__ = ["ContentRefused", "LLMUnavailable", "complete", "complete_json", "configured",
+           "settings"]

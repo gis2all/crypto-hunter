@@ -234,7 +234,8 @@ def test_the_gateways_errors_are_retried_and_a_dead_key_is_not(env_file, calls, 
     calls.sent.clear()
     calls.replies.append(_error(401))
     with pytest.raises(llm.LLMUnavailable):
-        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe",
+                     attempt_tag="dead-key")
     assert len(calls.sent) == 1
 
 
@@ -349,7 +350,8 @@ def test_a_refused_key_is_skipped_on_the_next_call(env_file, calls, isolated_db)
     calls.replies.extend([_error(401), _ok("first")])
     assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "first"
     calls.replies.append(_ok("second"))
-    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "second"
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe",
+                        attempt_tag="second") == "second"
     assert len(calls.sent) == 3
     assert calls.sent[2]["headers"]["Authorization"] == "Bearer standby"
 
@@ -358,9 +360,9 @@ def test_the_cooldown_can_be_turned_off(env_file, calls, isolated_db):
     _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
            CH_LLM_API_KEY="primary,standby", CH_LLM_KEY_COOLDOWN="0")
     calls.replies.extend([_error(401), _ok("first")])
-    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe", attempt_tag="first")
     calls.replies.extend([_error(401), _ok("second")])
-    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe", attempt_tag="second")
     assert [call["headers"]["Authorization"] for call in calls.sent] == \
         ["Bearer primary", "Bearer standby", "Bearer primary", "Bearer standby"]
 
@@ -393,12 +395,12 @@ def test_the_thinking_budget_is_sent_only_when_the_operator_set_one(env_file, ca
     drops reasoning tokens to 0).
     """
     _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m")
-    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe", attempt_tag="unset")
     assert "reasoning_effort" not in calls.sent[0]["body"]
 
     _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_API_KEY="k", CH_LLM_MODEL="m",
            CH_LLM_REASONING="none")
-    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe", attempt_tag="set")
     assert calls.sent[1]["body"]["reasoning_effort"] == "none"
 
 def _ok_responses(text):
@@ -462,7 +464,8 @@ def test_the_shape_that_answered_is_remembered_so_the_guess_is_paid_once(env_fil
     calls.replies.extend([_protocol_error(), _ok_responses("first")])
     llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
     calls.replies.append(_ok_responses("second"))
-    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "second"
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe",
+                        attempt_tag="second") == "second"
     assert [call["url"] for call in calls.sent] == \
         ["https://e/v1/chat/completions", "https://e/v1/responses", "https://e/v1/responses"]
 
@@ -509,3 +512,111 @@ def test_a_probe_reports_the_shape_that_answered(env_file, calls, isolated_db):
     assert out["protocol"] == "responses"
     assert out["chars"] == 2
     assert out["finish_reason"] == "completed"
+
+
+def test_a_content_refusal_is_its_own_failure_not_a_key_problem(env_file, calls, isolated_db):
+    """The material, not the credential (AIHOT's `isContentFilter`). Rotating to the standby
+    would buy the same refusal twice, and the writing stages need to tell this apart from "the
+    endpoint is broken": it is the one failure they may answer with the cheaper tier."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m",
+           CH_LLM_API_KEY="primary,standby")
+    body = {"error": {"code": "1301", "message": "contentFilter"}}
+    calls.replies.extend([httpx.Response(
+        400, json=body, request=httpx.Request("POST", "https://e/v1/chat/completions"))] * 4)
+    with pytest.raises(llm.ContentRefused):
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert len(calls.sent) == 1
+    assert calls.sent[0]["headers"]["Authorization"] == "Bearer primary"
+
+
+def test_a_filtered_finish_reason_is_content_refused_too(env_file, calls, isolated_db):
+    """Some gateways answer 200 with an empty message and `finish_reason=content_filter`.
+    Reading that as a generic empty answer would hide the one case the caller handles."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": ""}, "finish_reason": "content_filter"}]},
+        request=httpx.Request("POST", "https://e/v1/chat/completions")))
+    with pytest.raises(llm.ContentRefused):
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+
+
+def test_a_generic_empty_message_is_still_not_a_content_refusal(env_file, calls, isolated_db):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(httpx.Response(
+        200, json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}]},
+        request=httpx.Request("POST", "https://e/v1/chat/completions")))
+    with pytest.raises(llm.LLMUnavailable) as caught:
+        llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert not isinstance(caught.value, llm.ContentRefused)
+
+
+@pytest.mark.parametrize("answer,want", [
+    ('{"a": 1}', {"a": 1}),
+    ('```json\n{"a": 1}\n```', {"a": 1}),
+    ("好的, 这是结果:\n{\"a\": 1}\n希望有用", {"a": 1}),
+    ('{"a": "line one\nline two"}', {"a": "line one\nline two"}),
+    ('{"a": "tab\there"}', {"a": "tab\there"}),
+])
+def test_the_json_tolerance_matches_aihot(env_file, calls, isolated_db, answer, want):
+    """AIHOT's `extractJson`: a fence, prose around the object, and raw control characters
+    inside strings - multi-line posts are the material, not an exotic case."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(_ok(answer))
+    assert llm.complete_json([{"role": "user", "content": "hi"}], purpose="probe") == want
+
+
+def test_something_that_is_not_json_at_all_is_still_a_failure(env_file, calls, isolated_db):
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(_ok("no braces here"))
+    with pytest.raises(llm.LLMUnavailable):
+        llm.complete_json([{"role": "user", "content": "hi"}], purpose="probe")
+
+
+def test_a_call_ceiling_beats_the_configured_one(env_file, calls, isolated_db):
+    """The per-stage ceiling wins over the operator's global number (AIHOT's call table): one
+    understanding answer writes three fields, and a global 512 would cut it in half."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k",
+           CH_LLM_MAX_TOKENS="512")
+    calls.replies.append(_ok("hi"))
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe", max_tokens=16384)
+    assert calls.sent[0]["body"]["max_tokens"] == 16384
+    calls.replies.append(_ok("hi"))
+    llm.complete([{"role": "user", "content": "hi"}], purpose="probe")
+    assert calls.sent[1]["body"]["max_tokens"] == 512
+
+def test_a_request_the_model_already_answered_is_not_paid_twice(env_file, calls, isolated_db):
+    """Receipts: re-running a round replays the saved answer instead of buying it again."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(_ok("first"))
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "first"
+    assert llm.complete([{"role": "user", "content": "hi"}], purpose="probe") == "first"
+    assert len(calls.sent) == 1, "同一个逻辑请求只该付一次钱"
+
+
+def test_an_attempt_tag_buys_the_second_scoring_call(env_file, calls, isolated_db):
+    """Two independent scores of one material: without their own tags the second would be the
+    first answer replayed, and the mean would be one number twice."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(_ok('{"attentionScore": 80}'))
+    calls.replies.append(_ok('{"attentionScore": 90}'))
+    first = llm.complete_json([{"role": "user", "content": "hi"}], purpose="score",
+                              attempt_tag="score-1")
+    second = llm.complete_json([{"role": "user", "content": "hi"}], purpose="score",
+                               attempt_tag="score-2")
+    assert (first, second) == ({"attentionScore": 80}, {"attentionScore": 90})
+    assert len(calls.sent) == 2
+
+
+def test_a_draft_that_will_not_parse_is_released_for_a_later_attempt(env_file, calls,
+                                                                     isolated_db):
+    """The call was paid for, but its answer is unusable: the receipt must not replay it."""
+    _write(env_file, CH_LLM_BASE_URL="https://e/v1", CH_LLM_MODEL="m", CH_LLM_API_KEY="k")
+    calls.replies.append(_ok("no braces here"))
+    with pytest.raises(llm.LLMUnavailable):
+        llm.complete_json([{"role": "user", "content": "hi"}], purpose="probe")
+
+    calls.replies.append(_ok('{"attentionScore": 77}'))
+    assert llm.complete_json([{"role": "user", "content": "hi"}],
+                             purpose="probe") == {"attentionScore": 77}
+    assert len(calls.sent) == 2, "用不了的答案放行, 而不是重放"

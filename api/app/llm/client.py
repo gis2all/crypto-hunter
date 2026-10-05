@@ -9,6 +9,10 @@ the request thread.
 Every call is recorded in `llm_calls` with the model, latency and token counts, so the
 cost of a round is answerable after the fact.
 
+Every call also goes through `receipts` (AIHOT's `providers/receipts.ts`): one paid answer per
+logical request no matter how often a round is re-run, a budget counted in attempts, and an
+in-doubt request that is never re-sent on its own.
+
 The gateway serves two request shapes and a model answers only one of them, so which
 shape to ask in is a dimension this client walks the way it walks the key list - see
 `PROTOCOLS`.
@@ -20,13 +24,15 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
 from .. import cancel, config
 from ..store import db
+from . import receipts
 
 log = logging.getLogger("crypto-hunter.llm")
 
@@ -71,12 +77,25 @@ _PATHS = {"chat": "/chat/completions", "responses": "/responses"}
 #: gateway renaming its error type.
 _PROTOCOL_MARKER = "protocol"
 
+#: A ```json fence around the whole answer (AIHOT's `extractJson`). Only the outer one is
+#: peeled here; prose around the object is handled by the first/last brace search.
+_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+
 #: What a 400 says when the refusal is about the *account* and not about the request: the
 #: model trains on request data and the workspace has not allowed that. A workspace belongs to
 #: a key, so this is the one 400 a standby key does fix. Measured 2026-10-02: the same model on
 #: the same endpoint was refused for the primary key with this text, and answered 200 for the
 #: standby key.
 _ACCOUNT_MARKERS = ("trains on request data", "privacy settings")
+
+#: What a 400 says when the *material* was refused by the provider's content filter. This is
+#: neither the request's fault nor the key's: another key would answer the same way, so what the
+#: caller wants is not a retry but the cheaper tier. AIHOT matches ``contentFilter|"1301"``; the
+#: OpenAI/DashScope spellings are here too.
+_CONTENT_MARKERS = ("contentfilter", '"1301"', "content_filter")
+
+#: The finish reasons that mean "the answer exists but the provider would not give it to us".
+_FILTER_REASONS = frozenset({"content_filter", "contentfilter", "content filtered"})
 
 #: base_url + model -> the shape that answered it. Process-local, and successes only: a wrong
 #: guess costs one refused call per process, and a gateway that starts serving the other shape
@@ -140,8 +159,18 @@ def _is_account_refusal(status: int | None, text: str) -> bool:
     return any(marker in lowered for marker in _ACCOUNT_MARKERS)
 
 
+def _is_content_refusal(status: int | None, text: str) -> bool:
+    """The material, not the request: the provider's content filter declined it.
+
+    Kept apart from a key refusal because the two get different answers - a key refusal rotates
+    to the standby, a content refusal means this material cannot be written by this stage at all.
+    """
+    lowered = text.lower()
+    return any(marker in lowered for marker in _CONTENT_MARKERS)
+
+
 def _body(protocol: str, current: dict, model: str, messages: list[dict],
-          temperature: float, json_mode: bool) -> dict:
+          temperature: float, json_mode: bool, max_tokens: int | None = None) -> dict:
     """One question in the shape the protocol expects.
 
     The two shapes are not a rename of each other, and the differences below were measured
@@ -158,11 +187,15 @@ def _body(protocol: str, current: dict, model: str, messages: list[dict],
       the same thing - left alone the model spent 253 of a 256 token ceiling thinking and
       returned an empty message, which is the trap 6.4.8 already paid for once.
     - The ceiling is ``max_output_tokens``, and the demand for JSON is ``text.format``.
+    - The ceiling is per stage when the caller names one (``max_tokens``): one understanding
+      answer writes three fields and a summary writes two, so the operator's single global
+      number is the fallback rather than the rule (AIHOT's per-stage call parameters).
     """
+    ceiling = max_tokens or current["max_tokens"]
     if protocol == "chat":
         body: dict = {"model": model, "messages": messages, "temperature": temperature}
-        if current["max_tokens"]:
-            body["max_tokens"] = current["max_tokens"]
+        if ceiling:
+            body["max_tokens"] = ceiling
         if current["reasoning"]:
             body["reasoning_effort"] = current["reasoning"]
         if json_mode:
@@ -179,8 +212,8 @@ def _body(protocol: str, current: dict, model: str, messages: list[dict],
     body = {"model": model, "input": turns, "temperature": temperature}
     if instructions:
         body["instructions"] = "\n\n".join(instructions)
-    if current["max_tokens"]:
-        body["max_output_tokens"] = current["max_tokens"]
+    if ceiling:
+        body["max_output_tokens"] = ceiling
     if current["reasoning"]:
         effort = current["reasoning"]
         body["reasoning"] = {"effort": "minimal" if effort == "none" else effort}
@@ -334,6 +367,14 @@ def _configured(current: dict) -> bool:
 
 class LLMUnavailable(RuntimeError):
     """No endpoint configured, or the endpoint refused. Never a reason to invent text."""
+
+
+class ContentRefused(LLMUnavailable):
+    """The provider's content filter declined this material (AIHOT's `isContentFilter`).
+
+    A subclass of `LLMUnavailable` so every existing handler still treats it as "no answer";
+    the writing stages catch it first and take the cheaper tier instead of failing the item.
+    """
 
 
 def configured() -> bool:
@@ -564,6 +605,8 @@ def _call_payload(current: dict, endpoint: str, body: dict, timeout: float | Non
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code if exc.response is not None else None
             text = _refusal_text(exc)
+            if _is_content_refusal(status, text):
+                raise ContentRefused("upstream %s: %s" % (status, text[:200])) from exc
             if _is_protocol_refusal(status, text):
                 raise _ProtocolRefused("%s was refused with %s" % (endpoint, status)) from exc
             if status not in KEY_STATUSES and not _is_account_refusal(status, text):
@@ -594,8 +637,8 @@ def _record(*, purpose: str, run_id: str | None, model: str, prompt_version: str
 
 
 def _answer(current: dict, model: str, messages: list[dict], temperature: float,
-            json_mode: bool, timeout: float | None,
-            run_id: str | None) -> tuple[str, dict]:
+            json_mode: bool, timeout: float | None, run_id: str | None,
+            max_tokens: int | None = None) -> tuple[str, dict]:
     """One answer in whichever shape the model speaks, and the shape that wrote it.
 
     A model that refuses the shape is not a failed call: the other shape costs one more request
@@ -609,7 +652,7 @@ def _answer(current: dict, model: str, messages: list[dict], temperature: float,
     """
     refused: str | None = None
     for protocol in _protocols_for(current, model):
-        body = _body(protocol, current, model, messages, temperature, json_mode)
+        body = _body(protocol, current, model, messages, temperature, json_mode, max_tokens)
         try:
             payload = _call_payload(current, _endpoint(current, protocol), body, timeout,
                                     run_id)
@@ -623,6 +666,27 @@ def _answer(current: dict, model: str, messages: list[dict], temperature: float,
     raise _ProtocolRefused(refused or "every shape was refused")
 
 
+class _Unusable(Exception):
+    """Answer received but unusable (empty message, unparsable draft).
+
+    Recorded as `failed`, not `received`: a later attempt may pay for a fresh answer
+    (AIHOT's `rejectReceivedResponse`) instead of replaying a bad one forever.
+    """
+
+
+def _receipt_status(exc: BaseException) -> str:
+    """Did the provider clearly not take this request, or do we not know?
+
+    The line AIHOT draws with `ProviderRejectedError`: a 4xx/5xx, a failed connect, a content
+    refusal and an unusable answer all mean "not accepted, try again later"; a timeout or a lost
+    connection means "unknown", which is never re-sent on its own.
+    """
+    if isinstance(exc, (_Unusable, ContentRefused, _ProtocolRefused, httpx.HTTPStatusError,
+                        httpx.ConnectError, httpx.ConnectTimeout)):
+        return "failed"
+    return "unknown"
+
+
 def complete(
     messages: list[dict],
     *,
@@ -633,8 +697,24 @@ def complete(
     temperature: float = 0.3,
     timeout: float | None = None,
     json_mode: bool = False,
+    max_tokens: int | None = None,
+    attempt_tag: str | None = None,
+    subject: str | None = None,
+    validate: Callable[[str], None] | None = None,
 ) -> str:
-    """One completion, or `LLMUnavailable`. The caller decides what a missing text means."""
+    """One completion, or `LLMUnavailable`. The caller decides what a missing text means.
+
+    ``max_tokens`` is this call's ceiling, when the stage has one of its own (AIHOT's per-stage
+    call parameters); left out, the operator's global `CH_LLM_MAX_TOKENS` is what applies.
+
+    ``attempt_tag`` is for a stage that deliberately asks the same material twice (the two
+    independent scores); without it the second ask is the same logical request and would be
+    replayed as the first answer.
+
+    ``validate`` is called with the answer inside the receipt's scope: a draft that cannot be
+    parsed is an unusable answer, so its receipt is released for a later attempt instead of being
+    replayed (AIHOT marks the same case with `rejectReceivedResponse`).
+    """
     current = settings()
     if not _configured(current):
         raise LLMUnavailable(
@@ -642,43 +722,144 @@ def complete(
         )
     model = model or current["model"]
     started = time.time()
-    try:
+    #: The bill is written inside `call`, before the answer is judged usable: money spent on a
+    #: draft that then fails to parse is still money spent, and the ledger is where that shows.
+    billed = False
+
+    def record_failure(exc: Exception) -> None:
+        if billed:
+            return
+        _record(purpose=purpose, run_id=run_id, model=model, prompt_version=prompt_version,
+                latency_ms=int((time.time() - started) * 1000), prompt_tokens=None,
+                completion_tokens=None, ok=False, error=repr(exc)[:400])
+
+    def call() -> receipts.Outcome:
+        nonlocal billed
         protocol, payload = _answer(current, model, messages, temperature, json_mode,
-                                    timeout, run_id)
+                                    timeout, run_id, max_tokens)
         reading = _read(protocol, payload)
         text = reading["text"]
         if not text.strip():
-            raise RuntimeError("the endpoint returned an empty message")
-    except cancel.RoundCancelled as exc:
+            if (reading.get("finish_reason") or "").lower() in _FILTER_REASONS:
+                raise ContentRefused("the provider filtered the answer (finish_reason=%s)"
+                                     % reading["finish_reason"])
+            raise _Unusable("the endpoint returned an empty message")
+        billed = True
+        _record(purpose=purpose, run_id=run_id, model=model, prompt_version=prompt_version,
+                latency_ms=int((time.time() - started) * 1000),
+                prompt_tokens=reading["prompt_tokens"],
+                completion_tokens=reading["completion_tokens"], ok=True, error=None)
+        if validate is not None:
+            validate(text)
+        return receipts.Outcome(text=text, prompt_tokens=reading["prompt_tokens"],
+                                completion_tokens=reading["completion_tokens"])
+
+    try:
+        result = receipts.paid(
+            purpose=purpose,
+            identity={"model": model, "prompt_version": prompt_version, "messages": messages,
+                      "temperature": temperature, "max_tokens": max_tokens,
+                      "json_mode": bool(json_mode)},
+            call=call,
+            model=model,
+            subject=subject,
+            attempt_tag=attempt_tag,
+            request_summary={"promptVersion": prompt_version, "messages": len(messages),
+                             "temperature": temperature, "maxTokens": max_tokens},
+            classify=_receipt_status,
+        )
+    except receipts.ReceiptError as exc:
+        # 预算用完 / 同一个请求在飞 / 上一次结果未知: 现在拿不到答案, 不是这次请求有问题。
+        raise LLMUnavailable("%s: %s" % (purpose, exc)) from exc
+    except (cancel.RoundCancelled, ContentRefused) as exc:
         # Recorded like any other call - a round that was stopped still spent what it spent -
         # then passed on as itself. Degrading here would be the bug: an abandoned answer must
         # not look like a model that refused, or the round would publish without its words.
-        _record(purpose=purpose, run_id=run_id, model=model, prompt_version=prompt_version,
-                latency_ms=int((time.time() - started) * 1000), prompt_tokens=None,
-                completion_tokens=None, ok=False, error=repr(exc)[:400])
+        record_failure(exc)
         raise
     except Exception as exc:
-        _record(purpose=purpose, run_id=run_id, model=model, prompt_version=prompt_version,
-                latency_ms=int((time.time() - started) * 1000), prompt_tokens=None,
-                completion_tokens=None, ok=False, error=repr(exc)[:400])
+        record_failure(exc)
         raise LLMUnavailable("%s: %r" % (purpose, exc)) from exc
+    return result.text
 
-    _record(purpose=purpose, run_id=run_id, model=model, prompt_version=prompt_version,
-            latency_ms=int((time.time() - started) * 1000),
-            prompt_tokens=reading["prompt_tokens"],
-            completion_tokens=reading["completion_tokens"], ok=True, error=None)
-    return text
+
+def escape_control_chars_in_strings(body: str) -> str:
+    """Escape the raw control characters a model leaves inside JSON strings.
+
+    A multi-line post pasted verbatim into a string is a newline the JSON grammar does not allow,
+    and it is the material here rather than an exotic case. Only control characters **inside a
+    string** are touched (AIHOT's `escapeControlCharsInStrings`): whitespace between tokens is
+    legal JSON and rewriting it would be a different bug.
+    """
+    out: list[str] = []
+    in_string = escaped = False
+    for ch in body:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            elif ch < " ":
+                out.append({"\n": "\\n", "\r": "\\r", "\t": "\\t"}.get(ch, "\\u%04x" % ord(ch)))
+                continue
+        elif ch == '"':
+            in_string = True
+        out.append(ch)
+    return "".join(out)
+
+
+def _extract_json_object(text: str) -> str:
+    """The object in the answer: a fence, then the first `{` to the last `}` (AIHOT's `extractJson`).
+
+    A model that wraps its answer in a sentence - "好的, 结果如下: {...}" - would otherwise be read
+    as "not JSON" and the material dropped for a reason that has nothing to do with the material.
+    """
+    body = text.strip()
+    fence = _FENCE.fullmatch(body)
+    if fence:
+        body = fence.group(1)
+    start, end = body.find("{"), body.rfind("}")
+    if start == -1 or end < start:
+        raise ValueError("no JSON object in model output")
+    return body[start:end + 1]
+
+
+def _parse_json_answer(text: str) -> Any:
+    """The object in the answer, with AIHOT's `extractJson` tolerance: a fenced code block,
+    prose around the object, then raw control characters inside strings. Anything that still
+    will not parse is a failure, because guessing at a broken draft is how a report ends up
+    saying something nobody decided."""
+    try:
+        body = _extract_json_object(text.strip())
+    except ValueError as exc:
+        raise LLMUnavailable("draft was not JSON: %r" % (text[:120],)) from exc
+    try:
+        return json.loads(body)
+    except ValueError:
+        try:
+            return json.loads(escape_control_chars_in_strings(body))
+        except ValueError as exc:
+            raise LLMUnavailable("draft was not JSON: %r" % (text[:120],)) from exc
 
 
 def complete_json(messages: list[dict], **kw: Any) -> Any:
-    """A completion that must parse. A fenced code block around the JSON is tolerated;
-    anything else is a failure, because guessing at a broken draft is how a report ends up
-    saying something nobody decided."""
-    text = complete(messages, json_mode=True, **kw).strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        text = text.rsplit("```", 1)[0]
-    try:
-        return json.loads(text)
-    except ValueError as exc:
-        raise LLMUnavailable("draft was not JSON: %r" % (text[:120],)) from exc
+    """A completion that must parse.
+
+    The parse runs inside the call's receipt: an answer the model billed us for but that will
+    not parse is an unusable answer, so its receipt is released and a later attempt may pay for
+    a fresh one instead of replaying the broken draft.
+    """
+    parsed: list[Any] = []
+
+    def validate(text: str) -> None:
+        try:
+            parsed.append(_parse_json_answer(text))
+        except LLMUnavailable as exc:
+            # An answer we paid for but cannot use: record it failed and let a later attempt
+            # ask again (AIHOT `rejectReceivedResponse`), instead of replaying it forever.
+            raise _Unusable(str(exc)) from exc
+
+    complete(messages, json_mode=True, validate=validate, **kw)
+    return parsed[0]
