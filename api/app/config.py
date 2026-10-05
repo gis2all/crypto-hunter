@@ -40,6 +40,11 @@ RAW_DIR = DATA_DIR / "raw"
 DB_PATH = Path(os.environ.get("CH_DB", str(DATA_DIR / "crypto-hunter.db")))
 WEB_DIST = ROOT / "web" / "dist"
 
+#: The hour a schedule starts from when a config file names none. The shipped files all
+#: belong to the 02/05/08... grid, so the fallback is the hour they already use: an anchor
+#: that changed by itself would move a schedule nobody asked to move.
+DEFAULT_START_HOUR = 2
+
 HOST = os.environ.get("CH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CH_PORT", "8787"))
 
@@ -271,6 +276,13 @@ def _config_entry(cfg: dict | None) -> dict:
     entry["label"] = str(entry.get("label") or entry["id"])
     entry.setdefault("enabled", True)
     entry["locked"] = bool(entry.get("locked")) or entry["id"] == "default"
+    # Filled in rather than demanded: the page refuses a patch aimed at a knob the config
+    # does not have, and 0 hours apart is the value that means "never" - so a file that
+    # names neither is a chain the ticker leaves alone, which is what the page then shows.
+    schedule = entry.get("schedule")
+    if isinstance(schedule, dict):
+        schedule.setdefault("interval_hours", 0)
+        schedule.setdefault("start_hour", DEFAULT_START_HOUR)
     return entry
 
 
@@ -358,7 +370,9 @@ def enabled_configs() -> list[dict]:
     for entry in enabled_chains():
         for cfg in entry.get("configs") or []:
             if cfg.get("enabled", True):
-                rounds.append(chain(entry["id"], cfg["id"]))
+                live = chain(entry["id"], cfg["id"])
+                live["schedule"] = live_schedule(entry["id"], cfg["id"])
+                rounds.append(live)
     return rounds
 
 
@@ -744,6 +758,19 @@ def settings_payload(chain_id: str, version_id: int | None = None,
 
 
 
+def live_schedule(chain_id: str, config_id: str | None = None) -> dict:
+    """The schedule the ticker obeys: the saved one, not the file's.
+
+    The page's two knobs are saved as a version, while the file keeps the defaults it
+    shipped with. Reading the file here instead would mean the hours an operator picks never
+    fire - the ticker would keep starting rounds at the ones they replaced - so this is what
+    the ticker reads, and everything that describes the file keeps reading the file.
+    """
+    payload = settings_payload(chain_id, latest_settings_version(chain_id, config_id),
+                              config_id)
+    return dict(payload.get("schedule") or {})
+
+
 def latest_settings_version(chain_id: str, config_id: str | None = None) -> int | None:
     '''The version a round created now should pin.
 
@@ -883,19 +910,18 @@ def prune_unknown(base: dict, payload: dict) -> dict:
     return out
 
 
-def sync_schedule(payload: dict) -> dict:
-    """Keep `schedule.cron` in step with `schedule.interval_hours`.
+def interval_slots(hours: int, start_hour: int = DEFAULT_START_HOUR) -> list[int]:
+    """The trigger hours an interval produces, walked forward from its anchor.
 
-    The interval is what a human edits; the cron expression is what the ticker reads.
-    Deriving one from the other here means the two can never disagree.
+    The interval says how many, the anchor says which: three hours from 02:00 is
+    02/05/08/11/14/17/20/23, and the same interval from 05:00 is a different eight hours.
+    Zero hours apart is how a chain says "never" - it is the value the page offers as
+    不排期 - and an interval that does not divide the day walks the shipped three-hour grid
+    from the anchor rather than inventing a short last gap; the page only offers divisors.
     """
-    schedule = dict(payload.get("schedule") or {})
-    hours = schedule.get("interval_hours")
-    if hours:
-        from .api.v1.forms import interval_slots
-
-        slots = interval_slots(int(hours))
-        schedule["cron"] = "0 %s * * *" % ",".join("%d" % s for s in slots)
-    payload = dict(payload)
-    payload["schedule"] = schedule
-    return payload
+    hours = int(hours)
+    if hours <= 0:
+        return []
+    start = int(start_hour) % 24
+    step = hours if not 24 % hours else 3
+    return [(start + h) % 24 for h in range(0, 24, step)]
