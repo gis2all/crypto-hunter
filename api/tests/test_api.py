@@ -132,11 +132,35 @@ def test_settings_patch_takes_dotted_paths_and_coerces(client):
     assert prefilter["holders_min"] is not None
 
 
-def test_interval_hours_drives_cron(client):
+def test_the_interval_is_what_the_schedule_is_built_from(client):
+    """Nothing is derived but the hours the ticker walks, and it stores the pair itself."""
     path = f"/api/v1/chains/{ARC}/settings"
     body = client.put(path, json={"patch": {"schedule.interval_hours": 6}}).json()["payload"]
     assert body["schedule"]["interval_hours"] == 6
-    assert body["schedule"]["cron"] == "0 2,8,14,20 * * *"
+    assert body["schedule"]["start_hour"] == 2
+
+
+def test_the_hour_a_schedule_starts_from_moves_every_slot(client):
+    """The interval says how many hours apart, the anchor says which ones.
+
+    Three hours from 02:00 is the shipped grid; the same interval from another hour is
+    the same eight hours shifted, which is the whole of what the knob buys."""
+    path = f"/api/v1/chains/{ARC}/settings"
+    client.put(path, json={"patch": {"schedule.interval_hours": 6,
+                                     "schedule.start_hour": 5}})
+    fields = _fields(client.get(f"{path}/form").json())
+    assert fields["schedule.start_hour"]["value"] == "5"
+    assert fields["schedule.slots"]["value"] == "05/11/17/23"
+
+
+def test_the_start_hour_is_a_pick_list_of_the_whole_day(client):
+    form = client.get(f"/api/v1/chains/{ARC}/settings/form").json()
+    fields = {f["key"]: f for b in form["blocks"] for g in b["groups"] for f in g["fields"]}
+    field = fields["schedule.start_hour"]
+    assert field["widget"] == "select"
+    assert [o["value"] for o in field["options"]] == [str(h) for h in range(24)]
+    assert field["options"][0]["label"] == "00:00"
+    assert field["drop_x"] == "下轮生效"
 
 
 def test_settings_form_shows_the_saved_version_not_the_yaml(client):
@@ -388,7 +412,7 @@ def test_run_rows_say_what_a_change_does_instead_of_counting(client):
     fields = _fields(form)
     assert fields["schedule.interval_hours"]["drop_x"] == "下轮生效"
     assert fields["schedule.interval_hours"]["drop_count"] is None
-    assert fields["schedule.cron"]["drop_x"] == ""
+    assert fields["schedule.slots"]["drop_x"] == ""
 
 
 def test_caliber_line_is_generated_from_the_settings(client):

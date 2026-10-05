@@ -1,10 +1,12 @@
 """The chain config is the source of the口径; mistakes here poison everything."""
 
+import json
 import os
 
 import pytest
 
 from app import config
+from app.store import db
 
 
 def test_the_file_is_the_install_step(tmp_path, monkeypatch):
@@ -86,7 +88,8 @@ def test_robinhood_scans_its_own_sources():
 
 def test_arc_keeps_the_established_cadence():
     arc = config.chain("arc")
-    assert arc["schedule"]["cron"] == "0 2,5,8,11,14,17,20,23 * * *"
+    assert arc["schedule"]["interval_hours"] == 3
+    assert arc["schedule"]["start_hour"] == 2
     assert arc["schedule"]["push_delay_minutes"] == 6
     assert arc["report"]["per_round"] == 5
 
@@ -205,3 +208,36 @@ def test_a_machine_that_has_never_run_gets_the_file_from_the_template(chains_dir
     live = chains_dir / "demo.yaml"
     assert live.exists()
     assert live.read_bytes() == (chains_dir / "demo.example.yaml").read_bytes()
+
+
+def test_the_ticker_obeys_the_schedule_the_page_saved_not_the_files(chains_dir, isolated_db):
+    """The two knobs are saved as a version, while the file keeps the factory ones.
+
+    Reading the file here would mean a schedule set on the page never fires: the ticker
+    would go on starting rounds at the hours the operator replaced.
+    """
+    (chains_dir / "demo.yaml").write_text(
+        "id: demo\n"
+        "enabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: default\n"
+        "    schedule:\n"
+        "      interval_hours: 3\n"
+        "      start_hour: 2\n",
+        encoding="utf-8")
+    config.reload()
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO settings_versions (chain_id, config_id, version, payload_json,"
+            " note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("demo", "default", 1,
+             json.dumps({"schedule": {"interval_hours": 6, "start_hour": 5}}), None,
+             "2026-10-06T00:00:00+08:00"))
+    finally:
+        conn.close()
+
+    assert config.live_schedule("demo")["interval_hours"] == 6
+    assert config.enabled_configs()[0]["schedule"]["interval_hours"] == 6
+    assert config.enabled_configs()[0]["schedule"]["start_hour"] == 5
