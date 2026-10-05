@@ -57,7 +57,21 @@ SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
     ("llm.timeout", "CH_LLM_TIMEOUT", "num"),
     ("llm.tries", "CH_LLM_TRIES", "int"),
     ("llm.key_cooldown", "CH_LLM_KEY_COOLDOWN", "num"),
+    # 付费请求的熔断 (AIHOT 的 `budgets`): {"llm": {"per_minute": .., "per_hour": ..,
+    # "per_day": ..}}。没配 = 不限; 写 0 = 停这一档。数的是 attempt, 所以重试也算。
+    ("llm.budgets", "CH_LLM_BUDGETS", "json"),
     ("llm.extra_headers", "CH_LLM_EXTRA_HEADERS", "json"),
+    # 按用途挑模型 (AIHOT 的 editorial/models.ts): 留空 = 用上面那一个。评分与摘要可以挂便宜档,
+    # 理解与翻译挂贵档, 而不用给全站换模型。行在页面上 (forms.system_blocks 的「按用途挑模型」)。
+    ("llm.models.prefilter", "CH_LLM_MODEL_PREFILTER", "text"),
+    ("llm.models.score", "CH_LLM_MODEL_SCORE", "text"),
+    ("llm.models.understand", "CH_LLM_MODEL_UNDERSTAND", "text"),
+    ("llm.models.summarize", "CH_LLM_MODEL_SUMMARIZE", "text"),
+    ("llm.models.structure", "CH_LLM_MODEL_STRUCTURE", "text"),
+    ("llm.models.translate", "CH_LLM_MODEL_TRANSLATE", "text"),
+    ("llm.models.group", "CH_LLM_MODEL_GROUP", "text"),
+    ("llm.models.groupReview", "CH_LLM_MODEL_GROUP_REVIEW", "text"),
+    ("llm.models.digest", "CH_LLM_MODEL_DIGEST", "text"),
     ("research_workers", "CH_RESEARCH_WORKERS", "int"),
     ("x.auth_token", "CH_X_AUTH_TOKEN", "secret"),
     ("x.ct0", "CH_X_CT0", "secret"),
@@ -76,6 +90,14 @@ SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
 #: like it had simply found nothing. Both files are one file now and the rule is unchanged:
 #: re-reading one path never reaches for a variable another path owns.
 _FROM_FILE: dict[Path, dict[str, str]] = {}
+
+#: `load_env_file` is read-modify-write on the record above, and the request threads and the
+#: feed's own workers reach it at the same time. Two overlapping calls each withdraw the
+#: record and each write back only what it applied, so the later write lands an empty record
+#: - and that is not a stale read but a terminal one: the keys are still in `os.environ`
+#: from the first call, so the file never claims them again, every row for them reports
+#: `env`, and the page draws the model rows read-only for the rest of the process's life.
+_ENV_LOCK = threading.RLock()
 
 
 def _dig(document: Mapping, path: str) -> Any:
@@ -116,8 +138,13 @@ def file_owner(path: Path | None = None) -> dict[str, str]:
 
     The page reads this to tell a value it can write from one the operating system is holding:
     a variable the file did not set is never touched by the file, so a row for it is read-only.
+
+    Under the same lock as the writer, or a reader that lands between the writer's withdrawal and
+    its write-back sees a record that is briefly empty and calls every variable the file owns a
+    real environment variable.
     """
-    return dict(_FROM_FILE.get(path or SYSTEM_PATH, {}))
+    with _ENV_LOCK:
+        return dict(_FROM_FILE.get(path or SYSTEM_PATH, {}))
 
 
 def load_env_file(path: Path | None = None) -> int:
@@ -130,29 +157,30 @@ def load_env_file(path: Path | None = None) -> int:
     A real environment variable always wins, including one set after the file was read: that
     key is simply never touched again.
     """
-    path = path or SYSTEM_PATH
-    for key, value in list(_FROM_FILE.pop(path, {}).items()):
-        if os.environ.get(key) == value:
-            del os.environ[key]
-    if not path.is_file():
-        return 0
-    try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        # A file caught mid-write parses as nothing, and the round it lands in is not the place
-        # to learn that. Everything it owned was withdrawn above, so the code's own defaults
-        # answer - the same state as a file that is not there at all.
-        return 0
-    applied = 0
-    owned: dict[str, str] = {}
-    for name, value in flatten(document).items():
-        if name in os.environ:
-            continue
-        os.environ[name] = value
-        owned[name] = value
-        applied += 1
-    _FROM_FILE[path] = owned
-    return applied
+    with _ENV_LOCK:
+        path = path or SYSTEM_PATH
+        for key, value in list(_FROM_FILE.pop(path, {}).items()):
+            if os.environ.get(key) == value:
+                del os.environ[key]
+        if not path.is_file():
+            return 0
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            # A file caught mid-write parses as nothing, and the round it lands in is not the place
+            # to learn that. Everything it owned was withdrawn above, so the code's own defaults
+            # answer - the same state as a file that is not there at all.
+            return 0
+        applied = 0
+        owned: dict[str, str] = {}
+        for name, value in flatten(document).items():
+            if name in os.environ:
+                continue
+            os.environ[name] = value
+            owned[name] = value
+            applied += 1
+        _FROM_FILE[path] = owned
+        return applied
 
 
 load_env_file()

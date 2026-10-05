@@ -14,6 +14,21 @@ llm:
   api_key: null
   api_key_fallback: null
   model: null
+  # 按用途挑模型（可选）：留空就用上面那一个。评分与摘要通常挂便宜档，理解与翻译挂贵档。
+  models:
+    prefilter: null
+    score: null
+    understand: null
+    summarize: null
+    structure: null
+    translate: null
+    group: null
+    groupReview: null
+    digest: null
+  # 付费请求的熔断（可选）：{"llm": {"per_minute": 300, "per_hour": 6000, "per_day": 40000}}。
+  # 没配就是不限；写 0 是停这一档。数的是真的发出去的请求数，重试也算，所以它是
+  # 「跑飞了」的闸门，不是日常节流。
+  budgets: null
   # none / minimal / low / medium / high。只有 none 是真的关掉思考：minimal 与 low 一样
   # 会花思考 token（实测 680-899 个），none 花 0 个。
   reasoning: none
