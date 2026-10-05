@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "note": "人工标的判断, 一条一个例子. 改了规则或提示词之后跑一遍 `GET /api/v1/feed/eval`, 看那些原本判对的还对不对.",
+  "cases": [
+    {
+      "id": "certainty-two-parties",
+      "axis": "certainty",
+      "given": {
+        "sources": 2,
+        "kinds": [
+          "rss",
+          "rss"
+        ]
+      },
+      "want": "fact",
+      "why": "两家独立来源各自说了一遍, 合谋比准确贵 —— 这是事实。"
+    },
+    {
+      "id": "certainty-one-party",
+      "axis": "certainty",
+      "given": {
+        "sources": 1,
+        "kinds": [
+          "rss"
+        ]
+      },
+      "want": "discussion",
+      "why": "只有一家在说, 分不出是报道还是传闻。"
+    },
+    {
+      "id": "certainty-exchange",
+      "axis": "certainty",
+      "given": {
+        "sources": 1,
+        "kinds": [
+          "exchange"
+        ]
+      },
+      "want": "fact",
+      "why": "交易所宣布自己的上币就是一手记录。"
+    },
+    {
+      "id": "certainty-regulator",
+      "axis": "certainty",
+      "given": {
+        "sources": 1,
+        "kinds": [
+          "regulator"
+        ]
+      },
+      "want": "fact",
+      "why": "监管机构的自己的动作同理。"
+    },
+    {
+      "id": "certainty-nobody",
+      "axis": "certainty",
+      "given": {
+        "sources": 0,
+        "kinds": []
+      },
+      "want": "discussion",
+      "why": "一家都没说, 那就连讨论都不是 —— 但判词只能是这两个之一。"
+    },
+    {
+      "id": "certainty-one-post",
+      "axis": "certainty",
+      "given": {
+        "sources": 1,
+        "kinds": [
+          "x_search"
+        ]
+      },
+      "want": "discussion",
+      "why": "X 上一条推文是一家在说。"
+    },
+    {
+      "id": "channel-x-source",
+      "axis": "channel",
+      "given": {
+        "kind": "x_search",
+        "x_post": false
+      },
+      "want": "x",
+      "why": "X 源走 X 那一路。"
+    },
+    {
+      "id": "channel-rss-with-post",
+      "axis": "channel",
+      "given": {
+        "kind": "rss",
+        "x_post": true
+      },
+      "want": "x",
+      "why": "带推文的源也算 X 那一路 —— 版式看的是内容长什么样, 不是源在哪。"
+    },
+    {
+      "id": "channel-plain-rss",
+      "axis": "channel",
+      "given": {
+        "kind": "rss",
+        "x_post": false
+      },
+      "want": "news",
+      "why": "普通报道。"
+    },
+    {
+      "id": "channel-exchange",
+      "axis": "channel",
+      "given": {
+        "kind": "exchange",
+        "x_post": false
+      },
+      "want": "news",
+      "why": "公告走新闻那一路。"
+    },
+    {
+      "id": "pool-editorial-pass",
+      "axis": "pool",
+      "given": {
+        "participation": "editorial",
+        "relevance": "pass",
+        "title": "某交易所上线一个新币",
+        "summary": "一句话概括。"
+      },
+      "want": true,
+      "why": "编辑类源、预筛过、中文标题与摘要都在。"
+    },
+    {
+      "id": "pool-no-summary",
+      "axis": "pool",
+      "given": {
+        "participation": "editorial",
+        "relevance": "pass",
+        "title": "只有标题",
+        "summary": ""
+      },
+      "want": false,
+      "why": "没有摘要就进不了池子 —— 没有东西可读。"
+    },
+    {
+      "id": "pool-media-source",
+      "axis": "pool",
+      "given": {
+        "participation": "media",
+        "relevance": "pass",
+        "title": "一个标题",
+        "summary": "一句话。"
+      },
+      "want": false,
+      "why": "非编辑类源不进池子。"
+    },
+    {
+      "id": "pool-blocked",
+      "axis": "pool",
+      "given": {
+        "participation": "editorial",
+        "relevance": "block",
+        "title": "一个标题",
+        "summary": "一句话。"
+      },
+      "want": false,
+      "why": "预筛说不相关就短路。"
+    },
+    {
+      "id": "pool-unjudged",
+      "axis": "pool",
+      "given": {
+        "participation": "editorial",
+        "relevance": null,
+        "title": "一个标题",
+        "summary": "一句话。"
+      },
+      "want": false,
+      "why": "还没判过不算过 —— 未判定不进池。"
+    },
+    {
+      "id": "selectable-yes",
+      "axis": "selectable",
+      "given": {
+        "eligible": true,
+        "judged": true,
+        "tier": "A"
+      },
+      "want": true,
+      "why": "进了池、判过选了、这一档允许。"
+    },
+    {
+      "id": "selectable-judged-no",
+      "axis": "selectable",
+      "given": {
+        "eligible": true,
+        "judged": false,
+        "tier": "A"
+      },
+      "want": false,
+      "why": "判过了, 判的是不选。"
+    },
+    {
+      "id": "selectable-unjudged",
+      "axis": "selectable",
+      "given": {
+        "eligible": true,
+        "judged": null,
+        "tier": "A"
+      },
+      "want": false,
+      "why": "未判定不算入选 —— 它不是一个“选上了”的证据。"
+    },
+    {
+      "id": "selectable-exclude",
+      "axis": "selectable",
+      "given": {
+        "eligible": true,
+        "judged": true,
+        "tier": "EXCLUDE_MP"
+      },
+      "want": false,
+      "why": "这一档明说不进精选。"
+    },
+    {
+      "id": "selectable-not-eligible",
+      "axis": "selectable",
+      "given": {
+        "eligible": false,
+        "judged": true,
+        "tier": "A"
+      },
+      "want": false,
+      "why": "没进池就不可能入选。"
+    },
+    {
+      "id": "page-visible",
+      "axis": "page",
+      "given": {
+        "visibility": "visible",
+        "mode": "editorial"
+      },
+      "want": true,
+      "why": "一条编辑类源的正常条目自带一页。"
+    },
+    {
+      "id": "page-withdrawn",
+      "axis": "page",
+      "given": {
+        "visibility": "withdrawn",
+        "mode": "editorial"
+      },
+      "want": false,
+      "why": "下架的不再有自己的页。"
+    },
+    {
+      "id": "page-social",
+      "axis": "page",
+      "given": {
+        "visibility": "visible",
+        "mode": "social"
+      },
+      "want": false,
+      "why": "非编辑类源不立页。"
+    }
+  ]
+}
