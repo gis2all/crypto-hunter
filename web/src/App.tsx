@@ -6,6 +6,8 @@ import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
   useKeepFavorite, useLiveRun, useRuns } from "./api/hooks";
 import { OverviewPanel } from "./features/overview/OverviewPanel";
 import { FavoritesView } from "./features/favorites/FavoritesView";
+import { FeedSettingsView } from "./features/feed/FeedSettingsView";
+import { FeedView, type FeedMode } from "./features/feed/FeedView";
 import { LookupView } from "./features/lookup/LookupView";
 import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
@@ -30,6 +32,15 @@ const CHAIN_KEY = "ch.chain";
 const CONFIG_KEY = "ch.config";
 const VIEW_KEY = "ch.view";
 const PLACE_KEY = "ch.place";
+//: Which page of the feed the reader was on. A key of its own rather than a value under
+//: PLACE_KEY: the place is where you are and this is which page of it, and a reload needs
+//: both - the rail lights one row from each.
+const FEED_KEY = "ch.feed.mode";
+
+/** 信息流那一栏有的几个页签. 用一张名单校验读回来的偏好, 而不是 `=== "all" || === "hot"`:
+ *  后者在加页签时会被忘掉, 于是那个页签刷新之后打不开. */
+const FEED_MODES: FeedMode[] = ["curated", "all", "hot", "topics", "papers"];
+
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -54,13 +65,26 @@ export default function App() {
   const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
-  // 雷达, 收藏, 搜索 or 系统设置. All four are places, not tabs: the last three are scoped by
+  // 雷达, 收藏, 搜索 or 系统设置. All five are places, not tabs: the last three are scoped by
   // neither the selected chain nor a set of settings, so none of them can live under
   // 报告 / 设定 - see Rail's Place.
   const [place, setPlace] = useState<Place>(() => {
     const kept = readPref(PLACE_KEY);
-    return kept === "favorites" || kept === "lookup" || kept === "system" ? kept : "radar";
+    return kept === "favorites" || kept === "lookup" || kept === "system"
+      || kept === "feed" || kept === "feed-settings"
+      ? kept
+      : "radar";
   });
+  // Which of the feed's six pages the rail has lit, and the one the page renders. Restored
+  // like the place itself, so a reload lands on the page the reader was reading rather than
+  // back on the first of the three. 认一张名单而不是"是不是 all 或 hot": 加一种刊时忘了改这里,
+  // 那个页签会静默地打不开, 而没人会在看别的表时发现它.
+  const [feedMode, setFeedMode] = useState<FeedMode>(() => {
+    const kept = readPref(FEED_KEY);
+    return FEED_MODES.includes(kept as FeedMode) ? kept as FeedMode : "curated";
+  });
+  // 卡片上点一个实体角标: 换到主题页并选中它. 空 = 没有指定, 主题页自己选一条有东西的线.
+  const [topicPick, setTopicPick] = useState("");
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [runPanelOpen, setRunPanelOpen] = useState(false);
@@ -192,6 +216,10 @@ export default function App() {
   }, [place]);
 
   useEffect(() => {
+    savePref(FEED_KEY, feedMode);
+  }, [feedMode]);
+
+  useEffect(() => {
     if (live) {
       setRunPanelOpen(true);
     }
@@ -244,6 +272,11 @@ export default function App() {
         activeChainId={chainId}
         place={place}
         onSelectPlace={setPlace}
+        feedMode={feedMode}
+        onSelectFeed={(mode) => {
+          setFeedMode(mode);
+          setPlace("feed");
+        }}
         onSelectChain={(id) => {
           setChainId(id);
           setPlace("radar");
@@ -255,7 +288,23 @@ export default function App() {
         }}
       />
       <main className="main">
-        {place === "favorites" ? (
+        {place === "feed" ? (
+          // The industry itself: the second product on this machine, and the only place here
+          // that is not about a token. No chain and no set of settings is in scope, so it takes
+          // nothing from the page's own context - the rail row is the whole of it.
+          <FeedView
+            mode={feedMode}
+            // 精选页顶上那条「完整榜单」通向热点榜 —— 换页是这里的事 (Rail 那一列与这里同一份状态),
+            // 所以壳只把动作递下去, 不自己认那些页签.
+            onOpenBoard={() => setFeedMode("hot")}
+            // 卡片角标上的实体: 换到主题页并把选中的那条线交给它.
+            topic={topicPick}
+            onOpenTopic={(name) => {
+              setTopicPick(name);
+              setFeedMode("topics");
+            }}
+          />
+        ) : place === "favorites" ? (
           // The whole list, not just the names: the shelf's chain switcher is a fixed row
           // read off these (8.7.4), so it needs the order and which of them the rail draws.
           <FavoritesView chains={chains.data ?? []} />
@@ -263,6 +312,10 @@ export default function App() {
           // This machine's own wiring: no chain and no set of settings is in scope, which is
           // exactly why it is a place and not a third tab under a radar.
           <SystemView />
+        ) : place === "feed-settings" ? (
+          // 信息流自己的几个数: 什么时候出刊、一轮往补正文和写作各花多少. 它读一个文件、
+          // 写回那个文件, 所以链条和配置都不在它的射程里 —— 它是 信息流 那一栏的一行.
+          <FeedSettingsView />
         ) : place === "lookup" ? (
           // The chain list is passed for the same kind of reading: a searched card can be on
           // a chain this app does not screen, and its foot still has to name the one it has

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" width="480" height="270">
+  <rect width="480" height="270" fill="#10141d"/>
+  <g stroke="#1d2636" stroke-width="1">
+    <path d="M40 60H440M40 110H440M40 160H440M40 210H440"/>
+    <path d="M40 40V230M140 40V230M240 40V230M340 40V230M440 40V230"/>
+  </g>
+  <path d="M40 205L90 180L140 188L190 150L240 158L290 118L340 96L390 74L440 52"
+        fill="none" stroke="#60a5fa" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M40 205L90 180L140 188L190 150L240 158L290 118L340 96L390 74L440 52L440 230L40 230Z"
+        fill="#60a5fa" opacity="0.12"/>
+  <g fill="#60a5fa">
+    <circle cx="290" cy="118" r="4"/><circle cx="440" cy="52" r="4"/>
+  </g>
+  <text x="40" y="252" fill="#94a3b8" font-family="monospace" font-size="13">-24h</text>
+  <text x="400" y="252" fill="#94a3b8" font-family="monospace" font-size="13">now</text>
+</svg>

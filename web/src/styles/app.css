@@ -112,6 +112,9 @@ details[open] .sec-sum>.ico,details[open] .det-sum>.ico{transform:rotate(90deg)}
 @media (prefers-reduced-motion:reduce){
   .ico.spin{animation:none}
   .sec-sum>.ico,.det-sum>.ico{transition:none}
+  /* 展开 / 收起 (features/feed/Presence.tsx): 动画按到 1ms, 等于没有 —— 关掉动画不等于留住
+     那半秒, 元素该在什么时候消失还是什么时候消失. */
+  .anim-collapse-in,.anim-collapse-out{animation-duration:1ms}
 }
 
 
@@ -479,19 +482,19 @@ html{scrollbar-gutter:stable}
 
    `:has()` is what lets a group say this instead of each row: a page that adds a row cannot land
    it in a column of its own. */
-#view-system .pgroup{--ctl-w:112px;--mark-w:0px}
-#view-system .pgroup:has(.prow .field>input.str){--ctl-w:260px;--mark-w:112px}
-#view-system .pgroup:has(.prow .field>.unit){--ctl-w:80px;--mark-w:17px}
+#view-system .pgroup,#view-feed-settings .pgroup{--ctl-w:112px;--mark-w:0px}
+#view-system .pgroup:has(.prow .field>input.str),#view-feed-settings .pgroup:has(.prow .field>input.str){--ctl-w:260px;--mark-w:112px}
+#view-system .pgroup:has(.prow .field>.unit),#view-feed-settings .pgroup:has(.prow .field>.unit){--ctl-w:80px;--mark-w:17px}
 
 /* Only a field with something drawn in it is a grid: an environment-owned row arrives as one bare
    text node (`Widget`'s last branch), which has no box to line up and reads at the row's right
    edge the way it always has. */
-#view-system .prow .field:has(> *){display:grid;align-items:center;justify-content:end;
+#view-system .prow .field:has(> *),#view-feed-settings .prow .field:has(> *){display:grid;align-items:center;justify-content:end;
   column-gap:0;grid-template-columns:var(--ctl-w) minmax(0, var(--mark-w))}
-#view-system .prow .field>*:first-child{grid-column:1;width:var(--ctl-w);min-width:0}
-#view-system .prow .field>*:not(:first-child){grid-column:2;min-width:0;padding-left:6px;
+#view-system .prow .field>*:first-child,#view-feed-settings .prow .field>*:first-child{grid-column:1;width:var(--ctl-w);min-width:0}
+#view-system .prow .field>*:not(:first-child),#view-feed-settings .prow .field>*:not(:first-child){grid-column:2;min-width:0;padding-left:6px;
   white-space:nowrap}
-#view-system .prow .field>.pick-wrap .pick-cur{overflow:hidden;text-overflow:ellipsis;
+#view-system .prow .field>.pick-wrap .pick-cur,#view-feed-settings .prow .field>.pick-wrap .pick-cur{overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
 /* Where the picker *is* the control, it takes the group's column and holds its label the same
    way the number boxes hold theirs. */
@@ -799,6 +802,9 @@ div.pgroup>.pset{margin-top:auto}
    a second shade of text. */
 .nav-shelf{padding:0}
 
+/* 导航里的一条分组标题 (例:"信息流") —— 小字宽字距, 只是分隔, 不是能点的项. */
+.nav-sec{padding:16px 14px 4px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2)}
+
 /* 系统设置 is a rail row because it belongs to no chain (user, 2026-10-02), and it is pinned
    under the list rather than in it: the chains and the two shelves are things you read, and
    this is the machine they read with - the theme switch below it is the other global row.
@@ -812,7 +818,7 @@ div.pgroup>.pset{margin-top:auto}
    radar and the shelf. The title carries no count: the cards are the count. The shelf's 来源
    chips and its sort came out of this bar and into the panel beside its cards (2026-10-02,
    user), so what is left on it is the bulk fold, the box and 导出. */
-#view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
+#view-favorites .fav-bar,#view-lookup .fav-bar,#view-system .fav-bar,#view-feed .fav-bar,#view-feed-settings .fav-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;
   gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border)}
 .fav-title{display:flex;align-items:center;gap:7px}
 .fav-title b{font-size:15px;font-weight:600}
@@ -957,3 +963,547 @@ div.pgroup>.pset{margin-top:auto}
 /* 清空 is the same two-press arm 中止 uses - the first press says how many go - but it stands
    in a drawer, so it cannot wear the RunPanel's `.rp-h .btn.arm` selector. */
 .btn.lk-clear.arm{border-color:var(--danger-border);background:var(--danger-bg);color:var(--danger-fg)}
+
+
+/* 信息流. 一天一组: `.feed-day` 的头是日期 + 条数 + 一个能折叠的箭头, 底下那条 hair 线就从
+   日期下面走 —— 日期当骨骼, 组与组之间不再画线. */
+.feed{padding:0 16px 40px;max-width:960px}
+.feed-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:11px 0 10px}
+.feed-bar .chip{display:inline-flex;align-items:center;gap:5px}
+.feed-bar .chip i{font-style:normal;font-size:10px;color:var(--muted-2)}
+.feed-bar .chip.on{border-color:var(--accent-tint);background:var(--surface-warm);color:var(--fg)}
+.feed-bar-note{margin-left:auto;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.feed-empty{display:flex;align-items:center;gap:6px;padding:22px 0;font-size:13px;color:var(--muted)}
+.feed-day{margin-top:22px}
+/* 滚动加载的哨兵 (ItemsPage): 它一进视野就取下一页, 所以它得有一块真的高度 —— 零高度的目标
+   观察不到. 取的时候就地写一句, 取完只剩空高度, 读者看不到一个停住的转圈. */
+.feed-more{display:flex;align-items:center;justify-content:center;gap:6px;min-height:52px;
+  font-size:12px;color:var(--muted)}
+.feed-day-head{display:flex;align-items:center;gap:8px;padding-bottom:9px;
+  border-bottom:1px solid var(--border)}
+.feed-day-head b{font-size:14.5px}
+.feed-day-head span{font-size:11.5px;color:var(--muted)}
+.feed-day-count{margin-left:auto;font-variant-numeric:tabular-nums}
+.feed-day-fold{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  padding:0;border:1px solid var(--border);background:var(--surface);color:var(--muted);
+  cursor:pointer}
+.feed-day-fold:hover{border-color:var(--accent-tint);color:var(--fg)}
+.feed-day-fold .ico{transition:transform .12s ease}
+.feed-day.shut .feed-day-fold .ico{transform:rotate(-90deg)}
+/* 条目一行: 左边 40px 时间, 接一条 14px 宽的竖轨 (轨顶一个方点, 标"这一条在当天"), 右边才是
+   卡. 卡里从上到下: 来源与分类 → 标题 (15/600, 和别处同档) → 摘要 → 图 / 引用 → 理由; 分数
+   自己一列, 按高 / 中 / 低上色 (`.it-score`). */
+.it-list{list-style:none;margin:0;padding:0}
+.it-row{display:grid;grid-template-columns:40px 14px minmax(0,1fr);margin-top:8px}
+.it-time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.it-rail{position:relative;display:block}
+.it-rail:before{content:"";position:absolute;left:6px;top:0;bottom:0;width:1px;
+  background:var(--hair)}
+.it-rail:after{content:"";position:absolute;left:3.5px;top:0;width:6px;height:6px;
+  background:var(--accent)}
+.it-card{display:flex;align-items:flex-start;gap:14px;padding:11px 13px;background:var(--surface);
+  border:1px solid var(--border)}
+.it-card:hover{border-color:var(--accent-tint)}
+.it-body{display:flex;flex:1;flex-direction:column;gap:6px;min-width:0}
+.it-tags{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:11.5px;
+  color:var(--muted)}
+.it-src{color:var(--fg-2);font-weight:600}
+.it-flag,.it-cat,.it-tag{display:inline-flex;align-items:center;height:18px;padding:0 5px;
+  border:1px solid var(--border);background:var(--surface)}
+.it-flag{border-color:var(--accent-tint);background:var(--surface-warm);color:var(--accent-fg)}
+.it-tag{color:var(--muted-2)}
+.it-title{background:none;border:0;padding:0;font-family:inherit;text-align:left;cursor:pointer;
+  font-size:15px;font-weight:600;line-height:1.45;color:var(--fg)}
+.it-title:hover{color:var(--accent-fg)}
+.it-row.read .it-title{color:var(--muted)}
+.it-row.read .it-title:hover{color:var(--accent-fg)}
+.it-sum{margin:0;font-size:13.5px;line-height:1.6;color:var(--fg-2)}
+.it-media{display:flex;flex-wrap:wrap;gap:8px}
+.it-media img{display:block;width:132px;height:74px;object-fit:cover;border:1px solid var(--border);
+  background:var(--surface-warm)}
+/* 「另有 N 家信源报道」: 折叠行 + 展开的一列. 词与数都来自后端, 这里只管样子 —— 列表
+   页和详情页共用同一套, 所以它不挂在 .it-* 或 .dt-* 任何一边. */
+.or{display:flex;flex-direction:column;gap:6px}
+.or-toggle{display:flex;align-items:center;gap:5px;background:none;border:0;padding:0;
+  font-family:inherit;font-size:12px;color:var(--accent-fg);cursor:pointer}
+.or-toggle:hover{text-decoration:underline}
+.or-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.or-list li{display:flex;align-items:baseline;gap:8px;min-width:0}
+.or-src{flex:0 0 96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12px;color:var(--muted)}
+.or-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:none;border:0;padding:0;font-family:inherit;text-align:left;font-size:12.5px;
+  color:var(--fg-2);cursor:pointer}
+.or-title:hover{color:var(--accent-fg)}
+.or-time{flex:0 0 auto;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.or-out{flex:0 0 auto;display:inline-flex;color:var(--muted)}
+.or-out:hover{color:var(--accent-fg)}
+.it-why{margin:0;font-size:12.5px;line-height:1.6;color:var(--muted)}
+.it-why>span{margin-right:5px;color:var(--accent-fg)}
+.it-score{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;width:52px}
+.it-score span{font-size:10.5px;color:var(--muted)}
+.it-score b{font-size:17px;font-variant-numeric:tabular-nums}
+.it-score b.s-hi{color:var(--ok-fg)}
+.it-score b.s-mid{color:var(--accent-fg)}
+.it-score b.s-lo{color:var(--fg-2)}
+/* 精选页顶上那块"当前热点": 一条大行加四条小行, 名次 1/2/3 各一个色相 (`.cur-hot-p1/2/3`,
+   就是 tokens.css 里那三个), 热度靠右; 右上角那个按钮是去热点榜. */
+.cur-hot{margin:14px 0 2px;padding:12px 14px;background:var(--surface);
+  border:1px solid var(--border)}
+.cur-hot-head{display:flex;align-items:center;gap:8px}
+.cur-hot .hot-sec{padding:0}
+.cur-hot-more{margin-left:auto;display:inline-flex;align-items:center;gap:1px;padding:0;border:0;
+  background:none;font-family:inherit;font-size:11.5px;color:var(--muted);cursor:pointer}
+.cur-hot-more:hover{color:var(--accent-fg)}
+.cur-hot-list{list-style:none;margin:0;padding:7px 0 0}
+.cur-hot-list li{display:flex;align-items:baseline;gap:10px;padding:4px 0}
+.cur-hot-no{flex:0 0 auto;width:26px;font-size:16px;color:var(--fg-2);
+  font-variant-numeric:tabular-nums}
+.cur-hot-p1{color:var(--podium-1)}
+.cur-hot-p2{color:var(--podium-2)}
+.cur-hot-p3{color:var(--podium-3)}
+.cur-hot-list a,.cur-hot-list button{min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;background:none;border:0;padding:0;font-family:inherit;font-size:15px;
+  font-weight:600;line-height:1.4;text-align:left;cursor:pointer;color:var(--fg)}
+.cur-hot-list a:hover,.cur-hot-list button:hover{color:var(--accent-fg)}
+.cur-hot-heat{flex:0 0 auto;margin-left:auto;display:inline-flex;align-items:baseline;gap:5px;
+  font-variant-numeric:tabular-nums}
+.cur-hot-heat span{font-size:11px;color:var(--muted-2)}
+.cur-hot-heat b{font-size:14px;color:var(--fg)}
+@media (max-width: 560px){
+  .it-row{grid-template-columns:34px 12px minmax(0,1fr)}
+  .it-card{padding:10px 11px;gap:10px}
+  .it-score{width:44px}
+  .it-media img{width:106px;height:60px}
+}
+/* 热点榜: 一条大卡 (`.hot-card.lead`) 加一列小卡, 底下 `.hot-pair` 两张并排; 名次、分数、来源
+   切换各占一列. */
+.hot-sec{padding:20px 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted-2)}
+.cur-hot .hot-sec{padding-top:0}
+.hot-card{display:flex;gap:16px;padding:15px 0;border-bottom:1px solid var(--hair)}
+.hot-card.lead{padding:16px 0 20px;border-bottom:1px solid var(--border)}
+.hot-rank{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;width:34px}
+.hot-rank b{font-size:22px;line-height:1.1;color:var(--accent-fg);font-variant-numeric:tabular-nums}
+.hot-card.lead .hot-rank b{font-size:30px}
+.hot-rank span{margin-top:2px;font-size:10px;color:var(--muted-2)}
+.hot-main{display:flex;flex:1;flex-direction:column;gap:6px;min-width:0}
+.hot-tags{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:10.5px;
+  color:var(--muted)}
+.hot-cat,.hot-tag{display:inline-flex;align-items:center;height:17px;padding:0 5px;
+  border:1px solid var(--border);background:var(--surface)}
+.hot-cat{color:var(--fg-2);font-weight:600}
+.hot-tag{color:var(--muted-2)}
+.hot-srcs{font-variant-numeric:tabular-nums}
+.hot-title{margin:0;font-size:15px;font-weight:600;line-height:1.45}
+/* 热点榜标题上那枚小标签 (heat.badges): 生一个词, 颜色按它说的是哪一句分 —— 起量是提醒,
+   新是中性, 升温是好消息. 词本身在后端, 这里只决定它长什么样. */
+.hot-badge{display:inline-flex;align-items:center;height:16px;padding:0 5px;margin-right:6px;
+  vertical-align:middle;border:1px solid currentColor;font-size:10px;font-weight:600;
+  color:var(--accent-fg);background:var(--surface-warm)}
+.hot-badge.surge{color:var(--warn-fg)}
+.hot-badge.rising{color:var(--ok-fg)}
+.hot-row-head{display:flex;align-items:baseline;gap:8px;flex:1;min-width:0}
+.hot-card.lead .hot-title{font-size:19px;letter-spacing:-.01em}
+.hot-title a,.hot-title button{background:none;border:0;padding:0;font-family:inherit;
+  font-size:inherit;font-weight:inherit;line-height:inherit;text-align:left;cursor:pointer;
+  color:var(--fg)}
+.hot-title a:hover,.hot-title button:hover{color:var(--accent-fg)}
+.hot-latest{margin:0;font-size:12.5px;line-height:1.6;color:var(--fg-2)}
+.hot-latest>span{margin-right:6px;font-size:10.5px;font-weight:600;color:var(--accent-fg)}
+.hot-src{display:flex;flex-wrap:wrap;gap:4px 6px;font-size:10.5px}
+.hot-src a{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 6px;
+  border:1px solid var(--border);background:var(--surface);color:var(--muted);border-bottom:0}
+.hot-src a:hover{background:var(--surface-warm);color:var(--fg-2)}
+.hot-src a.on{border-color:var(--accent-tint);background:var(--surface-warm);color:var(--accent-fg)}
+.hot-src a i{font-style:normal;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.hot-num{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:5px;width:118px;
+  color:var(--accent-fg)}
+.hot-heat{display:flex;flex-direction:column;align-items:flex-end}
+.hot-heat span{font-size:10px;color:var(--muted)}
+.hot-heat b{font-size:21px;color:var(--fg);font-variant-numeric:tabular-nums}
+.hot-pair{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;
+  border-bottom:1px solid var(--border)}
+.hot-pair .hot-card{border-bottom:0}
+.hot-list{list-style:none;margin:0;padding:0}
+.hot-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--hair)}
+.hot-row-no{flex:0 0 auto;width:24px;font-size:13px;color:var(--muted-2);
+  font-variant-numeric:tabular-nums}
+.hot-row-body{display:flex;align-items:baseline;gap:10px;flex:1;min-width:0}
+.hot-row-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:none;border:0;padding:0;font-family:inherit;text-align:left;cursor:pointer;
+  font-size:15px;font-weight:600;color:var(--fg)}
+.hot-row-title:hover{color:var(--accent-fg)}
+.hot-row-meta{display:flex;align-items:center;gap:8px;flex:0 0 auto;font-size:10.5px;
+  color:var(--muted)}
+.hot-row-heat{flex:0 0 auto;width:34px;text-align:right;font-size:13px;
+  font-variant-numeric:tabular-nums}
+/* 热度与涨跌: 颜色只从 tokens.css 里挑 —— 涨绿、跌红、平灰、新币用强调色. */
+.spark{color:var(--accent-fg)}
+.trend{display:inline-flex;align-items:center;gap:3px;font-size:11px;
+  font-variant-numeric:tabular-nums}
+.trend.up{color:var(--ok-fg)}
+.trend.down{color:var(--danger-fg)}
+.trend.flat{color:var(--muted)}
+.trend.new{color:var(--accent-fg)}
+/* 展开 / 收起 (features/feed/Presence.tsx, 照 AIHOT 的 ui/Presence.tsx): 动画走 keyframes,
+   不引动画库. 出场那一帧把 grid 行从 1fr 收到 0fr, 高度落到 0 就自然收没了; 收完才卸元素,
+   所以"收"也有过程. 全局的 reduced-motion 规则把它按到 1ms. */
+@keyframes ch-collapse-in{from{grid-template-rows:0fr;opacity:0}to{grid-template-rows:1fr;opacity:1}}
+@keyframes ch-collapse-out{from{grid-template-rows:1fr;opacity:1}to{grid-template-rows:0fr;opacity:0}}
+.collapse-grid{display:grid}
+.collapse-inner{min-height:0;overflow:hidden}
+.anim-collapse-in{animation:ch-collapse-in var(--anim-ms,240ms) ease both}
+.anim-collapse-out{animation:ch-collapse-out var(--anim-ms,240ms) ease both}
+/* 参与者头像 (features/feed/Faces.tsx): 一枚挨一枚, 叠着的那几枚左边压进来一点, 外面一圈底色
+   把它们分开 —— 叠得再紧也数得清. 没图标时画首字母, 圆角与站点其它小件一致 (全站零圆角). */
+.faces{display:inline-flex;align-items:center}
+.face{display:inline-flex;border:2px solid var(--surface)}
+.face.stack{margin-left:-7px}
+.face img{display:block;object-fit:cover;background:var(--surface-warm)}
+.face-ini{display:inline-flex;align-items:center;justify-content:center;font-style:normal;
+  font-weight:600;color:var(--fg);background:var(--accent-tint)}
+/* 「事件后续」: 详情页底部那条, 一行一条, 和列表里别的行同一个读法. */
+.fu{list-style:none;margin:0;padding:0;border-top:1px solid var(--hair)}
+.fu li{display:flex;align-items:baseline;gap:8px;padding:7px 0;border-bottom:1px solid var(--hair)}
+.fu-src{flex:0 0 auto;font-size:11.5px;color:var(--muted)}
+.fu-title{flex:1;min-width:0;border:0;background:none;padding:0;text-align:left;
+  font-family:inherit;font-size:12.5px;color:var(--fg-2);cursor:pointer}
+.fu-title:hover{color:var(--accent-fg)}
+.fu-time{flex:0 0 auto;font-size:11px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.dt-h em{font-style:normal;font-weight:400;color:var(--muted-2)}
+.dt-more{align-self:flex-start;gap:5px}
+/* 布局: 实时三页是两栏 (目录 + 内容), 点开的那一条排进右栏那一格 (`.feed-pane`), 所以定宽都写在
+   `#view-feed .feed-body` 上. 栏自己滚、页面不滚 (`height:100vh`), 滚动条藏起来但滚动照旧;
+   窄到 1080px 落回单栏. */
+#view-feed{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#view-feed .feed-body{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr}
+#view-feed .feed-col,#view-feed .feed-pane{min-height:0;overflow-y:auto}
+#view-feed .feed{max-width:none}
+#view-feed .feed-col{scrollbar-width:none}
+#view-feed .feed-col::-webkit-scrollbar{display:none}
+#view-favorites .fav-bar,#view-lookup .fav-bar,#view-feed .fav-bar{border-bottom:0}
+#view-favorites .fav-bar:after,#view-lookup .fav-bar:after,#view-feed .fav-bar:after{content:"";
+  position:absolute;left:16px;right:16px;bottom:0;height:1px;background:var(--border)}
+/* 右栏那一格: 左边一条竖线把它和内容分开, 顶上粘着返回条 (`.pane-bar`), 下面是正文. */
+.feed-pane{border-left:1px solid var(--border);background:var(--bg)}
+.pane-bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;
+  padding:11px 16px;background:var(--bg)}
+.pane-bar:after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:1px;
+  background:var(--border)}
+.pane-back{gap:5px}
+.pane-kind{margin-left:auto;font-size:10.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted-2)}
+.pane-scroll{padding:0 16px 34px}
+@media (max-width: 1080px){
+  #view-feed{height:auto;overflow:visible}
+  #view-feed .feed-body{grid-template-columns:1fr}
+  #view-feed .feed-col,#view-feed .feed-pane{overflow:visible}
+  .feed-pane{border-left:0;border-top:1px solid var(--border)}
+  .feed-pane:empty{border-top:0}
+}
+#view-feed .feed-body.daily-body{grid-template-columns:340px minmax(0,3fr) minmax(0,2fr)}
+/* 报刊: 档案栏顶上那 14px 归切换器自己留 (见 `.daily-tabs`), 所以这一条不再留顶边距, 否则粘住的
+   那一刻会多出一截. 切换器自己粘在顶上, 三种刊共用一排按钮. */
+.daily-arch{padding:0 8px 34px 16px}
+.daily-tabs{position:sticky;top:0;z-index:2;display:flex;padding:14px 0 10px;background:var(--bg)}
+.daily-tabs button{flex:1 1 0;height:var(--ctrl-h);border:1px solid var(--border);
+  background:var(--surface);color:var(--muted);font-size:11.5px;line-height:1;cursor:pointer;
+  white-space:nowrap}
+.daily-tabs button+button{margin-left:-1px}
+.daily-tabs button:hover{background:var(--surface-warm);color:var(--fg-2)}
+.daily-tabs button.on{border-color:var(--accent);background:var(--accent);color:var(--accent-on)}
+@media (max-width: 1080px){
+  /* 这一条要和 `.daily-body` 那条定宽规则比权重: 两边同权重, 后写的赢, 所以它得待在下面. */
+  #view-feed .feed-body.daily-body{grid-template-columns:1fr}
+  #view-feed .daily-arch{max-height:45vh;overflow-y:auto}
+}
+/* 往期列表: 分组头是"2026 年 9 月 3 期", 期与期之间一条 hair 线 (行本身见 `.daily-row`). */
+.daily-group{margin-bottom:14px}
+.daily-group-head{display:flex;align-items:baseline;gap:8px;padding:0 10px 6px}
+.daily-group-head b{font-size:11px;font-weight:600;color:var(--fg-2)}
+.daily-group-head span{font-size:10.5px;color:var(--muted-2)}
+.daily-list{list-style:none;margin:0;padding:0}
+
+/* 一行一期, 读法抄"主题"那条线 (2026-10-04, 用户: 先对齐那张图的列表行, 同日再把字号收一档 ——
+   这一栏只有 340px, 同样的 15px 摆在窄栏里比整页的标题还响): 左边小灰数字占一列定宽, 和标题同一
+   基线; 右边第一行是标题, 第二行才是这一期的副行 (星期几 / 从哪天起). 期号从 17px 收到 12px ——
+   它是个索引, 不该比"这一期说了什么"还响; 数字定宽, 同一个月的几期左边缘连成一条竖线, 眼竖着
+   扫得动. 标题 13.5/600, 两行封顶: 一期的标题是给"翻旧报纸"用的, 不是正文. 底下一条 hair 线把
+   期与期分开. */
+.daily-row{display:flex;align-items:baseline;gap:10px;width:100%;padding:8px 10px;border:0;
+  background:none;border-bottom:1px solid var(--hair);color:var(--fg-2);text-align:left;cursor:pointer}
+.daily-row:hover{background:var(--surface-warm)}
+.daily-row.on{background:var(--surface);color:var(--fg)}
+.daily-mark{flex:0 0 auto;width:30px;font-size:12px;color:var(--muted);
+  line-height:1.15;font-variant-numeric:tabular-nums}
+.daily-text{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
+.daily-meta{font-size:11.5px;color:var(--muted-2)}
+.daily-head{font-size:13.5px;font-weight:600;line-height:1.45;color:var(--fg);display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* 纸. 居中, 自己一列行宽. */
+.daily-pane .pane-scroll{display:flex;justify-content:center}
+.paper{display:flex;flex-direction:column;gap:20px;width:100%;max-width:860px;padding:20px 0 40px}
+
+/* 报头: 左边刊头 (大字 + 两行), 右边报眼 (期号 + 点阵 + 那一句数), 底下一条粗线. 指标条
+   也在报头里, 贴着那条线的上沿 —— 它是报头的一部分, 不是第一条新闻. */
+.paper-head{display:flex;flex-direction:column;gap:10px;padding-bottom:12px;
+  border-bottom:2px solid var(--fg)}
+.paper-mast{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.paper-names{display:flex;align-items:baseline;gap:12px}
+.paper-big{font-size:40px;font-weight:700;line-height:1;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums}
+.paper-period{display:flex;flex-direction:column;gap:3px}
+.paper-period b{font-size:13px;font-weight:600}
+.paper-period span{font-size:10.5px;color:var(--muted)}
+/* 报眼点阵: 一格一期 —— 日报一天一格 (按星期对齐, 因为读者认的是"上周三"), 周报一周一格,
+   月报一月一格. 它不是装饰, 它是"这一段里出过几期"那张图, 所以亮点必须正好是出过刊的那些. */
+.paper-eye{display:flex;flex-direction:column;align-items:flex-end;gap:5px;padding-top:4px}
+.paper-issue{font-size:10.5px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.paper-dots{display:grid;gap:3px}
+.paper-dots i{display:block;width:9px;height:9px;background:var(--hair)}
+.paper-dots i.pad{background:none}
+.paper-dots i.on{background:var(--fg)}
+.paper-dots-cap{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* 指标条: 数旁边那个词是后端给的 (reports.metrics), 页面不编 —— 上一版这里印的"读了 N 条"
+   就是页面自己编的, 而"个来源"它编不出来, 因为那几个数只有后端算得出. */
+.paper-metrics{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:11px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.paper-metrics b{color:var(--fg);font-size:13px}
+.paper-blank{margin:0;font-size:13px;color:var(--fg-2)}
+/* 导语 (5.7): 模型写的那一段, 印在报头与头条之间. 它讲的是「这一期在讲什么」,
+   不是第一条的摘要, 所以用一条细线把它和版面上的条目分开. */
+.paper-intro{margin:0;padding-bottom:12px;font-size:13.5px;line-height:1.75;color:var(--fg-2);
+  border-bottom:1px solid var(--border)}
+
+/* 头条: 标题自己占一行, 摘要在上理由在下. 理由用左边一条竖线标出来, 和详情页的 AI 导读
+   同一个读法 —— 两句都是"这条讲了什么", 但一句是原文, 一句是我们的判断. */
+.paper-lead{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.paper-h{margin:0;font-size:23px;font-weight:700;line-height:1.28;letter-spacing:-.015em}
+/* 头条大标题和看点那一行标题都是按钮, 不是链接: 点开的是我们自己的事件页 —— 纸不是外链的
+   出口, 原文那个出口在事件页底下. 按钮自带的边框 / 底色 / 行内对齐拆掉, 字号字重仍归
+   .paper-h / .paper-title 管, 所以这里不写 font, 免得连字号一起继承掉. */
+button.paper-h,button.paper-title{border:0;background:none;padding:0;text-align:left;
+  font-family:inherit;color:var(--fg);cursor:pointer}
+button.paper-h:hover,button.paper-title:hover{color:var(--accent-fg)}
+.paper-sum{margin:0;font-size:13px;color:var(--fg-2)}
+.paper-why{margin:0;padding:8px 11px;border-left:2px solid var(--accent-tint);
+  background:var(--surface);font-size:12px;color:var(--fg-2)}
+.paper-who{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+/* 事实 / 讨论: 判词是后端判的 (editorial.certify), 这里只用一个边色区分"两家以上在说"和
+   "一家在说". */
+.paper-cert{padding:1px 5px;border:1px solid var(--border);color:var(--muted)}
+.paper-cert.fact{border-color:var(--accent-tint);color:var(--accent-fg)}
+
+.paper-list{list-style:none;margin:0;padding:0}
+.paper-list li{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.paper-item{display:flex;flex-direction:column;gap:5px;min-width:0}
+.paper-title{font-size:13.5px;font-weight:600;line-height:1.4}
+.paper-one{margin:0;font-size:11.5px;color:var(--muted);line-height:1.55}
+.paper-no{flex:0 0 auto;width:20px;font-size:10.5px;color:var(--muted-2);
+  font-variant-numeric:tabular-nums}
+.paper-kinds{list-style:none;margin:0;padding:0}
+.paper-kinds li{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:12px;
+  color:var(--fg-2)}
+.paper-kind{flex:1}
+.paper-kinds b{color:var(--fg);font-variant-numeric:tabular-nums}
+/* 相邻期: 左往回翻, 右往新翻. 按钮上带着那一期的日期, 读者按下去之前就知道自己会落在哪. */
+.paper-next{display:flex;justify-content:space-between;gap:10px;padding-top:16px;
+  border-top:1px solid var(--hair)}
+
+.dt{display:flex;flex-direction:column;gap:14px;padding-top:14px;font-size:12.5px;
+  line-height:1.65;color:var(--fg-2)}
+.dt-tags{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:10.5px;
+  color:var(--muted)}
+.dt-title{margin:0;font-size:19px;font-weight:600;line-height:1.4;letter-spacing:-.01em;
+  color:var(--fg)}
+/* 标题那一格是**两行**: 中文标题, 底下源自己那条 (灰字). 原来那个译文/原文开关挪进正文那一栏了
+   —— 它管的是正文, 站在标题旁边只是顺便, 而标题的长短会让它左右晃. */
+.dt-head{display:flex;flex-direction:column;gap:4px}
+.dt-orig-title{margin:0;font-size:12px;line-height:1.55;color:var(--muted)}
+.dt-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;font-size:11px;
+  color:var(--muted);font-variant-numeric:tabular-nums}
+.dt-meta b{color:var(--fg)}
+.dt-score b{font-size:13px}
+.dt-sec{display:flex;flex-direction:column;gap:8px}
+.dt-sec p{margin:0}
+/* 每一块的抬头是同一个版式: 小字、加宽字距、大写的重量全部来自字距与颜色, 和热点榜的「继续看」
+   是同一个东西 (8.10.5 认的就是这几个版式标题). */
+.dt-h{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted-2)}
+.dt-lead{margin:0;padding:9px 12px;border-left:2px solid var(--accent-tint);
+  background:var(--surface);font-size:13px;color:var(--fg)}
+/* 正文那一栏的抬头与语言开关同一行: 左边写"正文 · AI 翻译", 右边是那个两格的开关. 开关钉在
+   右边, 抬头的字数不会因为它而换行. */
+.dt-body-h{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:20px}
+.dt-lang{flex:0 0 auto;display:flex;border:1px solid var(--border);background:var(--surface)}
+.dt-lang button{padding:2px 8px;border:0;background:none;font-family:inherit;font-size:10.5px;
+  color:var(--muted);cursor:pointer}
+.dt-lang button+button{border-left:1px solid var(--border)}
+.dt-lang button:hover{color:var(--fg)}
+.dt-lang button.on{background:var(--accent-tint);color:var(--fg);font-weight:600}
+/* 译文缺块时的提示: 半篇也是答案, 但读者要知道这不是整篇. */
+.dt-note{margin:0;padding:7px 10px;background:var(--surface);color:var(--muted-2);
+  font-size:11.5px}
+/* 正文: 后端净化过的块级 HTML (p / h2-h5 / li / blockquote / pre / figure), 平铺的一串块;
+   块里留着白名单内的行内标签 (a / strong / em / code / img ...). 标签与属性都在入库那一侧
+   按表重写过 (htmlbody.py), 这里只排它们的形状, 不猜哪个属性可信. */
+.dt-body{display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.8;
+  color:var(--fg-2)}
+.dt-body p{margin:0}
+/* 引用块 (3.6): 一句别人的原话. 竖线 + 缩进把它和本文的正文分开 —— 读者要一眼看出这句不是
+   这条帖子说的, 而译文与原文两份都在, 谁在上谁在下就是"哪个是给你读的". */
+.dt-quote{margin:0;padding:8px 12px;border-left:2px solid var(--hair);
+  display:flex;flex-direction:column;gap:6px}
+.dt-quote cite{font-style:normal;font-size:11.5px;color:var(--muted-2)}
+.dt-quote-zh{margin:0;font-size:13px;line-height:1.8}
+.dt-quote-src{margin:0;font-size:12px;line-height:1.7;color:var(--muted-2)}
+.dt-body h2,.dt-body h3,.dt-body h4,.dt-body h5{margin:4px 0 0;font-size:13.5px;
+  font-weight:600;line-height:1.5;color:var(--fg)}
+.dt-body li{list-style:none;position:relative;padding-left:12px}
+.dt-body li::before{content:"·";position:absolute;left:2px;color:var(--muted-2)}
+.dt-body blockquote{margin:0;padding-left:10px;border-left:2px solid var(--hair);
+  color:var(--muted-2)}
+.dt-body figcaption,.dt-body caption{margin:0;font-size:11.5px;color:var(--muted-2)}
+
+.dt-body strong,.dt-body b{font-weight:600;color:var(--fg)}
+.dt-body code{padding:1px 4px;border:1px solid var(--hair);background:var(--surface);font-size:11.5px}
+.dt-body pre{margin:0;padding:8px 10px;border:1px solid var(--hair);background:var(--surface);overflow-x:auto}
+.dt-body pre code{padding:0;border:0;background:none}
+.dt-body figure{margin:0}
+.dt-body img{max-width:100%;height:auto;border:1px solid var(--hair)}
+.dt-ents{display:flex;flex-wrap:wrap;gap:4px}
+.dt-ent{display:inline-flex;align-items:center;height:17px;padding:0 5px;
+  border:1px solid var(--border);background:var(--surface);color:var(--muted-2);font-size:10.5px}
+.dt-story{display:flex;flex-direction:column;gap:3px;align-items:flex-start;width:100%;
+  padding:9px 11px;border:1px solid var(--border);background:var(--surface);text-align:left;
+  font-family:inherit;font-size:12.5px;color:var(--fg);cursor:pointer}
+.dt-story:hover{border-color:var(--fg)}
+.dt-story span{font-size:10.5px;color:var(--muted-2)}
+.dt-story b{font-weight:600}
+.dt-open{align-self:flex-start;gap:5px}
+/* 为什么热: 左边那个数、中间那条线、右边涨跌, 一行三样 —— 和热点榜的卡上同一个读法. */
+.dt-hot{display:flex;align-items:center;gap:14px}
+.dt-hot-num{display:flex;flex-direction:column;align-items:flex-start}
+.dt-hot-num span{font-size:10px;color:var(--muted)}
+.dt-hot-num b{font-size:21px;color:var(--fg);font-variant-numeric:tabular-nums}
+.dt-hot .spark{color:var(--accent-fg)}
+.dt-hot-more{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.dt-hot-more b{color:var(--fg)}
+.dt-day{margin-top:9px}
+.dt-tl{list-style:none;margin:0;padding:0}
+.dt-tl li{display:flex;align-items:baseline;gap:10px;padding:6px 0;
+  border-bottom:1px solid var(--hair)}
+.dt-tl-time{flex:0 0 auto;width:38px;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.dt-tl-title{flex:1;min-width:0;background:none;border:0;padding:0;font-family:inherit;
+  text-align:left;font-size:12.5px;color:var(--fg);cursor:pointer}
+.dt-tl-title:hover{color:var(--accent-fg)}
+.dt-tl-src{flex:0 0 auto;font-size:10.5px;color:var(--muted)}
+/* 关联事件: 和报道时间线同一副骨架, 最左那格从时刻换成关系词. */
+.dt-rel{list-style:none;margin:0;padding:0}
+.dt-rel li{display:flex;align-items:baseline;gap:10px;padding:6px 0;
+  border-bottom:1px solid var(--hair)}
+.dt-rel-kind{flex:0 0 auto;width:74px;font-size:11.5px;color:var(--muted)}
+/* ---------- 主题: 左边一栏实体目录, 中间一栏这条线, 右边点开的那一条 ---------- */
+/* 三栏, 但不是均分: 目录定宽 (名字长短差得远, 让它跟着内容走, 中栏的左边缘就会随着选中哪一行
+   左右晃), 剩下的按 2:3 分给"这条线"与"点开的那一条" —— 正文那一栏最需要宽度, 所以 3 落在它
+   身上. 报刊那张纸要的是版面宽度, 所以那边 3 落在中间. 两页排法一样, 谁最宽不一样. */
+#view-feed .feed-body.topics-body{grid-template-columns:260px minmax(0,2fr) minmax(0,3fr)}
+.topics-arch{padding:0 8px 34px 16px}
+/* 那一句「近 30 天」钉在目录顶上: 条数是按这个窗口数出来的, 而目录比一屏长 —— 滚下去之后还
+   看得见窗口有多久, 读者才知道右边那个数在数什么. 底色负责挡住滑过去的行. */
+.topics-note{position:sticky;top:0;z-index:2;display:flex;align-items:baseline;gap:4px;
+  padding:14px 10px 10px;background:var(--bg);font-size:10.5px;color:var(--muted-2)}
+.topics-note b{color:var(--fg-2);font-variant-numeric:tabular-nums}
+.topics-group{margin-bottom:14px}
+.topics-group-head{display:flex;align-items:baseline;gap:8px;padding:0 10px 6px}
+.topics-group-head b{font-size:11px;font-weight:600;color:var(--fg-2)}
+.topics-list{list-style:none;margin:0;padding:0}
+/* 一行一条线: 名字在左, 条数在右, 底下一条 hair 线 —— 二十几行光靠间距串, 读到第四行就不知道
+   在看哪一条了. 右边那列用等宽数字, 竖着扫的时候对得齐. */
+.topic-row{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;
+  border-bottom:1px solid var(--hair);
+  background:none;font-family:inherit;color:var(--fg-2);text-align:left;cursor:pointer}
+.topic-row:hover{background:var(--surface-warm)}
+.topic-row.on{background:var(--surface);color:var(--fg)}
+/* 空线画出来但点不动: 藏掉的话, 读者不知道这条线存在, 只是现在没有东西. */
+.topic-row:disabled{color:var(--muted-2);cursor:default}
+.topic-row:disabled:hover{background:none}
+.topic-name{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.topic-count{flex:0 0 auto;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.topic-row.on .topic-count{color:var(--fg-2)}
+/* 0 的那一行, 数字跟着名字一起暗下去 —— 一行里最亮的不能是那个「0」. */
+.topic-row:disabled .topic-count{color:var(--muted-2)}
+/* 中栏的抬头: 选中了哪条线, 以及这条线在这个窗口里有多少条. 那个数与下面列出来的条数是同一个
+   数 (后端一次回答里的 `shown`), 所以不自己再数一遍 —— 页面数一遍, 迟早会差一条. */
+.topics-head{position:sticky;top:0;z-index:2;display:flex;align-items:baseline;gap:8px;
+  padding:11px 16px;background:var(--bg)}
+.topics-head b{font-size:14.5px;font-weight:600;color:var(--fg)}
+.topics-head span{margin-left:auto;font-size:10.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+/* 和标题栏、返回栏同一个收尾: 线左右各留 16px. */
+.topics-head::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:1px;
+  background:var(--border)}
+/* 一条线上的一行: 时刻在左 (定宽), 标题与来源在右. 不搬列表页那一行三块 (时刻 | 正文 | 分数)
+   的排法 —— 那一行是按半页宽画的, 塞进这里会挤成一团. */
+.line-day{margin-top:14px}
+.line-day-head{display:flex;align-items:baseline;gap:8px;padding-bottom:7px;
+  border-bottom:1px solid var(--border)}
+.line-day-head b{font-size:14.5px;font-weight:600;color:var(--fg)}
+.line-day-head span{font-size:11.5px;color:var(--muted)}
+.line-day-count{margin-left:auto;font-variant-numeric:tabular-nums}
+.line-list{list-style:none;margin:0;padding:0}
+.line-row{display:flex;align-items:baseline;gap:10px;width:100%;padding:7px 0;border:0;
+  background:none;font-family:inherit;text-align:left;cursor:pointer}
+.line-time{flex:0 0 auto;width:38px;font-size:12px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.line-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.line-title{font-size:15px;font-weight:600;line-height:1.4;color:var(--fg)}
+.line-row:hover .line-title{color:var(--accent-fg)}
+.line-meta{font-size:11.5px;color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+/* 窄到放不下三栏时落回单栏, 目录收成一个能滚的块 —— 和报刊那条同一个规矩. */
+@media (max-width:1080px){
+  #view-feed .feed-body.topics-body{grid-template-columns:1fr}
+  #view-feed .topics-arch{max-height:45vh;overflow-y:auto}
+}
+
+
+.it-tag-ent{border:0;background:transparent;color:var(--accent-fg);cursor:pointer;padding:0 5px;
+  font:inherit;height:18px;display:inline-flex;align-items:center}
+.it-tag-ent:hover{text-decoration:underline}
+.dt-ent{cursor:pointer;border:0;font:inherit;background:transparent}
+
+
+/* 正文目录 (AIHOT 的 outline): 锚点是后端注在正文里的, 这一栏只负责滚过去. 层级用缩进表示,
+   不加编号 —— 缩进本身就说清了谁在谁底下. */
+.dt-outline{display:flex;flex-wrap:wrap;gap:4px 14px;margin:2px 0 12px;padding:0 0 10px;
+  border-bottom:1px solid var(--hair)}
+.dt-outline button{border:0;background:none;padding:0;font:inherit;font-size:11.5px;color:var(--muted);
+  cursor:pointer;text-align:left}
+.dt-outline button:hover{color:var(--accent)}
+.dt-outline button.lv3{padding-left:12px}
+.dt-outline button.lv4{padding-left:24px}
+
+/* 报刊的要点与快讯 (AIHOT 的 highlights / flashes): 要点是「事实」档那几条, 快讯是只够一行的
+   那几条. 两块都排得很轻 —— 纸上的重量该给头条. */
+.paper-pins{list-style:none;margin:0;padding:0}
+.paper-pins li{margin:0 0 10px}
+.paper-pin{display:inline-block;margin-right:8px;padding:0 5px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.08em;color:var(--accent);border:1px solid var(--accent-tint);border-radius:2px}
+.paper-flashes{list-style:none;margin:0;padding:0}
+.paper-flashes li{display:flex;align-items:baseline;gap:10px;padding:4px 0;font-size:12px;
+  border-bottom:1px solid var(--hair)}
+.paper-flashes li:last-child{border-bottom:0}
+.paper-flash-time{flex:0 0 auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.paper-flash-title{border:0;background:none;padding:0;font:inherit;color:var(--fg);cursor:pointer;
+  text-align:left}
+.paper-flash-title:hover{color:var(--accent)}
