@@ -34,7 +34,7 @@ configs:
     enabled: true
     locked: true
     sources: [gmgn]
-    schedule: {cron: "0 2 * * *", timezone: Asia/Shanghai}
+    schedule: {interval_hours: 24, start_hour: 2, timezone: Asia/Shanghai}
     pipeline: {gate_limit: 20}
     report: {per_round: 5}
     alerts: {rename_count: true}

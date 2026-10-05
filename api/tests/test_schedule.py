@@ -9,14 +9,15 @@ from app.store import db
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
-def _chain(cron="0 2,5,8 * * *"):
+def _chain(interval=3, start=2):
     """One chain under one set of settings, in the shape the ticker walks."""
     return {
         "id": "arc",
         "label": "Arc",
         "enabled": True,
         "config_id": "default",
-        "schedule": {"cron": cron, "timezone": "Asia/Shanghai", "interval_hours": 3},
+        "schedule": {"interval_hours": interval, "start_hour": start,
+                     "timezone": "Asia/Shanghai"},
     }
 
 
@@ -38,16 +39,15 @@ def test_another_clock_is_read_in_the_chains_own_timezone():
     assert schedule.due_slot(chain, utc) == "2026-09-24T02:00:00+08:00"
 
 
-def test_steps_and_ranges_are_understood():
-    assert schedule.parse_slots("0 */3 * * *")[1] == {0, 3, 6, 9, 12, 15, 18, 21}
-    assert schedule.parse_slots("30 2-4 * * *") == ({30}, {2, 3, 4})
+def test_the_anchor_moves_the_whole_schedule():
+    """The same interval from another hour is the same grid, shifted.
 
-
-def test_a_cron_this_code_does_not_understand_schedules_nothing():
-    assert schedule.parse_slots("0 2 * * 1") is None
-    assert schedule.parse_slots("nonsense") is None
-    assert schedule.parse_slots("0 2,99 * * *") is None
-    assert schedule.parse_slots("*/0 2 * * *") is None
+    Which is the whole of what the hour buys, and it is the round's own clock that decides:
+    the grid the file used to spell out and the pair the page edits are one thing now."""
+    chain = _chain(interval=6, start=5)
+    assert schedule.due_slot(chain, datetime(2026, 9, 24, 5, 0, tzinfo=SHANGHAI)) is not None
+    assert schedule.due_slot(chain, datetime(2026, 9, 24, 11, 0, tzinfo=SHANGHAI)) is not None
+    assert schedule.due_slot(chain, datetime(2026, 9, 24, 2, 0, tzinfo=SHANGHAI)) is None
 
 
 def test_a_slot_runs_once_however_often_the_ticker_looks(isolated_db, monkeypatch):
@@ -202,5 +202,12 @@ def test_a_round_of_this_process_is_a_chain_with_a_round_in_flight(isolated_db, 
     assert schedule.live_configs("robinhood") == []
 
 
-def test_a_chain_with_no_interval_has_no_cron_of_its_own():
-    assert schedule.due_slot({"id": "arc", "schedule": {}}, datetime(2026, 9, 24, 5, 0, tzinfo=SHANGHAI)) is None
+def test_a_chain_that_names_no_interval_never_fires():
+    assert schedule.due_slot({"id": "arc", "schedule": {}},
+                             datetime(2026, 9, 24, 5, 0, tzinfo=SHANGHAI)) is None
+
+
+def test_zero_hours_apart_is_how_a_chain_is_switched_off():
+    """The page offers it as 不排期; the ticker reads the same 0 and starts nothing."""
+    assert schedule.due_slot(_chain(interval=0),
+                             datetime(2026, 9, 24, 2, 0, tzinfo=SHANGHAI)) is None
