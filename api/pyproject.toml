@@ -23,6 +23,13 @@ dependencies = [
   # with it. See api/app/sources/browser.py for why this is a fallback and not a lane.
   "playwright>=1.63",
   "tzdata>=2026.4",
+  "pillow>=12.3.0",
+  # The feed shows a Chinese title and body for every item it prints, and that was the model's
+  # job. A local engine does it for free, so the two cheap presets (信息流设定) route translation
+  # here instead of through a call. Argos pulls stanza, and stanza pulls torch: ~450MB of
+  # site-packages to replace one call. That is the trade, and it is written down in
+  # api/app/feed/localtranslate.py.
+  "argostranslate>=1.11.0",
 ]
 
 [dependency-groups]
