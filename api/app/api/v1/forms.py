@@ -296,8 +296,10 @@ def build(
         for key, (label, _anchor) in _offchain_labels(chain).items()
     ]
 
-    interval = int(schedule.get("interval_hours") or 3)
-    slots = interval_slots(interval)
+    interval = int(schedule.get("interval_hours") or 0)
+    start = schedule.get("start_hour")
+    start = config.DEFAULT_START_HOUR if start is None else int(start)
+    slots = config.interval_slots(interval, start)
     scan_checks = _source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or [])
     scan_reading = _scan_reading(scan_checks, totals.get("universe") or 0)
     for check in scan_checks:
@@ -312,10 +314,14 @@ def build(
                str(pipeline.get("research_limit", 20)), op="≤", unit="个",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
-               options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
+               options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]
+                                + [("0", "不排期")]),
                drop_x="下轮生效"),
-        _field("schedule.cron", "触发时刻", "derived", "/".join("%02d" % s for s in slots),
-               ),
+        _field("schedule.start_hour", "起始时刻", "select", str(start),
+               options=_options([(str(h), "%02d:00" % h) for h in range(24)]),
+               drop_x="下轮生效"),
+        _field("schedule.slots", "触发时刻", "derived",
+               "/".join("%02d" % s for s in slots) if slots else "不排期"),
         _field("schedule.push_delay_minutes", "推送延迟", "num",
                str(schedule.get("push_delay_minutes", 6)), op="+", unit="分钟",
                drop_x="下轮生效"),
@@ -459,7 +465,7 @@ def build(
                         for line in (
                             scan_reading,
                             "判定候选数 0 = 判完整个幸存者池；调研上限按流动性取前 N 个过关候选做链下调研，0 = 全部调研。",
-                            "触发时刻由间隔生成；推送延迟 = 报告发布后等待的分钟数。",
+                            "触发时刻由起始时刻和间隔算出；推送延迟 = 报告发布后等待的分钟数。",
                         )
                         if line
                     ),
@@ -503,13 +509,6 @@ def field_labels(chain: dict) -> dict[str, str]:
                 else:
                     labels[field["key"]] = field["label"]
     return labels
-
-
-def interval_slots(hours: int) -> list[int]:
-    """The trigger hours an interval produces, anchored at 02:00 like the live schedule."""
-    if hours <= 0 or 24 % hours:
-        return [2, 5, 8, 11, 14, 17, 20, 23]
-    return [h % 24 for h in range(2, 26, hours)]
 
 
 
