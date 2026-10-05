@@ -389,3 +389,25 @@ CREATE TABLE IF NOT EXISTS chain_registry (
 
 CREATE INDEX IF NOT EXISTS idx_opportunity_status ON opportunities(status, kind, discovered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_opportunity_posts_handle ON opportunity_posts(handle, posted_at DESC);
+
+-- Official sites, the lane that reads websites instead of X (2026-10-28). One row per host:
+-- the homepage plus whatever blog / news pages it linked last time, kept as a snapshot so a
+-- later read can answer "did this change" without paying for X. `last_refresh_at` is the
+-- rotation key; `failures` counts consecutive misses and disables a site after three.
+CREATE TABLE IF NOT EXISTS opportunity_sites (
+  host            TEXT PRIMARY KEY,
+  url             TEXT NOT NULL,
+  slug            TEXT,
+  label           TEXT,
+  handle          TEXT,
+  ecosystem       TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  failures        INTEGER NOT NULL DEFAULT 0,
+  last_refresh_at TEXT,
+  last_change_at  TEXT,
+  snapshot_json   TEXT,
+  added_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_opportunity_sites_turn
+  ON opportunity_sites(enabled, last_refresh_at);

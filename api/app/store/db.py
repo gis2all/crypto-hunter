@@ -46,7 +46,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -967,6 +967,95 @@ def opportunity_source_touched(target: str) -> None:
     try:
         conn.execute("UPDATE opportunity_sources SET last_read_at = ? WHERE target = ?",
                      (now_iso(), target))
+    finally:
+        conn.close()
+
+
+def opportunity_site_candidates() -> list[dict]:
+    """Every active card that carries an official URL - the raw material for the site lane."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT slug, title, official_account, ecosystem, official_url"
+            " FROM opportunities WHERE user_state = 'active'"
+            " AND COALESCE(official_url, '') <> ''").fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_sites_put(rows: list[dict]) -> int:
+    """Register sites, ignoring hosts already known. Returns how many went in."""
+    if not rows:
+        return 0
+    written = 0
+    conn = connect()
+    try:
+        for row in rows:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO opportunity_sites"
+                " (host, url, slug, label, handle, ecosystem, enabled, failures, added_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)",
+                (row["host"], row["url"], row.get("slug"), row.get("label"),
+                 row.get("handle"), row.get("ecosystem"), row["added_at"]))
+            written += cursor.rowcount or 0
+    finally:
+        conn.close()
+    return written
+
+
+def opportunity_sites() -> list[dict]:
+    """The registered sites, in the order a scan will read them."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM opportunity_sites"
+            " ORDER BY enabled DESC, COALESCE(last_refresh_at, '') ASC, host").fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_sites_due(limit: int = 10) -> list[dict]:
+    """Enabled sites, least recently refreshed first."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM opportunity_sites WHERE enabled = 1"
+            " ORDER BY COALESCE(last_refresh_at, '') ASC, added_at ASC LIMIT ?",
+            (int(limit),)).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def opportunity_site_saved(host: str, snapshot: dict, changed: bool) -> None:
+    """Record one successful refresh: the new snapshot, and a change stamp when it moved."""
+    conn = connect()
+    try:
+        now = now_iso()
+        conn.execute(
+            "UPDATE opportunity_sites SET last_refresh_at = ?, failures = 0,"
+            " snapshot_json = ?, last_change_at = COALESCE(?, last_change_at)"
+            " WHERE host = ?",
+            (now, json.dumps(snapshot, ensure_ascii=False), now if changed else None, host))
+    finally:
+        conn.close()
+
+
+def opportunity_site_failed(host: str, limit: int = 3) -> bool:
+    """Count one miss; disable the site after `limit` in a row. True when it was disabled."""
+    conn = connect()
+    try:
+        row = conn.execute("SELECT failures FROM opportunity_sites WHERE host = ?",
+                           (host,)).fetchone()
+        failures = (int(row["failures"]) if row else 0) + 1
+        disabled = failures >= limit
+        conn.execute(
+            "UPDATE opportunity_sites SET failures = ?, last_refresh_at = ?,"
+            " enabled = CASE WHEN ? THEN 0 ELSE enabled END WHERE host = ?",
+            (failures, now_iso(), 1 if disabled else 0, host))
+        return disabled
     finally:
         conn.close()
 

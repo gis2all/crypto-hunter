@@ -28,7 +28,8 @@ from uuid import uuid4
 
 from ..llm import client as llm
 from ..store import db
-from . import chainsearch, dedup, extract, group, lifecycle, scan as scanner, trace, watchlist
+from . import (chainsearch, dedup, extract, group, lifecycle, scan as scanner, site, trace,
+               watchlist)
 
 log = logging.getLogger("crypto-hunter.opportunity")
 
@@ -36,6 +37,7 @@ log = logging.getLogger("crypto-hunter.opportunity")
 STAGES = (
     ("sources", "读 watchlist"),
     ("collect", "抓材料"),
+    ("refresh", "刷新官网"),
     ("classify", "分组"),
     ("trace", "溯源到官方家"),
     ("extract", "抽取与落库"),
@@ -167,6 +169,17 @@ def run(job: dict, say) -> None:
     except RuntimeError as exc:
         # The reader says "scan cancelled"; this layer decides that it is an outcome, not a
         # failure. Anything else it raises is a real error and keeps travelling.
+        if "cancel" not in str(exc):
+            raise
+        raise Cancelled() from exc
+
+    # 官网刷新不花 X 调用：读已知实体自己的站，只有正文真的变了才写成材料（2026-10-28）。
+    say("refresh")
+    try:
+        counters["refresh"] = site.run(
+            job["id"], tell=lambda done, total: _tick(job, "refresh", done, total),
+            cancel=_flag(job["id"]))
+    except RuntimeError as exc:
         if "cancel" not in str(exc):
             raise
         raise Cancelled() from exc
