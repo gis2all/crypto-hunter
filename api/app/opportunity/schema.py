@@ -63,7 +63,7 @@ CATEGORY_GROUP_LABELS = {
 #: 资格 (候补 / 白名单 / 空投: occupy a slot first), 参与 (testnet / quest / interaction /
 #: governance: time), then the two observation groups. `挖矿` covers staking, LP and vaults;
 #: `节点` covers running a node and delegating to one - both are the same 生息 reading
-#: (2026-10-27, user: 投入型 mixed one-off spending with yield, which is not one question).
+#: (2026-10-28, user: 投入型 mixed one-off spending with yield, which is not one question).
 #: 治理 sits in 参与 because it is time, not capital. `其他` - and anything the vocabulary does
 #: not know - is its own group.
 CATEGORY_GROUP = {

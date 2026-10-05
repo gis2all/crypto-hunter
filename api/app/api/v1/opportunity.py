@@ -33,9 +33,10 @@ def _step(row: dict) -> OpportunityStepOut:
 def _item(row: dict) -> OpportunityItemOut:
     """One stored entry as the page reads it.
 
-    Two translations happen here and only here: the barrier column is a comma-joined list and
-    the page wants a list, and the reason column holds a key while the page prints the sentence.
-    Both are the same rule - the frontend does not decode anything.
+    Three readings happen here and only here: the barrier column is a comma-joined list and the
+    page wants a list, the reason column holds a key while the page prints the sentence, and
+    maturity / novelty belong to `project` only (an activity card keeps no stale copy of them).
+    All three are the same rule - the frontend does not decode anything.
     """
     barrier = [name for name in str(row.get("barrier") or "").split(",") if name]
     # 成熟度与新机制是「这个东西是什么」的读数，只对 project 有意义。活动卡上留着这两个
