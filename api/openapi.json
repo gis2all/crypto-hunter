@@ -1525,6 +1525,72 @@
     }
    }
   },
+  "/api/v1/system/audit": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Read Audit",
+    "description": "最近的几笔改动 (2.8): 谁在什么时候把哪一格改成了什么。",
+    "operationId": "read_audit_api_v1_system_audit_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "subject",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Subject"
+      }
+     },
+     {
+      "name": "action",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Action"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Audit Api V1 System Audit Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/system/models": {
    "post": {
     "tags": [
@@ -1634,6 +1700,1538 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/SystemXOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/taxonomy": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Taxonomy",
+    "description": "筛选栏自己的词表.\n\n页面不认识任何一个类别: 它是画出来的, 不是写死的. 加一个类别只改 `feed/taxonomy.py`,\n前端一个字节都不动 (CLAUDE.md 2.3.3).",
+    "operationId": "read_taxonomy_api_v1_feed_taxonomy_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedTaxonomyOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/items": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Items",
+    "description": "全部动态 (scope=all) 与精选 (scope=curated), 按天分组.\n\n两个视图共用一条路由和一份形状, 因为它们问的是同一批条目的两个问题: \"窗口里有什么\" 与\n\"其中哪些够得上精选\". 分成两条路由, 两个形状很快就会各自长出对方没有的字段.\n\n分页走游标 (`next_cursor`): 这一秒新来一条, OFFSET 会让后面的每一页都错位一次。读不懂的\n游标报 422 而不是退回第一页 —— 退回第一页会让\"翻到底\"变成一个死循环。",
+    "operationId": "read_items_api_v1_feed_items_get",
+    "parameters": [
+     {
+      "name": "scope",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "all",
+       "title": "Scope"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Category"
+      }
+     },
+     {
+      "name": "channel",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "all",
+       "title": "Channel"
+      }
+     },
+     {
+      "name": "query",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Query"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 1,
+       "title": "Page"
+      }
+     },
+     {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Cursor"
+      }
+     },
+     {
+      "name": "page_size",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 0,
+       "title": "Page Size"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedItemsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/hot": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Hot",
+    "description": "热点榜: 同一批条目先聚成事件, 再按热度排.\n\n排序在服务端, 因为热度是 `sources` (有几家独立来源在说) 折扣上时间算出来的, 而\"几家\"\n这个数页面看不到也不该自己算.\n\n读的是**写下来的那份榜** (5 分钟内的请求读同一份), 没有或过期才现算一份再落库\n(snapshot_heat.hot_payload / AIHOT 的 `hot.rank` 每 5 分钟一趟): 一次请求算一遍, 卡片上\n的名次和详情页的\"榜内第 N 名\"迟早会对不上.",
+    "operationId": "read_hot_api_v1_feed_hot_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 10,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedHotOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/topics": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Topics",
+    "description": "主题页左栏的目录: 实体名录分组, 每组带一个窗口内的条数.\n\n它不按类别分, 因为类别是\"这条东西是什么\" (每条恰好一个, 全部动态的筛选栏已经在用),\n而这里是\"这条东西牵了谁\" (一条可以牵好几个, 也可以一个都不牵). 两个问题, 两份词表.",
+    "operationId": "read_topics_api_v1_feed_topics_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedTopicsOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/topics/items": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Topic Items",
+    "description": "一条线上的条目, 按天分组 —— 主题页中栏那一列.\n\n`topic` 走查询串而不是路径段: `BNB Chain` 这样的名字里有空格, 而路径段里出现空格之后,\n每一种客户端都会各自决定怎么转义它一次.",
+    "operationId": "read_topic_items_api_v1_feed_topics_items_get",
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Topic"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedTopicItemsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/item": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Item",
+    "description": "一条的整页.\n\n按 id 取, 不是把列表里那个对象原样传下来: 详情页要印的东西列表 payload 里没有, 而\"传下来\"\n会让详情页依赖\"用户是从哪个列表点进来的\", 三页就长出三个形状.",
+    "operationId": "read_item_api_v1_feed_item_get",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedItemDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/story": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Story",
+    "description": "一件事的整页.\n\n名次在这里补: 它是\"这件事在热点榜上排第几\", 榜单的次序只有后端算得出来, 页面看不到.",
+    "operationId": "read_story_api_v1_feed_story_get",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedStoryDetailOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/sources": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Sources",
+    "description": "源体检 (1.9): 每个源的名字、间隔、连续失败与最近一次抓取。\n\n一个连续失败的源在页面上必须看得见 —— 只有 `fail_count` 一个数在库里,\n没有读口的时候,\"这个源三天没吐东西\"就只能靠人去查表。",
+    "operationId": "read_sources_api_v1_feed_sources_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 200,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Sources Api V1 Feed Sources Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/eval": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Eval",
+    "description": "金标评测 (5.22): 人工标好的那份样本, 与现在的规则对一遍。\n\n读一下就算, 不写库也不调模型: 它量的是回归 —— 改了规则之后, 那些原本判对的\n还对不对。对不上的一条一条列出来, 因为「不合格」比「合格率 91%」更能告诉人改哪里。",
+    "operationId": "read_eval_api_v1_feed_eval_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedEvalOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/eligibility": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Eligibility",
+    "description": "资格的名单 (5.5): 一共有哪几道门槛、各自问什么、为什么是这个口径。\n\n它是一张**表**而不是一次判定: 判在 `eligibility.py` 一处做, 这里只把那一处读出来。",
+    "operationId": "read_eligibility_api_v1_feed_eligibility_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedEligibilityOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/availability": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Availability",
+    "description": "星标有效性 (5.18): 这些 id 里哪些还在、哪些已经不公开了。\n\n星标存在浏览器里, 而一条东西可以在被星标之后下架。页面不能自己猜\"它还在吧\"。",
+    "operationId": "read_availability_api_v1_feed_availability_get",
+    "parameters": [
+     {
+      "name": "ids",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Ids"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Availability Api V1 Feed Availability Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/v1": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read V1",
+    "description": "v1 快照与增量 (5.14): `since` 之后的新条目 + 下一次要带的游标。",
+    "operationId": "read_v1_api_v1_feed_v1_get",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Since"
+      }
+     },
+     {
+      "name": "channel",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "all",
+       "title": "Channel"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 60,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read V1 Api V1 Feed V1 Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/agent": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Agent",
+    "description": "给 agent 读的一份 (5.13): 比 v1 多正文的纯文本, 少版式字段。",
+    "operationId": "read_agent_api_v1_feed_agent_get",
+    "parameters": [
+     {
+      "name": "channel",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "all",
+       "title": "Channel"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 60,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Agent Api V1 Feed Agent Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/item.md": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Item Markdown",
+    "description": "一条的 Markdown 导出 (5.17): 和页面同一套可见性与许可规则。",
+    "operationId": "read_item_markdown_api_v1_feed_item_md_get",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/editions": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "List Editions",
+    "description": "The issues of one kind that have been put out, newest first. No bodies: a list draws a\nmark, a headline and a time, and nothing else.",
+    "operationId": "list_editions_api_v1_feed_editions_get",
+    "parameters": [
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "day",
+       "title": "Kind"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 20,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/FeedEditionRowOut"
+         },
+         "title": "Response List Editions Api V1 Feed Editions Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/editions/latest": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Latest Edition",
+    "description": "The newest issue, so a first visit has something to draw.\n\nDeclared above `/editions/{edition_id}` on purpose: FastAPI matches routes in the order they\nare written, and the other one would read \"latest\" as an id and answer 404 - the same trap\n`api/v1/lookup.py` documents for its own two routes.",
+    "operationId": "read_latest_edition_api_v1_feed_editions_latest_get",
+    "parameters": [
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "day",
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/FeedEditionOut"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "title": "Response Read Latest Edition Api V1 Feed Editions Latest Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/editions/{edition_id}": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Edition",
+    "description": "One issue, body and all.",
+    "operationId": "read_edition_api_v1_feed_editions__edition_id__get",
+    "parameters": [
+     {
+      "name": "edition_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Edition Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedEditionOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/admin/session": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Admin Session",
+    "description": "现在是设防还是不设防, 以及这一枚 cookie 算不算登录。\n\n页面拿它决定画不画那个密码框 —— 而不是让每一个请求自己去猜 401 的意思。",
+    "operationId": "read_admin_session_api_v1_feed_admin_session_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSessionOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/admin/login": {
+   "post": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Admin Login",
+    "description": "答对口令换一枚 cookie。答错就是 401 —— 不告诉对方「差一点」还是「差很多」。",
+    "operationId": "admin_login_api_v1_feed_admin_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedAdminLoginIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSessionOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/admin/logout": {
+   "post": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Admin Logout",
+    "operationId": "admin_logout_api_v1_feed_admin_logout_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSessionOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/admin/settings": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Admin Settings",
+    "description": "管理台能改的那几个键 (5.12): 每一个都是这台机器本地的配置,\n不是清单里的一行 (它们是 key, 进 git 就等于公开)。",
+    "operationId": "read_admin_settings_api_v1_feed_admin_settings_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSettingsOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Write Admin Settings",
+    "description": "改管理台的几个键。空串 = 清掉这一个键 (而不是写一个空串进去)。\n每一次写都落一条审计 —— 改口令这件事本该有人记得。",
+    "operationId": "write_admin_settings_api_v1_feed_admin_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedAdminSettingsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/admin/image-secret": {
+   "post": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Rotate Image Secret",
+    "description": "换一枚图片代理的签名密钥 (5.9)。换完之前发出去的链接全部失效 ——\n所以它是一个需要登录的动作, 不是一个本地的小技巧。",
+    "operationId": "rotate_image_secret_api_v1_feed_admin_image_secret_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedAdminSettingsOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/run": {
+   "post": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Run One Pass",
+    "description": "Read every source, work out what happened, and put out an issue.\n\nAnswers with the issue that is now on file, which is not always a new one: running the same\nwindow twice answers with the issue the first run published (store/db.py `feed_edition_put`),\nbecause a reader who already read this morning is not owed a second draft of it.",
+    "operationId": "run_one_pass_api_v1_feed_run_post",
+    "parameters": [
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "day",
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedEditionOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/overrides": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Overrides",
+    "description": "人工归属决定 (4.8b): 哪些条被人钉住了、谁钉的、什么时候。",
+    "operationId": "read_overrides_api_v1_feed_overrides_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedOverridesOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/override": {
+   "post": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Put Override",
+    "description": "记一条人工决定: 这一条不再自动归组, 只有显式「重新分组」才会再判它。\n\n人的一票就是结论 —— 不先问「它现在归在哪」; 自动分组在查询那一侧已经排除它。",
+    "operationId": "put_override_api_v1_feed_override_post",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedOverrideIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedOverrideRowOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Drop Override",
+    "description": "撤掉一条人工决定: 下一次自动分组再判它一遍。",
+    "operationId": "drop_override_api_v1_feed_override_delete",
+    "parameters": [
+     {
+      "name": "source_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Source Id"
+      }
+     },
+     {
+      "name": "external_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "External Id"
+      }
+     },
+     {
+      "name": "actor",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Actor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Drop Override Api V1 Feed Override Delete"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/ops": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Ops",
+    "description": "运维读口 (5.11): 定时活儿什么状态、最近几趟跑成什么样、抓取与审计的尾巴。\n\n给值守的人和机器看的, 不是页面的一部分: 一条活儿坏掉, 只有这里回答得了\n「它上一次跑在哪个槽、为什么没跑」。",
+    "operationId": "read_ops_api_v1_feed_ops_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedOpsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/ledger": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Ledger",
+    "description": "精选台账 (5.6): 哪一条什么时候上过首页、又什么时候下来了。\n\n给一个 `item_id` 就只看那一条的历史 —— 它是跟着定时的一趟写的 (jobs 'selected-ledger'),\n而不是请求这一下现算的。",
+    "operationId": "read_ledger_api_v1_feed_ledger_get",
+    "parameters": [
+     {
+      "name": "item_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Item Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedLedgerOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/feed/settings": {
+   "get": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Read Settings",
+    "description": "出刊节奏与两道预算 (8.6 / 3.4)。出刊那三行留空 = 这一期不出, 到点出的是刚过去的那一期。",
+    "operationId": "read_settings_api_v1_feed_settings_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemFormOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "feed"
+    ],
+    "summary": "Write Settings",
+    "description": "存下改动, 然后把文件现在的样子答回去。\n\n整份表单回传而不是一个「已保存」: 一次保存可能让某一格看起来和输入的不一样\n(一个时刻被写回 `08:00`, 一格清成 0), 页面要画的是写进去的东西, 不是发出去的东西。\n改这个文件不用重启 —— 每一轮 tick 现读一次 (见 `pipeline.py`)。",
+    "operationId": "write_settings_api_v1_feed_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedSettingsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SystemFormOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/sitemap.xml": {
+   "get": {
+    "summary": "Sitemap",
+    "operationId": "sitemap_sitemap_xml_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/robots.txt": {
+   "get": {
+    "summary": "Robots",
+    "operationId": "robots_robots_txt_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/llms.txt": {
+   "get": {
+    "summary": "Llms",
+    "operationId": "llms_llms_txt_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/feeds/{channel}.xml": {
+   "get": {
+    "summary": "Feed",
+    "operationId": "feed_feeds__channel__xml_get",
+    "parameters": [
+     {
+      "name": "channel",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Channel"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/mcp": {
+   "get": {
+    "summary": "Mcp Describe",
+    "description": "MCP 出口 (routes/mcp) 的人读版说明: 有哪些工具、各要什么参数。\n\n真正的协议在 POST 上。这一条存在是因为一个只能用 curl 的出口\n不是一个能被人检查的出口。",
+    "operationId": "mcp_describe_api_mcp_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Mcp Describe Api Mcp Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Mcp Call",
+    "description": "JSON-RPC 2.0: initialize / tools/list / tools/call / ping。只读, 不写库、不调模型。",
+    "operationId": "mcp_call_api_mcp_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Message"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Mcp Call Api Mcp Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/img-proxy": {
+   "get": {
+    "summary": "Img Proxy",
+    "description": "签名图片代理 (5.9)。未签名 / 签名错 / 过期一律 403, 一个字节都不去上游取。",
+    "operationId": "img_proxy_api_img_proxy_get",
+    "parameters": [
+     {
+      "name": "u",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "U"
+      }
+     },
+     {
+      "name": "mode",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Mode"
+      }
+     },
+     {
+      "name": "exp",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Exp"
+      }
+     },
+     {
+      "name": "sig",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Sig"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/og/{item_id}": {
+   "get": {
+    "summary": "Og",
+    "operationId": "og_og__item_id__get",
+    "parameters": [
+     {
+      "name": "item_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Item Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Og Og  Item Id  Get"
         }
        }
       }
@@ -2435,6 +4033,2673 @@
     ],
     "title": "FavoriteOut",
     "description": "One card on file for a token: collected, or a record of a CA search for it.\n\nA copy rather than a reference, on purpose: a report row is deleted with its round, and\na whole report library can be dropped, while a card the reader holds on to has to stay\nreadable. It is also why `config_id` is not part of the key - a card can come from a\nchain this app does not screen, so the table is keyed by (chain_id, ca) alone. It is a\nvalue: the set of settings the round ran under, for the line the card's foot prints.\n\nTwo kinds of row answer to this, and the reader only sees the difference on the card's\nfoot: a round's card carries `origin_run_id` and `config_id`, and a CA search's carries\nneither (`origin = 'search'`, no score - there is no pool to rank in, app/lookup.py). A\nround that writes one of these tokens again replaces the payload in place\n(report/assemble.py `refresh_kept`), so `origin_run_id` / `origin_label` move forward\nwhile `saved_at` stays at the moment the row was first put here."
+   },
+   "FeedAdminLoginIn": {
+    "properties": {
+     "password": {
+      "type": "string",
+      "title": "Password",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedAdminLoginIn"
+   },
+   "FeedAdminSessionOut": {
+    "properties": {
+     "guarded": {
+      "type": "boolean",
+      "title": "Guarded",
+      "default": false
+     },
+     "signed_in": {
+      "type": "boolean",
+      "title": "Signed In",
+      "default": false
+     }
+    },
+    "type": "object",
+    "title": "FeedAdminSessionOut",
+    "description": "管理台的开关 (5.12): 设不设防, 以及这一个请求算不算登录。\n\n两个都要回答 —— 只回后一个的话, 页面在没配口令时看不出自己是不是正在裸奔。"
+   },
+   "FeedAdminSettingOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     },
+     "configured": {
+      "type": "boolean",
+      "title": "Configured",
+      "default": false
+     },
+     "masked": {
+      "type": "string",
+      "title": "Masked",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "key"
+    ],
+    "title": "FeedAdminSettingOut",
+    "description": "一个本地键在页面上的样子: 名字、配没配、以及一个掩码。\n\n`masked` 而不是明文: 这几个键都是密钥, 而一个能在页面上读出来的密钥\n就不再是密钥。页面要的只是「这一格空不空」。"
+   },
+   "FeedAdminSettingsIn": {
+    "properties": {
+     "values": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Values",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "FeedAdminSettingsIn"
+   },
+   "FeedAdminSettingsOut": {
+    "properties": {
+     "settings": {
+      "items": {
+       "$ref": "#/components/schemas/FeedAdminSettingOut"
+      },
+      "type": "array",
+      "title": "Settings",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedAdminSettingsOut"
+   },
+   "FeedCategoryOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     },
+     "section": {
+      "type": "string",
+      "title": "Section",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label"
+    ],
+    "title": "FeedCategoryOut",
+    "description": "筛选栏上的一个类别: 它的名字, 以及这一类在当前这批里有多少条.\n\n`section` 是它在一份刊物里归到哪一节 —— 那是类别的属性, 不是页面的属性, 所以它跟着\n类别走 (日报还没做, 见 DESIGN.md 8)."
+   },
+   "FeedChannelOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "key"
+    ],
+    "title": "FeedChannelOut",
+    "description": "筛选栏上的一路: 它的键, 以及这一路在当前这批里有多少条.\n\n`all` / `news` / `x` / `firstParty` 由后端给 (AIHOT 的 `CHANNEL_KEYS`): 页面不认识\n任何一路, 加一路只改 `feed/rules.py`, 前端一个字节都不动."
+   },
+   "FeedCoverageOut": {
+    "properties": {
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "stages": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object",
+      "title": "Stages",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "FeedCoverageOut",
+    "description": "写作站的覆盖率 (2.3b): 每一档各有多少条。\n\n档名就是 `llm_stage` (没问过的是 `none`); 不合并成一个百分比 —— 卡在哪一步看得见。"
+   },
+   "FeedDayOut": {
+    "properties": {
+     "date": {
+      "type": "string",
+      "title": "Date"
+     },
+     "date_label": {
+      "type": "string",
+      "title": "Date Label"
+     },
+     "weekday_label": {
+      "type": "string",
+      "title": "Weekday Label"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/FeedListItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "date",
+     "date_label",
+     "weekday_label"
+    ],
+    "title": "FeedDayOut",
+    "description": "一天. 日期与星期是这一组的头, 条数是右边那个数."
+   },
+   "FeedDisplayTagOut": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "entity": {
+      "type": "boolean",
+      "title": "Entity",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "FeedDisplayTagOut",
+    "description": "卡片上的一格角标: 印什么字, 以及点不点得动."
+   },
+   "FeedEditionOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "window_from": {
+      "type": "string",
+      "title": "Window From"
+     },
+     "window_to": {
+      "type": "string",
+      "title": "Window To"
+     },
+     "seen": {
+      "type": "integer",
+      "title": "Seen",
+      "default": 0
+     },
+     "issue_number": {
+      "type": "integer",
+      "title": "Issue Number",
+      "default": 0
+     },
+     "headline": {
+      "type": "string",
+      "title": "Headline",
+      "default": ""
+     },
+     "lead": {
+      "type": "string",
+      "title": "Lead",
+      "default": ""
+     },
+     "metrics": {
+      "items": {
+       "$ref": "#/components/schemas/FeedMetricOut"
+      },
+      "type": "array",
+      "title": "Metrics",
+      "default": []
+     },
+     "created_at": {
+      "type": "string",
+      "title": "Created At"
+     },
+     "entries": {
+      "items": {
+       "$ref": "#/components/schemas/FeedEventOut"
+      },
+      "type": "array",
+      "title": "Entries",
+      "default": []
+     },
+     "highlights": {
+      "items": {
+       "$ref": "#/components/schemas/FeedHighlightOut"
+      },
+      "type": "array",
+      "title": "Highlights",
+      "default": []
+     },
+     "flashes": {
+      "items": {
+       "$ref": "#/components/schemas/FeedFlashOut"
+      },
+      "type": "array",
+      "title": "Flashes",
+      "default": []
+     },
+     "prev": {
+      "type": "string",
+      "title": "Prev",
+      "default": ""
+     },
+     "next": {
+      "type": "string",
+      "title": "Next",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "key",
+     "window_from",
+     "window_to",
+     "created_at"
+    ],
+    "title": "FeedEditionOut",
+    "description": "One issue.\n\n`kind` and `key` are the period it is about: `key` is a name a reader recognises\n(`2026-10-03` / `2026-W40` / `2026-10`), which is why the page does not derive one - a week\nnumber cannot be recovered from a timestamp without re-implementing ISO weeks.\n\n`seen` and `entries` are different numbers on purpose: the window held `seen` records and\n`entries` of them were worth printing. A quiet morning is an issue that read four hundred\nthings and printed three, which is a finding - not the same screen as a run that failed."
+   },
+   "FeedEditionRowOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "window_from": {
+      "type": "string",
+      "title": "Window From"
+     },
+     "window_to": {
+      "type": "string",
+      "title": "Window To"
+     },
+     "seen": {
+      "type": "integer",
+      "title": "Seen"
+     },
+     "entries": {
+      "type": "integer",
+      "title": "Entries"
+     },
+     "issue_number": {
+      "type": "integer",
+      "title": "Issue Number"
+     },
+     "headline": {
+      "type": "string",
+      "title": "Headline"
+     },
+     "created_at": {
+      "type": "string",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "key",
+     "window_from",
+     "window_to",
+     "seen",
+     "entries",
+     "issue_number",
+     "headline",
+     "created_at"
+    ],
+    "title": "FeedEditionRowOut",
+    "description": "One issue in the list, without its body: a list draws a mark, a title and a time.\n\n`headline` and `issue_number` are here rather than derived on the page for the same reason\nthey are stored: the list loads the last few dozen issues, and neither \"what was this issue\nabout\" nor \"which issue is this\" can be read off a truncated list."
+   },
+   "FeedEligibilityOut": {
+    "properties": {
+     "release_delay_seconds": {
+      "type": "integer",
+      "title": "Release Delay Seconds",
+      "default": 0
+     },
+     "curated_min_score": {
+      "type": "integer",
+      "title": "Curated Min Score",
+      "default": 0
+     },
+     "gates": {
+      "items": {
+       "$ref": "#/components/schemas/FeedGateOut"
+      },
+      "type": "array",
+      "title": "Gates",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedEligibilityOut",
+    "description": "资格的全体 (5.5): 名单 + 那两条数字线。"
+   },
+   "FeedEvalAxisOut": {
+    "properties": {
+     "axis": {
+      "type": "string",
+      "title": "Axis"
+     },
+     "passed": {
+      "type": "integer",
+      "title": "Passed",
+      "default": 0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "axis"
+    ],
+    "title": "FeedEvalAxisOut",
+    "description": "金标评测里一个轴的成绩 (5.22): 这一类判断对了几条。"
+   },
+   "FeedEvalMissOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "default": ""
+     },
+     "axis": {
+      "type": "string",
+      "title": "Axis",
+      "default": ""
+     },
+     "want": {
+      "title": "Want"
+     },
+     "got": {
+      "title": "Got"
+     },
+     "why": {
+      "type": "string",
+      "title": "Why",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedEvalMissOut",
+    "description": "一条没对上的样本: 人标的是什么, 机器答的是什么, 以及为什么这样标。"
+   },
+   "FeedEvalOut": {
+    "properties": {
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "passed": {
+      "type": "integer",
+      "title": "Passed",
+      "default": 0
+     },
+     "agreement": {
+      "type": "number",
+      "title": "Agreement",
+      "default": 0.0
+     },
+     "axes": {
+      "items": {
+       "$ref": "#/components/schemas/FeedEvalAxisOut"
+      },
+      "type": "array",
+      "title": "Axes",
+      "default": []
+     },
+     "misses": {
+      "items": {
+       "$ref": "#/components/schemas/FeedEvalMissOut"
+      },
+      "type": "array",
+      "title": "Misses",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedEvalOut",
+    "description": "金标评测 (5.22): 人工标好的样本与现在的规则对一遍的结果。"
+   },
+   "FeedEventOut": {
+    "properties": {
+     "identity_key": {
+      "type": "string",
+      "title": "Identity Key"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "default": ""
+     },
+     "kind_label": {
+      "type": "string",
+      "title": "Kind Label",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "first_seen_at": {
+      "type": "string",
+      "title": "First Seen At"
+     },
+     "last_seen_at": {
+      "type": "string",
+      "title": "Last Seen At"
+     },
+     "sources": {
+      "type": "integer",
+      "title": "Sources",
+      "default": 0
+     },
+     "heat": {
+      "type": "number",
+      "title": "Heat",
+      "default": 0.0
+     },
+     "judgement": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedJudgementOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "discoveries": {
+      "items": {
+       "$ref": "#/components/schemas/FeedItemOut"
+      },
+      "type": "array",
+      "title": "Discoveries",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "identity_key",
+     "title",
+     "url",
+     "first_seen_at",
+     "last_seen_at"
+    ],
+    "title": "FeedEventOut",
+    "description": "One thing that happened, and how many independent parties said so.\n\n`sources` is the count everything downstream is built on, and it is deliberately not\n`len(discoveries)`: one wire service reprinted nine times is one party, and a page that\nshowed nine would make a story look hot when it is not. `heat` is that count discounted by\nhow long ago the last word came in.\n\n`judgement` is the reading pass's answer, and it travels with the event rather than being\nbaked into the text: `certainty` is the one field a reader must be able to see, because a\nfact and a rumour of one look identical once they are summarised."
+   },
+   "FeedFaceOut": {
+    "properties": {
+     "source_id": {
+      "type": "string",
+      "title": "Source Id",
+      "default": ""
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "initial": {
+      "type": "string",
+      "title": "Initial",
+      "default": "A"
+     },
+     "icon": {
+      "type": "string",
+      "title": "Icon",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedFaceOut",
+    "description": "参与者头像 (AIHOT 的 `Faces.tsx`): 一家一枚, 没图用首字母。"
+   },
+   "FeedFetchRunOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "started_at": {
+      "type": "string",
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "found": {
+      "type": "integer",
+      "title": "Found",
+      "default": 0
+     },
+     "created": {
+      "type": "integer",
+      "title": "Created",
+      "default": 0
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "source_id",
+     "started_at",
+     "status"
+    ],
+    "title": "FeedFetchRunOut"
+   },
+   "FeedFlashOut": {
+    "properties": {
+     "identity_key": {
+      "type": "string",
+      "title": "Identity Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "last_seen_at": {
+      "type": "string",
+      "title": "Last Seen At",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "identity_key",
+     "title"
+    ],
+    "title": "FeedFlashOut",
+    "description": "纸尾那一行快讯 (AIHOT 的 `flashes`): 只够一行的一条, 点开才是详情."
+   },
+   "FeedGateOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key",
+      "default": ""
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     },
+     "question": {
+      "type": "string",
+      "title": "Question",
+      "default": ""
+     },
+     "why": {
+      "type": "string",
+      "title": "Why",
+      "default": ""
+     },
+     "needs": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Needs",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedGateOut",
+    "description": "门槛本身 (5.5): 叫什么、问什么、为什么是这个口径。"
+   },
+   "FeedGateResultOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key",
+      "default": ""
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     },
+     "ok": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ok"
+     },
+     "detail": {
+      "type": "string",
+      "title": "Detail",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedGateResultOut",
+    "description": "一道门槛在**这一条**上的结论 (5.5). `ok` 是 null = 这一层答不上来, 不是\"没过\"。"
+   },
+   "FeedHeatPointOut": {
+    "properties": {
+     "hour": {
+      "type": "string",
+      "title": "Hour"
+     },
+     "heat": {
+      "type": "number",
+      "title": "Heat",
+      "default": 0.0
+     },
+     "participants": {
+      "type": "integer",
+      "title": "Participants",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "hour"
+    ],
+    "title": "FeedHeatPointOut",
+    "description": "热度曲线上的一格 (AIHOT `heatSeries` 的 `HeatPoint`): 一个小时的指数与参与者家数。"
+   },
+   "FeedHighlightOut": {
+    "properties": {
+     "identity_key": {
+      "type": "string",
+      "title": "Identity Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary",
+      "default": ""
+     },
+     "sources": {
+      "type": "integer",
+      "title": "Sources",
+      "default": 0
+     },
+     "kind_label": {
+      "type": "string",
+      "title": "Kind Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "identity_key",
+     "title"
+    ],
+    "title": "FeedHighlightOut",
+    "description": "这一期的要点一条 (AIHOT 的 `highlights`): 标题、一句摘要、几家在说."
+   },
+   "FeedHotOut": {
+    "properties": {
+     "window_hours": {
+      "type": "number",
+      "title": "Window Hours",
+      "default": 0.0
+     },
+     "generated_at": {
+      "type": "string",
+      "title": "Generated At"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "stories": {
+      "items": {
+       "$ref": "#/components/schemas/FeedStoryOut"
+      },
+      "type": "array",
+      "title": "Stories",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "generated_at"
+    ],
+    "title": "FeedHotOut"
+   },
+   "FeedItemDetailOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "story_id": {
+      "type": "string",
+      "title": "Story Id",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "title_original": {
+      "type": "string",
+      "title": "Title Original",
+      "default": ""
+     },
+     "written": {
+      "type": "boolean",
+      "title": "Written",
+      "default": false
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary",
+      "default": ""
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "default": ""
+     },
+     "category": {
+      "type": "string",
+      "title": "Category",
+      "default": ""
+     },
+     "category_label": {
+      "type": "string",
+      "title": "Category Label",
+      "default": ""
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags",
+      "default": []
+     },
+     "entities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Entities",
+      "default": []
+     },
+     "display_tags": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDisplayTagOut"
+      },
+      "type": "array",
+      "title": "Display Tags",
+      "default": []
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score",
+      "default": 0
+     },
+     "first_party": {
+      "type": "boolean",
+      "title": "First Party",
+      "default": false
+     },
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "source_name": {
+      "type": "string",
+      "title": "Source Name"
+     },
+     "source_kind": {
+      "type": "string",
+      "title": "Source Kind",
+      "default": ""
+     },
+     "author": {
+      "type": "string",
+      "title": "Author",
+      "default": ""
+     },
+     "published_at": {
+      "type": "string",
+      "title": "Published At"
+     },
+     "time_label": {
+      "type": "string",
+      "title": "Time Label",
+      "default": ""
+     },
+     "media": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Media",
+      "default": []
+     },
+     "other_reports": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOtherReportOut"
+      },
+      "type": "array",
+      "title": "Other Reports",
+      "default": []
+     },
+     "other_report_count": {
+      "type": "integer",
+      "title": "Other Report Count",
+      "default": 0
+     },
+     "channel": {
+      "type": "string",
+      "title": "Channel",
+      "default": ""
+     },
+     "body_mode": {
+      "type": "string",
+      "title": "Body Mode",
+      "default": "summary"
+     },
+     "has_page": {
+      "type": "boolean",
+      "title": "Has Page",
+      "default": true
+     },
+     "x_view": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedXViewOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "analysis_scope": {
+      "type": "string",
+      "title": "Analysis Scope",
+      "default": ""
+     },
+     "scope_label": {
+      "type": "string",
+      "title": "Scope Label",
+      "default": ""
+     },
+     "body_html": {
+      "type": "string",
+      "title": "Body Html",
+      "default": ""
+     },
+     "body_zh": {
+      "type": "string",
+      "title": "Body Zh",
+      "default": ""
+     },
+     "body_complete": {
+      "type": "boolean",
+      "title": "Body Complete",
+      "default": false
+     },
+     "domain": {
+      "type": "string",
+      "title": "Domain",
+      "default": ""
+     },
+     "published_label": {
+      "type": "string",
+      "title": "Published Label",
+      "default": ""
+     },
+     "published_ago": {
+      "type": "string",
+      "title": "Published Ago",
+      "default": ""
+     },
+     "story_title": {
+      "type": "string",
+      "title": "Story Title",
+      "default": ""
+     },
+     "followups": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOtherReportOut"
+      },
+      "type": "array",
+      "title": "Followups",
+      "default": []
+     },
+     "followup_count": {
+      "type": "integer",
+      "title": "Followup Count",
+      "default": 0
+     },
+     "eligibility": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedGateResultOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "mentions": {
+      "items": {
+       "$ref": "#/components/schemas/FeedMentionOut"
+      },
+      "type": "array",
+      "title": "Mentions",
+      "default": []
+     },
+     "outline": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOutlineOut"
+      },
+      "type": "array",
+      "title": "Outline",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "url",
+     "source_id",
+     "source_name",
+     "published_at"
+    ],
+    "title": "FeedItemDetailOut",
+    "description": "一条的整页.\n\n继承列表那一行而不是另写一份: 同一件事写两遍, 迟早有一边多一个字段, 而读的人不知道哪边\n是对的. 这里只加**只有详情页看得见**的那几样."
+   },
+   "FeedItemOut": {
+    "properties": {
+     "source_kind": {
+      "type": "string",
+      "title": "Source Kind"
+     },
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "external_id": {
+      "type": "string",
+      "title": "External Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "published_at": {
+      "type": "string",
+      "title": "Published At"
+     },
+     "body": {
+      "type": "string",
+      "title": "Body",
+      "default": ""
+     },
+     "author": {
+      "type": "string",
+      "title": "Author",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "source_kind",
+     "source_id",
+     "external_id",
+     "title",
+     "url",
+     "published_at"
+    ],
+    "title": "FeedItemOut",
+    "description": "One source saying one thing, exactly as it was read.\n\nThe raw record, not a summary of it: an issue is allowed to be wrong about what a thing\nmeans, but it must never be wrong about who said it and when. This is the shape it can be\nchecked against."
+   },
+   "FeedItemsOut": {
+    "properties": {
+     "scope": {
+      "type": "string",
+      "title": "Scope"
+     },
+     "category": {
+      "type": "string",
+      "title": "Category",
+      "default": ""
+     },
+     "channel": {
+      "type": "string",
+      "title": "Channel",
+      "default": "all"
+     },
+     "query": {
+      "type": "string",
+      "title": "Query",
+      "default": ""
+     },
+     "page": {
+      "type": "integer",
+      "title": "Page",
+      "default": 1
+     },
+     "page_size": {
+      "type": "integer",
+      "title": "Page Size",
+      "default": 0
+     },
+     "next_cursor": {
+      "type": "string",
+      "title": "Next Cursor",
+      "default": ""
+     },
+     "window_hours": {
+      "type": "number",
+      "title": "Window Hours",
+      "default": 0.0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "filtered": {
+      "type": "integer",
+      "title": "Filtered",
+      "default": 0
+     },
+     "shown": {
+      "type": "integer",
+      "title": "Shown",
+      "default": 0
+     },
+     "channels": {
+      "items": {
+       "$ref": "#/components/schemas/FeedChannelOut"
+      },
+      "type": "array",
+      "title": "Channels",
+      "default": []
+     },
+     "categories": {
+      "items": {
+       "$ref": "#/components/schemas/FeedCategoryOut"
+      },
+      "type": "array",
+      "title": "Categories",
+      "default": []
+     },
+     "days": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDayOut"
+      },
+      "type": "array",
+      "title": "Days",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "scope"
+    ],
+    "title": "FeedItemsOut",
+    "description": "全部动态 (scope=all) 与精选 (scope=curated) 共用的一份答案."
+   },
+   "FeedJobOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "cadence_minutes": {
+      "type": "integer",
+      "title": "Cadence Minutes"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "last_slot": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Slot"
+     },
+     "last_run_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run At"
+     },
+     "last_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Status"
+     },
+     "last_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Error"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "cadence_minutes"
+    ],
+    "title": "FeedJobOut"
+   },
+   "FeedJobRunOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "slot": {
+      "type": "string",
+      "title": "Slot"
+     },
+     "started_at": {
+      "type": "string",
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "detail": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Detail",
+      "default": {}
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "slot",
+     "started_at",
+     "status"
+    ],
+    "title": "FeedJobRunOut"
+   },
+   "FeedJudgementOut": {
+    "properties": {
+     "provider": {
+      "type": "string",
+      "title": "Provider"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary"
+     },
+     "why": {
+      "type": "string",
+      "title": "Why"
+     },
+     "certainty": {
+      "type": "string",
+      "title": "Certainty"
+     },
+     "certainty_label": {
+      "type": "string",
+      "title": "Certainty Label"
+     }
+    },
+    "type": "object",
+    "required": [
+     "provider",
+     "summary",
+     "why",
+     "certainty",
+     "certainty_label"
+    ],
+    "title": "FeedJudgementOut",
+    "description": "What the reading pass decided about one event.\n\nA model rather than a bare dict (the rule this file opens with): an untyped answer reaches\nthe page as `unknown`, the page has to guess, and guessing is how a label ends up hardcoded\nin the frontend and drifting from the rule that produced it.\n\n`certainty_label` is the whole reason this is a contract. An event two parties reported and\nan event one party reported read identically once each is one sentence long, and this is the\nfield that keeps them from looking identical on the page."
+   },
+   "FeedLedgerOut": {
+    "properties": {
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/FeedLedgerRowOut"
+      },
+      "type": "array",
+      "title": "Rows",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedLedgerOut"
+   },
+   "FeedLedgerRowOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "item_id": {
+      "type": "string",
+      "title": "Item Id"
+     },
+     "op": {
+      "type": "string",
+      "title": "Op"
+     },
+     "changed_at": {
+      "type": "string",
+      "title": "Changed At"
+     },
+     "visible_at": {
+      "type": "string",
+      "title": "Visible At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "item_id",
+     "op",
+     "changed_at",
+     "visible_at"
+    ],
+    "title": "FeedLedgerRowOut",
+    "description": "精选台账上的一笔 (5.6): 这一条什么时候进的首页 / 什么时候下来的."
+   },
+   "FeedListItemOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "story_id": {
+      "type": "string",
+      "title": "Story Id",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "title_original": {
+      "type": "string",
+      "title": "Title Original",
+      "default": ""
+     },
+     "written": {
+      "type": "boolean",
+      "title": "Written",
+      "default": false
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary",
+      "default": ""
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "default": ""
+     },
+     "category": {
+      "type": "string",
+      "title": "Category",
+      "default": ""
+     },
+     "category_label": {
+      "type": "string",
+      "title": "Category Label",
+      "default": ""
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags",
+      "default": []
+     },
+     "entities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Entities",
+      "default": []
+     },
+     "display_tags": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDisplayTagOut"
+      },
+      "type": "array",
+      "title": "Display Tags",
+      "default": []
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score",
+      "default": 0
+     },
+     "first_party": {
+      "type": "boolean",
+      "title": "First Party",
+      "default": false
+     },
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "source_name": {
+      "type": "string",
+      "title": "Source Name"
+     },
+     "source_kind": {
+      "type": "string",
+      "title": "Source Kind",
+      "default": ""
+     },
+     "author": {
+      "type": "string",
+      "title": "Author",
+      "default": ""
+     },
+     "published_at": {
+      "type": "string",
+      "title": "Published At"
+     },
+     "time_label": {
+      "type": "string",
+      "title": "Time Label",
+      "default": ""
+     },
+     "media": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Media",
+      "default": []
+     },
+     "other_reports": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOtherReportOut"
+      },
+      "type": "array",
+      "title": "Other Reports",
+      "default": []
+     },
+     "other_report_count": {
+      "type": "integer",
+      "title": "Other Report Count",
+      "default": 0
+     },
+     "channel": {
+      "type": "string",
+      "title": "Channel",
+      "default": ""
+     },
+     "body_mode": {
+      "type": "string",
+      "title": "Body Mode",
+      "default": "summary"
+     },
+     "has_page": {
+      "type": "boolean",
+      "title": "Has Page",
+      "default": true
+     },
+     "x_view": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedXViewOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "analysis_scope": {
+      "type": "string",
+      "title": "Analysis Scope",
+      "default": ""
+     },
+     "scope_label": {
+      "type": "string",
+      "title": "Scope Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "url",
+     "source_id",
+     "source_name",
+     "published_at"
+    ],
+    "title": "FeedListItemOut",
+    "description": "列表里的一行, 全部动态与精选共用.\n\n这是**条目**不是事件: 一个条目有唯一的一个来源、唯一的一个时刻、唯一的一个类别, 而这三样\n正是一个读者扫列表时看的东西. 要读\"多少家都在说\", 看热点榜.\n\n`score` 是这一行的分量 (0-100), `reason` 是\"为什么值得看\", `summary` 是它说了什么.\n三者都随行走, 页面不再查任何地方."
+   },
+   "FeedMentionOut": {
+    "properties": {
+     "story_id": {
+      "type": "string",
+      "title": "Story Id",
+      "default": ""
+     },
+     "story_title": {
+      "type": "string",
+      "title": "Story Title",
+      "default": ""
+     },
+     "fact_id": {
+      "type": "integer",
+      "title": "Fact Id",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "FeedMentionOut",
+    "description": "复合分析提到的一件事 (4.9b): 事件 id、标题与它挂在哪个事实上."
+   },
+   "FeedMetricOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "value": {
+      "type": "integer",
+      "title": "Value"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label",
+     "value"
+    ],
+    "title": "FeedMetricOut",
+    "description": "报头上的一个数, 连同它旁边那个词.\n\nThe word is not decoration and it is not the page's to write: \"个来源\" means \"independent\nparties after dedupe by source_id\", which is a fact about a rule in `heat.py`. A page that\nwrote its own word would be restating that rule a second time, and it would drift."
+   },
+   "FeedOpsOut": {
+    "properties": {
+     "jobs": {
+      "items": {
+       "$ref": "#/components/schemas/FeedJobOut"
+      },
+      "type": "array",
+      "title": "Jobs",
+      "default": []
+     },
+     "job_runs": {
+      "items": {
+       "$ref": "#/components/schemas/FeedJobRunOut"
+      },
+      "type": "array",
+      "title": "Job Runs",
+      "default": []
+     },
+     "fetch_runs": {
+      "items": {
+       "$ref": "#/components/schemas/FeedFetchRunOut"
+      },
+      "type": "array",
+      "title": "Fetch Runs",
+      "default": []
+     },
+     "audit": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Audit",
+      "default": []
+     },
+     "coverage": {
+      "$ref": "#/components/schemas/FeedCoverageOut",
+      "default": {
+       "total": 0,
+       "stages": {}
+      }
+     },
+     "queue": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Queue",
+      "default": {}
+     },
+     "deliveries": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Deliveries",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedOpsOut",
+    "description": "运维读口 (5.11): 定时活儿的健康、最近几趟活儿与抓取、最近的审计。"
+   },
+   "FeedOtherReportOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "default": ""
+     },
+     "source_name": {
+      "type": "string",
+      "title": "Source Name",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "url": {
+      "type": "string",
+      "title": "Url",
+      "default": ""
+     },
+     "time_label": {
+      "type": "string",
+      "title": "Time Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedOtherReportOut",
+    "description": "同一件事里, 别家还怎么说过它 —— 卡片上「另有 N 家信源报道」展开后的那一行.\n\n署名是**来源**不是作者: 折叠行数的是\"几家在说\", 所以这一列只到来源为止."
+   },
+   "FeedOutlineOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "level": {
+      "type": "integer",
+      "title": "Level",
+      "default": 2
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "text"
+    ],
+    "title": "FeedOutlineOut",
+    "description": "正文目录的一条 (AIHOT 的 `OutlineEntry`): 锚点、标题、层级.\n\n锚点是后端注进正文的 (`sec-N`), 所以页面点目录只要滚到那个 id 上, 不必自己认标题."
+   },
+   "FeedOverrideIn": {
+    "properties": {
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "external_id": {
+      "type": "string",
+      "title": "External Id"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "default": ""
+     },
+     "actor": {
+      "type": "string",
+      "title": "Actor",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "source_id",
+     "external_id"
+    ],
+    "title": "FeedOverrideIn",
+    "description": "人写下的一条决定: 这一条不许自动归组。actor 与 reason 是追查的两个键。"
+   },
+   "FeedOverrideRowOut": {
+    "properties": {
+     "source_id": {
+      "type": "string",
+      "title": "Source Id"
+     },
+     "external_id": {
+      "type": "string",
+      "title": "External Id"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "default": ""
+     },
+     "actor": {
+      "type": "string",
+      "title": "Actor",
+      "default": ""
+     },
+     "created_at": {
+      "type": "string",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "source_id",
+     "external_id",
+     "created_at"
+    ],
+    "title": "FeedOverrideRowOut",
+    "description": "一条人工归属决定 (4.8b). 自动分组读到就跳过这条, 只有显式「重新分组」才清。"
+   },
+   "FeedOverridesOut": {
+    "properties": {
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOverrideRowOut"
+      },
+      "type": "array",
+      "title": "Rows",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedOverridesOut"
+   },
+   "FeedQuotedOut": {
+    "properties": {
+     "handle": {
+      "type": "string",
+      "title": "Handle",
+      "default": ""
+     },
+     "author_name": {
+      "type": "string",
+      "title": "Author Name",
+      "default": ""
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "default": ""
+     },
+     "translation": {
+      "type": "string",
+      "title": "Translation",
+      "default": ""
+     },
+     "url": {
+      "type": "string",
+      "title": "Url",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "FeedQuotedOut",
+    "description": "被引的那条帖子 (AIHOT 的 `XPostView.quoted`)。\n\n`translation` 是给读者看的那一份 (3.6): 别人的原话单独走一遍翻译, 不是正文那一段的译文。\n它为空就是还没译上, 页面只印原文."
+   },
+   "FeedSettingsIn": {
+    "properties": {
+     "patch": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Patch"
+     }
+    },
+    "type": "object",
+    "title": "FeedSettingsIn",
+    "description": "A patch keyed by each row's own path in the file (`llm.maxItems`)."
+   },
+   "FeedStoryDetailOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "latest": {
+      "type": "string",
+      "title": "Latest",
+      "default": ""
+     },
+     "category": {
+      "type": "string",
+      "title": "Category",
+      "default": ""
+     },
+     "category_label": {
+      "type": "string",
+      "title": "Category Label",
+      "default": ""
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags",
+      "default": []
+     },
+     "entities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Entities",
+      "default": []
+     },
+     "display_tags": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDisplayTagOut"
+      },
+      "type": "array",
+      "title": "Display Tags",
+      "default": []
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score",
+      "default": 0
+     },
+     "sources": {
+      "type": "integer",
+      "title": "Sources",
+      "default": 0
+     },
+     "participants": {
+      "type": "integer",
+      "title": "Participants",
+      "default": 0
+     },
+     "source_count": {
+      "type": "integer",
+      "title": "Source Count",
+      "default": 0
+     },
+     "signal_count": {
+      "type": "integer",
+      "title": "Signal Count",
+      "default": 0
+     },
+     "source_names": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Source Names",
+      "default": []
+     },
+     "heat_index": {
+      "type": "number",
+      "title": "Heat Index",
+      "default": 0.0
+     },
+     "series": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Series",
+      "default": []
+     },
+     "trend": {
+      "type": "string",
+      "title": "Trend",
+      "default": ""
+     },
+     "trend_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trend Pct"
+     },
+     "hot_badges": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Hot Badges",
+      "default": []
+     },
+     "first_seen_at": {
+      "type": "string",
+      "title": "First Seen At"
+     },
+     "last_seen_at": {
+      "type": "string",
+      "title": "Last Seen At"
+     },
+     "lead_source": {
+      "type": "string",
+      "title": "Lead Source",
+      "default": ""
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/FeedStoryItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     },
+     "item_count": {
+      "type": "integer",
+      "title": "Item Count",
+      "default": 0
+     },
+     "faces": {
+      "items": {
+       "$ref": "#/components/schemas/FeedFaceOut"
+      },
+      "type": "array",
+      "title": "Faces",
+      "default": []
+     },
+     "rank": {
+      "type": "integer",
+      "title": "Rank",
+      "default": 0
+     },
+     "badges": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Badges",
+      "default": []
+     },
+     "summary": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Summary",
+      "default": []
+     },
+     "recent_sources": {
+      "type": "integer",
+      "title": "Recent Sources",
+      "default": 0
+     },
+     "recent_reports": {
+      "type": "integer",
+      "title": "Recent Reports",
+      "default": 0
+     },
+     "first_seen_ago": {
+      "type": "string",
+      "title": "First Seen Ago",
+      "default": ""
+     },
+     "last_seen_ago": {
+      "type": "string",
+      "title": "Last Seen Ago",
+      "default": ""
+     },
+     "heat": {
+      "items": {
+       "$ref": "#/components/schemas/FeedHeatPointOut"
+      },
+      "type": "array",
+      "title": "Heat",
+      "default": []
+     },
+     "related": {
+      "items": {
+       "$ref": "#/components/schemas/FeedStoryRefOut"
+      },
+      "type": "array",
+      "title": "Related",
+      "default": []
+     },
+     "days": {
+      "items": {
+       "$ref": "#/components/schemas/FeedTimelineDayOut"
+      },
+      "type": "array",
+      "title": "Days",
+      "default": []
+     },
+     "official_reports": {
+      "items": {
+       "$ref": "#/components/schemas/FeedOtherReportOut"
+      },
+      "type": "array",
+      "title": "Official Reports",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "url",
+     "first_seen_at",
+     "last_seen_at"
+    ],
+    "title": "FeedStoryDetailOut",
+    "description": "一件事的整页.\n\n`items` 是卡上那份\"谁在说\", `days` 是同一批报道按天的分组 —— 两个投影来自同一份列表,\n算在同一个函数里, 所以不可能对不上; 页面读 `days`."
+   },
+   "FeedStoryItemOut": {
+    "properties": {
+     "source_name": {
+      "type": "string",
+      "title": "Source Name"
+     },
+     "first_party": {
+      "type": "boolean",
+      "title": "First Party",
+      "default": false
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "time_label": {
+      "type": "string",
+      "title": "Time Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "source_name",
+     "title",
+     "url"
+    ],
+    "title": "FeedStoryItemOut",
+    "description": "热点榜里, 一条故事下面挂着的一条来源."
+   },
+   "FeedStoryOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "latest": {
+      "type": "string",
+      "title": "Latest",
+      "default": ""
+     },
+     "category": {
+      "type": "string",
+      "title": "Category",
+      "default": ""
+     },
+     "category_label": {
+      "type": "string",
+      "title": "Category Label",
+      "default": ""
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags",
+      "default": []
+     },
+     "entities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Entities",
+      "default": []
+     },
+     "display_tags": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDisplayTagOut"
+      },
+      "type": "array",
+      "title": "Display Tags",
+      "default": []
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score",
+      "default": 0
+     },
+     "sources": {
+      "type": "integer",
+      "title": "Sources",
+      "default": 0
+     },
+     "participants": {
+      "type": "integer",
+      "title": "Participants",
+      "default": 0
+     },
+     "source_count": {
+      "type": "integer",
+      "title": "Source Count",
+      "default": 0
+     },
+     "signal_count": {
+      "type": "integer",
+      "title": "Signal Count",
+      "default": 0
+     },
+     "source_names": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Source Names",
+      "default": []
+     },
+     "heat_index": {
+      "type": "number",
+      "title": "Heat Index",
+      "default": 0.0
+     },
+     "series": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Series",
+      "default": []
+     },
+     "trend": {
+      "type": "string",
+      "title": "Trend",
+      "default": ""
+     },
+     "trend_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trend Pct"
+     },
+     "hot_badges": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Hot Badges",
+      "default": []
+     },
+     "first_seen_at": {
+      "type": "string",
+      "title": "First Seen At"
+     },
+     "last_seen_at": {
+      "type": "string",
+      "title": "Last Seen At"
+     },
+     "lead_source": {
+      "type": "string",
+      "title": "Lead Source",
+      "default": ""
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/FeedStoryItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     },
+     "item_count": {
+      "type": "integer",
+      "title": "Item Count",
+      "default": 0
+     },
+     "faces": {
+      "items": {
+       "$ref": "#/components/schemas/FeedFaceOut"
+      },
+      "type": "array",
+      "title": "Faces",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "url",
+     "first_seen_at",
+     "last_seen_at"
+    ],
+    "title": "FeedStoryOut",
+    "description": "热点榜上的一条.\n\n`sources` 是整件事见过的独立来源数, `participants` 是**窗口里**还在说的家数, 其中\n`source_count` 家是发布源、`signal_count` 家是讨论源 (页面印的\"来源数\"是 `source_count`:\n讨论帖不是\"谁在报这件事\"). `heat_index` 是热度指数 (10 倍值, 一位小数), `series` 是榜单\n那一刻往前 24 小时的 25 个**小时**格子, 缺的小时补 `null` —— 读的是落库的快照, 不是每个\n请求重算一遍 (snapshot_heat). `trend` 是五态走势 (new/unknown/up/down/flat), `trend_pct` 是\n它那一眼的具体涨幅 —— `None` 表示那时它还不在. `hot_badges` 是标题上那几枚小标签, 可以同时\n带 `surge` 和 `new` (heat.badges)."
+   },
+   "FeedStoryRefOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "relation": {
+      "type": "string",
+      "title": "Relation",
+      "default": "related"
+     },
+     "relation_label": {
+      "type": "string",
+      "title": "Relation Label",
+      "default": ""
+     },
+     "last_seen_ago": {
+      "type": "string",
+      "title": "Last Seen Ago",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title"
+    ],
+    "title": "FeedStoryRefOut",
+    "description": "关联事件那一栏的一行 (AIHOT 的 `StoryRef`): 另一件事的 id、标题与关系词。\n\n`relation` 是枚举 (`storyline` / `related`), `relation_label` 是它在这一页上的中文 ——\n词由后端给, 页面不认识那个枚举 (CLAUDE.md 2.3.3)."
+   },
+   "FeedTaxonomyOut": {
+    "properties": {
+     "categories": {
+      "items": {
+       "$ref": "#/components/schemas/FeedCategoryOut"
+      },
+      "type": "array",
+      "title": "Categories",
+      "default": []
+     },
+     "topics": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Topics",
+      "default": []
+     },
+     "entities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Entities",
+      "default": []
+     },
+     "labels": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Labels",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "FeedTaxonomyOut",
+    "description": "筛选栏自己的词表: 类别、主题标签、实体名录.\n\n页面拿它画筛选栏, 所以类别一个也不认识也画得出来 —— 加一个类别只改后端."
+   },
+   "FeedTimelineDayOut": {
+    "properties": {
+     "date": {
+      "type": "string",
+      "title": "Date"
+     },
+     "date_label": {
+      "type": "string",
+      "title": "Date Label"
+     },
+     "weekday_label": {
+      "type": "string",
+      "title": "Weekday Label"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/FeedTimelineItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "date",
+     "date_label",
+     "weekday_label"
+    ],
+    "title": "FeedTimelineDayOut",
+    "description": "一天. 和列表页的按天分组同一个形状, 理由也一样: 日期是这套语言的写法, 由后端写."
+   },
+   "FeedTimelineItemOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "source_name": {
+      "type": "string",
+      "title": "Source Name",
+      "default": ""
+     },
+     "first_party": {
+      "type": "boolean",
+      "title": "First Party",
+      "default": false
+     },
+     "category_label": {
+      "type": "string",
+      "title": "Category Label",
+      "default": ""
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score",
+      "default": 0
+     },
+     "time_label": {
+      "type": "string",
+      "title": "Time Label",
+      "default": ""
+     },
+     "folded": {
+      "type": "integer",
+      "title": "Folded",
+      "default": 0
+     },
+     "ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Ids",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "url"
+    ],
+    "title": "FeedTimelineItemOut",
+    "description": "事件时间线上的一行. 有 id, 所以点得进去 —— 时间线是去条目详情页的另一个入口."
+   },
+   "FeedTopicGroupOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/FeedTopicRowOut"
+      },
+      "type": "array",
+      "title": "Rows",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "name"
+    ],
+    "title": "FeedTopicGroupOut",
+    "description": "左栏的一段. `name` 是页面上那行小标题 (链与协议 / 交易所 / 机构与监管)."
+   },
+   "FeedTopicItemsOut": {
+    "properties": {
+     "topic": {
+      "type": "string",
+      "title": "Topic"
+     },
+     "window_days": {
+      "type": "number",
+      "title": "Window Days",
+      "default": 0.0
+     },
+     "shown": {
+      "type": "integer",
+      "title": "Shown",
+      "default": 0
+     },
+     "days": {
+      "items": {
+       "$ref": "#/components/schemas/FeedDayOut"
+      },
+      "type": "array",
+      "title": "Days",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "topic"
+    ],
+    "title": "FeedTopicItemsOut",
+    "description": "一个实体名下的条目, 按天分组.\n\n与 `FeedItemsOut` 同源 (`by_day`), 少了筛选栏那几样: 左栏就是筛选栏, 这里不需要第二份\n类别计数. `topic` 原样带回, 所以页面不必记住自己刚才问的是哪条线."
+   },
+   "FeedTopicRowOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "count": {
+      "type": "integer",
+      "title": "Count",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "FeedTopicRowOut",
+    "description": "主题页左栏的一行: 一个实体, 以及它在窗口里有多少条.\n\n`id` 就是名录里的名字 (`Binance` / `BNB Chain`), 因为它已经是唯一的, 再编一个 id 只是\n多一处能对不上的东西. 页面拿它当 URL 的一部分, 所以它必须稳 —— 改词表里的写法就是改网址."
+   },
+   "FeedTopicsOut": {
+    "properties": {
+     "window_days": {
+      "type": "number",
+      "title": "Window Days",
+      "default": 0.0
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/FeedTopicGroupOut"
+      },
+      "type": "array",
+      "title": "Groups",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "FeedTopicsOut",
+    "description": "主题页左栏的目录.\n\n`window_days` 是那句「近 N 天」里的 N. 由后端给而不是页面写死 30: 窗口的长短是一条\n规则 (`views.TOPIC_HOURS`), 规则改了词要跟着改, 而页面不认识那条规则 (CLAUDE.md 2.3.3)."
+   },
+   "FeedXViewOut": {
+    "properties": {
+     "author": {
+      "type": "string",
+      "title": "Author",
+      "default": ""
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "default": ""
+     },
+     "original": {
+      "type": "string",
+      "title": "Original",
+      "default": ""
+     },
+     "media": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Media",
+      "default": []
+     },
+     "quoted": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedQuotedOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "title": "FeedXViewOut",
+    "description": "X 这一条在卡片上的几格 (AIHOT 的 `XPostView`)。不是 X 的条目没有这一个对象。"
    },
    "FieldOptionOut": {
     "properties": {
