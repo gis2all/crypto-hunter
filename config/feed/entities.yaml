@@ -1,0 +1,128 @@
+# 实体词典: 一条新闻"在说谁"的那一半。
+#
+# 两个用途:
+#   1. 模型写 subjects 时的白名单 —— 模型只能从这里挑, 挑不中就当没写 (AIHOT 的 `s in ENTITIES`);
+#   2. 没配模型时的兜底分组: 名字按**整词**匹配, 所以 `aliases` 必须是**有辨识度的写法**,
+#      `base` / `near` 这种英文常用词不能裸着写进来 —— 否则每条新闻都会粘成一个桶。
+#
+# 每个字段的意思:
+#   id       稳定的英文小写, 出现在数据里, 不随显示名改
+#   name     页面上印的写法
+#   kind     chain | exchange | protocol | institution | regulator | vc | person | company | org
+#   aliases  认它时要找的词 (大小写不敏感, 整词匹配)。中文写法也放这里
+#   tickers  代码。只在写 `$XXX` 时命中, 也作为模型抽 subjects 的候选
+#
+# 加一条就是加一行。词的边界由 matcher 保证, 不需要在这里写正则。
+
+entities:
+  - {id: ethereum, name: Ethereum, kind: chain, aliases: [ethereum, ether, 以太坊], tickers: [ETH]}
+  - {id: bitcoin, name: Bitcoin, kind: chain, aliases: [bitcoin, 比特币], tickers: [BTC]}
+  - {id: solana, name: Solana, kind: chain, aliases: [solana, solana 链], tickers: [SOL]}
+  - {id: bnb-chain, name: BNB Chain, kind: chain, aliases: [bnb chain, binance smart chain, bsc], tickers: [BNB]}
+  - {id: base, name: Base, kind: chain, aliases: [base chain, base network, base app, base mainnet, base 链], tickers: []}
+  - {id: arbitrum, name: Arbitrum, kind: chain, aliases: [arbitrum], tickers: [ARB]}
+  - {id: optimism, name: Optimism, kind: chain, aliases: [optimism, op mainnet, optimism 链], tickers: [OP]}
+  - {id: polygon, name: Polygon, kind: chain, aliases: [polygon, matic network], tickers: [MATIC, POL]}
+  - {id: avalanche, name: Avalanche, kind: chain, aliases: [avalanche, avax 链], tickers: [AVAX]}
+  - {id: sui, name: Sui, kind: chain, aliases: [sui network, sui 链], tickers: [SUI]}
+  - {id: aptos, name: Aptos, kind: chain, aliases: [aptos], tickers: [APT]}
+  - {id: ton, name: TON, kind: chain, aliases: [toncoin, the open network, ton 链], tickers: [TON]}
+  - {id: tron, name: Tron, kind: chain, aliases: [tron, 波场], tickers: [TRX]}
+  - {id: near, name: NEAR, kind: chain, aliases: [near protocol, near ai], tickers: [NEAR]}
+  - {id: cosmos, name: Cosmos, kind: chain, aliases: [cosmos, cosmos hub], tickers: [ATOM]}
+  - {id: celestia, name: Celestia, kind: chain, aliases: [celestia], tickers: [TIA]}
+  - {id: starknet, name: Starknet, kind: chain, aliases: [starknet, starkware], tickers: [STRK]}
+  - {id: zksync, name: zkSync, kind: chain, aliases: [zksync], tickers: [ZK]}
+  - {id: scroll, name: Scroll, kind: chain, aliases: [scroll network, scroll zk], tickers: [SCR]}
+  - {id: linea, name: Linea, kind: chain, aliases: [linea network], tickers: []}
+  - {id: blast, name: Blast, kind: chain, aliases: [blast network, blast l2], tickers: [BLAST]}
+  - {id: berachain, name: Berachain, kind: chain, aliases: [berachain], tickers: [BERA]}
+  - {id: monad, name: Monad, kind: chain, aliases: [monad], tickers: [MON]}
+  - {id: sonic, name: Sonic, kind: chain, aliases: [sonic chain, sonic svm], tickers: [S]}
+  - {id: sei, name: Sei, kind: chain, aliases: [sei network], tickers: [SEI]}
+  - {id: injective, name: Injective, kind: chain, aliases: [injective], tickers: [INJ]}
+  - {id: cardano, name: Cardano, kind: chain, aliases: [cardano], tickers: [ADA]}
+  - {id: dogecoin, name: Dogecoin, kind: chain, aliases: [dogecoin, 狗狗币], tickers: [DOGE]}
+  - {id: monero, name: Monero, kind: chain, aliases: [monero, 门罗币], tickers: [XMR]}
+  - {id: zcash, name: Zcash, kind: chain, aliases: [zcash], tickers: [ZEC]}
+  - {id: litecoin, name: Litecoin, kind: chain, aliases: [litecoin], tickers: [LTC]}
+  - {id: hyperliquid, name: Hyperliquid, kind: exchange, aliases: [hyperliquid, hyper evm], tickers: [HYPE]}
+  - {id: ripple, name: Ripple, kind: org, aliases: [ripple labs, ripple], tickers: [XRP]}
+  - {id: ethereum-foundation, name: Ethereum Foundation, kind: org, aliases: [ethereum foundation, 以太坊基金会], tickers: []}
+  - {id: solana-foundation, name: Solana Foundation, kind: org, aliases: [solana foundation], tickers: []}
+  - {id: tether, name: Tether, kind: institution, aliases: [tether, 泰达], tickers: [USDT]}
+  - {id: circle, name: Circle, kind: institution, aliases: [circle internet, usd coin], tickers: [USDC]}
+  - {id: makerdao, name: MakerDAO, kind: protocol, aliases: [makerdao, maker dao, sky protocol], tickers: [DAI, MKR, SKY]}
+  - {id: chainlink, name: Chainlink, kind: protocol, aliases: [chainlink], tickers: [LINK]}
+  - {id: uniswap, name: Uniswap, kind: protocol, aliases: [uniswap], tickers: [UNI]}
+  - {id: aave, name: Aave, kind: protocol, aliases: [aave], tickers: [AAVE]}
+  - {id: curve, name: Curve, kind: protocol, aliases: [curve finance], tickers: [CRV]}
+  - {id: lido, name: Lido, kind: protocol, aliases: [lido finance], tickers: [LDO]}
+  - {id: eigenlayer, name: EigenLayer, kind: protocol, aliases: [eigenlayer, eigen layer], tickers: [EIGEN]}
+  - {id: pendle, name: Pendle, kind: protocol, aliases: [pendle finance], tickers: [PENDLE]}
+  - {id: ethena, name: Ethena, kind: protocol, aliases: [ethena labs], tickers: [ENA]}
+  - {id: morpho, name: Morpho, kind: protocol, aliases: [morpho labs], tickers: [MORPHO]}
+  - {id: jupiter, name: Jupiter, kind: protocol, aliases: [jupiter exchange, jupiter aggregator], tickers: [JUP]}
+  - {id: raydium, name: Raydium, kind: protocol, aliases: [raydium], tickers: [RAY]}
+  - {id: kamino, name: Kamino, kind: protocol, aliases: [kamino finance], tickers: [KMNO]}
+  - {id: pump-fun, name: pump.fun, kind: protocol, aliases: [pump.fun, pumpfun], tickers: []}
+  - {id: polymarket, name: Polymarket, kind: protocol, aliases: [polymarket], tickers: []}
+  - {id: virtuals, name: Virtuals Protocol, kind: protocol, aliases: [virtuals protocol, virtuals], tickers: [VIRTUAL]}
+  - {id: clanker, name: Clanker, kind: protocol, aliases: [clanker], tickers: []}
+  - {id: zora, name: Zora, kind: protocol, aliases: [zora], tickers: [ZORA]}
+  - {id: flaunch, name: Flaunch, kind: protocol, aliases: [flaunch], tickers: []}
+  - {id: the-graph, name: The Graph, kind: protocol, aliases: [the graph protocol], tickers: [GRT]}
+  - {id: binance, name: Binance, kind: exchange, aliases: [binance, 币安], tickers: []}
+  - {id: coinbase, name: Coinbase, kind: exchange, aliases: [coinbase], tickers: [COIN]}
+  - {id: okx, name: OKX, kind: exchange, aliases: [okx, okex], tickers: []}
+  - {id: bybit, name: Bybit, kind: exchange, aliases: [bybit], tickers: []}
+  - {id: kraken, name: Kraken, kind: exchange, aliases: [kraken], tickers: []}
+  - {id: upbit, name: Upbit, kind: exchange, aliases: [upbit], tickers: []}
+  - {id: gemini, name: Gemini, kind: exchange, aliases: [gemini exchange], tickers: []}
+  - {id: bitget, name: Bitget, kind: exchange, aliases: [bitget], tickers: [BGB]}
+  - {id: gate, name: Gate, kind: exchange, aliases: [gate.io, gate exchange], tickers: [GT]}
+  - {id: bitfinex, name: Bitfinex, kind: exchange, aliases: [bitfinex], tickers: []}
+  - {id: htx, name: HTX, kind: exchange, aliases: [htx, huobi, 火币], tickers: []}
+  - {id: kucoin, name: KuCoin, kind: exchange, aliases: [kucoin], tickers: []}
+  - {id: crypto-com, name: Crypto.com, kind: exchange, aliases: [crypto.com], tickers: [CRO]}
+  - {id: etoro, name: eToro, kind: exchange, aliases: [etoro], tickers: []}
+  - {id: robinhood, name: Robinhood, kind: institution, aliases: [robinhood], tickers: [HOOD]}
+  - {id: microstrategy, name: Strategy, kind: institution, aliases: [microstrategy, strategy inc], tickers: [MSTR]}
+  - {id: metaplanet, name: Metaplanet, kind: institution, aliases: [metaplanet], tickers: []}
+  - {id: grayscale, name: Grayscale, kind: institution, aliases: [grayscale], tickers: [GBTC]}
+  - {id: blackrock, name: BlackRock, kind: institution, aliases: [blackrock], tickers: [IBIT]}
+  - {id: fidelity, name: Fidelity, kind: institution, aliases: [fidelity investments], tickers: [FBTC]}
+  - {id: vanguard, name: Vanguard, kind: institution, aliases: [vanguard], tickers: []}
+  - {id: hashkey, name: HashKey, kind: institution, aliases: [hashkey], tickers: []}
+  - {id: sec, name: SEC, kind: regulator, aliases: [securities and exchange commission, 美国证监会], tickers: []}
+  - {id: cftc, name: CFTC, kind: regulator, aliases: [cftc, 美国商品期货交易委员会], tickers: []}
+  - {id: fed, name: Federal Reserve, kind: regulator, aliases: [federal reserve, 美联储], tickers: []}
+  - {id: us-treasury, name: US Treasury, kind: regulator, aliases: [us treasury, 美国财政部], tickers: []}
+  - {id: ofac, name: OFAC, kind: regulator, aliases: [ofac, 美国财政部外国资产控制办公室], tickers: []}
+  - {id: doj, name: DOJ, kind: regulator, aliases: [department of justice, 美国司法部], tickers: []}
+  - {id: esma, name: ESMA, kind: regulator, aliases: [esma], tickers: []}
+  - {id: ecb, name: ECB, kind: regulator, aliases: [european central bank, 欧洲央行], tickers: []}
+  - {id: sfc-hk, name: Hong Kong SFC, kind: regulator, aliases: [hong kong sfc, 香港证监会], tickers: []}
+  - {id: hkma, name: HKMA, kind: regulator, aliases: [hkma, 香港金管局], tickers: []}
+  - {id: csrc, name: CSRC, kind: regulator, aliases: [csrc, 中国证监会], tickers: []}
+  - {id: pbc, name: PBOC, kind: regulator, aliases: [pboc, 中国人民银行], tickers: []}
+  - {id: a16z, name: a16z, kind: vc, aliases: [andreessen horowitz, a16z crypto], tickers: []}
+  - {id: paradigm, name: Paradigm, kind: vc, aliases: [paradigm capital, paradigm fund], tickers: []}
+  - {id: polychain, name: Polychain, kind: vc, aliases: [polychain capital], tickers: []}
+  - {id: pantera, name: Pantera, kind: vc, aliases: [pantera capital], tickers: []}
+  - {id: dragonfly, name: Dragonfly, kind: vc, aliases: [dragonfly capital], tickers: []}
+  - {id: vitalik, name: Vitalik Buterin, kind: person, aliases: [vitalik buterin, vitalik], tickers: []}
+  - {id: cz, name: Changpeng Zhao, kind: person, aliases: [changpeng zhao], tickers: []}
+  - {id: brian-armstrong, name: Brian Armstrong, kind: person, aliases: [brian armstrong], tickers: []}
+  - {id: michael-saylor, name: Michael Saylor, kind: person, aliases: [michael saylor], tickers: []}
+  - {id: donald-trump, name: Donald Trump, kind: person, aliases: [donald trump, 特朗普], tickers: []}
+  - {id: scott-bessent, name: Scott Bessent, kind: person, aliases: [scott bessent], tickers: []}
+  - {id: jerome-powell, name: Jerome Powell, kind: person, aliases: [jerome powell], tickers: []}
+  - {id: cathie-wood, name: Cathie Wood, kind: person, aliases: [cathie wood], tickers: []}
+  - {id: larry-fink, name: Larry Fink, kind: person, aliases: [larry fink], tickers: []}
+  - {id: elon-musk, name: Elon Musk, kind: person, aliases: [elon musk, 马斯克], tickers: []}
+  - {id: justin-sun, name: Justin Sun, kind: person, aliases: [justin sun, 孙宇晨], tickers: []}
+  - {id: sam-altman, name: Sam Altman, kind: person, aliases: [sam altman], tickers: []}
+  - {id: openai, name: OpenAI, kind: company, aliases: [openai], tickers: []}
+  - {id: nvidia, name: Nvidia, kind: company, aliases: [nvidia], tickers: [NVDA]}
+  - {id: anthropic, name: Anthropic, kind: company, aliases: [anthropic], tickers: []}

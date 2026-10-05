@@ -1,0 +1,279 @@
+# The feed's factory roster: one row per source, imported into `feed_sources`.
+#
+# A source is data, not code. `kind` picks the fetcher and everything else lives in `config`,
+# so adding a source means adding a block here -- never a function. Keys are whitelisted per
+# kind (feed/sources/kind/__init__.py); a key a fetcher does not know fails the run instead of
+# being ignored, because a silently ignored key is a source that quietly stops answering.
+#
+# Runtime state (cursor / fail_count / health / next_fetch_at) lives only in the table and is
+# never written back here: this file is what the sources *are*, the table is how they are doing.
+#
+# interval_minutes is set by how often the source publishes, not by how important it is.
+#   exchange announcements 15 | fast media 30 | regulators 60 | blogs 120 | X 120
+#
+# Probed 2026-10-04; the ones that failed are listed in DESIGN.md 8.2, not here.
+
+sources:
+  # --- RSS media -----------------------------------------------------------
+  - id: rss:theblock
+    name: The Block
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    # transport: browser —— 它的 RSS 两条通道都读得到, 但文章页对普通 GET 一律 403
+    # (实测 2026-10-04: 同一批链接走 Chrome 冒充能读出 1.9–3.1k 字正文)。补正文要读文章页,
+    # 所以这一源整条走浏览器通道。
+    config: { feedUrl: "https://www.theblock.co/rss.xml", transport: browser }
+
+  - id: rss:coindesk
+    name: CoinDesk
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://www.coindesk.com/arc/outboundfeeds/rss/" }
+
+  - id: rss:cointelegraph
+    name: Cointelegraph
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://cointelegraph.com/rss" }
+
+  - id: rss:decrypt
+    name: Decrypt
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://decrypt.co/feed" }
+
+  - id: rss:thedefiant
+    name: The Defiant
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://thedefiant.io/api/feed" }
+
+  - id: rss:blockworks
+    name: Blockworks
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://blockworks.co/feed" }
+
+  - id: rss:dlnews
+    name: DL News
+    kind: rss
+    tier: T2
+    language: en
+    interval_minutes: 30
+    config: { feedUrl: "https://www.dlnews.com/arc/outboundfeeds/rss/" }
+
+  # --- Chinese media -------------------------------------------------------
+  - id: cn:panews
+    name: PANews
+    kind: rss
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config: { feedUrl: "https://www.panewslab.com/rss.xml" }
+
+  - id: cn:wushuo
+    name: Wu Blockchain
+    kind: rss
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config: { feedUrl: "https://www.wu-talk.com/feed" }
+
+  - id: cn:blocktempo
+    name: BlockTempo
+    kind: rss
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config: { feedUrl: "https://www.blocktempo.com/feed" }
+
+  - id: cn:abmedia
+    name: ABMedia
+    kind: rss
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config: { feedUrl: "https://abmedia.io/feed" }
+
+  # Published as a plain listing; no feed exists, but the HTML carries the rows.
+  - id: cn:chaincatcher
+    name: ChainCatcher
+    kind: web_list
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config:
+      url: "https://www.chaincatcher.com/"
+      # The listing's links are relative, so baseUrl is what makes them openable.
+      baseUrl: "https://www.chaincatcher.com"
+      linkContains: "/article/"
+      maxItems: 30
+
+  # Off: the homepage is drawn in the browser, so its HTML carries no article links at all,
+  # and there is no feed behind it (/rss, /feed and /v1/openapi/odailyrss are all 404).
+  # Probed 2026-10-04; see DESIGN.md 8.2.
+  - id: cn:odaily
+    name: Odaily
+    kind: web_list
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    enabled: false
+    config:
+      url: "https://www.odaily.news/"
+      baseUrl: "https://www.odaily.news"
+      linkContains: "/news/"
+
+  - id: cn:techflow
+    name: TechFlow
+    kind: web_list
+    tier: T2
+    language: zh
+    interval_minutes: 30
+    config:
+      url: "https://www.techflowpost.com/"
+      baseUrl: "https://www.techflowpost.com"
+      linkContains: "/article/"
+      maxItems: 30
+
+  # --- Regulators ----------------------------------------------------------
+  - id: regulator:sec
+    name: SEC Press
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 60
+    config: { feedUrl: "https://www.sec.gov/news/pressreleases.rss" }
+
+  - id: regulator:cftc
+    name: CFTC Press
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 60
+    config: { feedUrl: "https://www.cftc.gov/RSS/RSSGP/rssgp.xml" }
+
+  # --- Official blogs ------------------------------------------------------
+  - id: blog:ethereum
+    name: Ethereum Foundation
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 120
+    config:
+      feedUrl: "https://blog.ethereum.org/feed.xml"
+      initialBackfillLimit: 30
+
+  - id: blog:arbitrum
+    name: Arbitrum Blog
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 120
+    config: { feedUrl: "https://blog.arbitrum.io/rss/" }
+
+  - id: blog:lido
+    name: Lido Blog
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 120
+    config: { feedUrl: "https://blog.lido.fi/rss/" }
+
+  # No feed; the listing page renders server-side.
+  - id: blog:circle
+    name: Circle Blog
+    kind: web_list
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 120
+    config:
+      url: "https://www.circle.com/blog"
+      baseUrl: "https://www.circle.com"
+      linkContains: "/blog/"
+      maxItems: 30
+
+  # --- Exchanges -----------------------------------------------------------
+  - id: exchange:kraken
+    name: Kraken Blog
+    kind: rss
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 15
+    config: { feedUrl: "https://blog.kraken.com/feed" }
+
+  # The announcement RSS answers 202 to a bot; the site's own JSON does not.
+  - id: exchange:binance
+    name: Binance Announcement
+    kind: json_list
+    tier: T1
+    language: en
+    first_party: true
+    interval_minutes: 15
+    config:
+      url: "https://www.binance.com/bapi/composite/v1/public/cms/article/catalog/list/query?catalogId=48&pageNo=1&pageSize=20"
+      itemsPath: "data.articles"
+      titlePaths: ["title"]
+      externalIdPath: "id"
+      urlTemplate: "https://www.binance.com/en/support/announcement/{code}"
+
+  # --- X accounts (frequent reporters first; all verified posting in 2026-10) ---
+  # Officials
+  - { id: "x:binance",  name: "@binance",  kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "binance" } }
+  - { id: "x:ethereum", name: "@ethereum", kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "ethereum" } }
+  - { id: "x:solana",   name: "@solana",   kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "solana" } }
+  - { id: "x:base",     name: "@base",     kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "base" } }
+  - { id: "x:arbitrum", name: "@arbitrum", kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "arbitrum" } }
+  - { id: "x:circle",   name: "@circle",   kind: x_search, tier: T1_5, first_party: true,  interval_minutes: 120, config: { handle: "circle" } }
+  # Media, by measured posts/day (2026-10-04)
+  - { id: "x:cointelegraph", name: "@Cointelegraph", kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "Cointelegraph" } }   # ~27/day
+  - { id: "x:decryptmedia",  name: "@decryptmedia",  kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "decryptmedia" } }    # ~17/day
+  - { id: "x:coindesk",      name: "@coindesk",      kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "coindesk" } }        # ~10/day
+  - { id: "x:watcherguru",   name: "@WatcherGuru",   kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "WatcherGuru" } }     # ~10/day
+  - { id: "x:blockworks",    name: "@blockworks",    kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "blockworks" } }      # ~6/day
+  # Chinese media
+  - { id: "x:wu-blockchain", name: "@WuBlockchain",  kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "WuBlockchain" } }    # ~8/day
+  - { id: "x:chaincatcher",  name: "@ChainCatcher_", kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "ChainCatcher_" } }   # ~5/day
+  - { id: "x:techflow",      name: "@TechFlowPost",  kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "TechFlowPost" } }    # ~5/day
+  - { id: "x:panews",        name: "@PANewsCN",      kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "PANewsCN" } }        # ~5/day
+  - { id: "x:bwenews",       name: "@bwenews",       kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "bwenews" } }         # ~5/day
+  - { id: "x:odaily",        name: "@OdailyChina",   kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "OdailyChina" } }     # ~5/day
+  - { id: "x:foresight",     name: "@Foresight_News", kind: x_search, tier: T2, interval_minutes: 120, config: { handle: "Foresight_News" } } # ~2/day
+  # On-chain and security signals: evidence and heat, not editorial picks.
+  - { id: "x:lookonchain",     name: "@lookonchain",     kind: x_search, tier: T2, participation_mode: hot_signal, interval_minutes: 120, config: { handle: "lookonchain" } }     # ~6/day
+  - { id: "x:whale-alert",     name: "@whale_alert",     kind: x_search, tier: T2, participation_mode: hot_signal, interval_minutes: 120, config: { handle: "whale_alert" } }     # ~14/day
+  - { id: "x:defillama",       name: "@DefiLlama",       kind: x_search, tier: T2, participation_mode: hot_signal, interval_minutes: 120, config: { handle: "DefiLlama" } }
+  - { id: "x:onchain-alerts",  name: "@onchain_alerts",  kind: x_search, tier: T2, participation_mode: hot_signal, interval_minutes: 120, config: { handle: "onchain_alerts" } }
+  - { id: "x:peckshield",      name: "@PeckShieldAlert", kind: x_search, tier: T2, participation_mode: hot_signal, interval_minutes: 240, config: { handle: "PeckShieldAlert" } }  # ~1/day
+
+  # --- Deferred: registered so the roster still answers "who is saying this", but the
+  # collector skips them (`enabled: false`). Each one is blocked on something a later round
+  # has to solve -- what, and why, is in DESIGN.md 8.2. Their X accounts are either wrong
+  # handles or absent, so these are the only place their names live.
+  - { id: "blog:base",     name: Base Blog,     kind: rss, tier: T1, first_party: true, interval_minutes: 120, enabled: false, config: { feedUrl: "https://blog.base.org/feed" } }
+  - { id: "blog:optimism", name: Optimism Blog, kind: rss, tier: T1, first_party: true, interval_minutes: 120, enabled: false, config: { feedUrl: "https://optimism.mirror.xyz/feed" } }
+  - { id: "blog:aave",     name: Aave Blog,     kind: rss, tier: T1, first_party: true, interval_minutes: 120, enabled: false, config: { feedUrl: "https://aave.mirror.xyz/feed" } }
+  - { id: "blog:uniswap",  name: Uniswap Blog,  kind: web_list, tier: T1, first_party: true, interval_minutes: 120, enabled: false, config: { url: "https://uniswap.org/blog", linkPrefix: "/blog/" } }
+  - { id: "exchange:coinbase", name: Coinbase Blog,  kind: rss, tier: T1, first_party: true, interval_minutes: 15, enabled: false, config: { feedUrl: "https://blog.coinbase.com/feed" } }
+  - { id: "exchange:okx",      name: OKX Announcement, kind: web_list, tier: T1, first_party: true, interval_minutes: 15, enabled: false, config: { url: "https://www.okx.com/support/hc/en-us/categories/360001952293", linkPrefix: "/support/hc/" } }
+  - { id: "x:chain-watcher",  name: "@chain_watcher",  kind: x_search, tier: T2, interval_minutes: 120, enabled: false, config: { handle: "chain_watcher" } }
+  - { id: "x:funding-watch",  name: "@funding_watch",  kind: x_search, tier: T2, interval_minutes: 120, enabled: false, config: { handle: "funding_watch" } }
