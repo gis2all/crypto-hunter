@@ -18,6 +18,7 @@ from ... import config, system_settings
 from ...llm import client as llm
 from ...search.engines.xsearch import PROBE_TIMEOUT, XEngine
 from . import forms
+from ...feed import audit
 from .schemas import SystemFormOut, SystemModelsOut, SystemTestOut, SystemXOut
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -50,7 +51,20 @@ def put_system(body: SystemIn) -> dict:
         system_settings.save(body.patch)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # 每次改动记一笔 (2.8): 一个没有记账的写入, 事后没人回答得了"这个数是谁改的"。
+    # 能力位的改动单独归一个动作, 因为页面按 `model.*` 筛它。
+    for path in sorted(body.patch or {}):
+        action = "model.set" if path.startswith("llm.models.") else "settings.save"
+        audit.record(action, actor="system-settings", subject="system:%s" % path,
+                     detail={"value": body.patch[path]})
     return _form()
+
+
+@router.get("/audit")
+def read_audit(limit: int = 50, subject: str = "", action: str = "") -> dict:
+    """最近的几笔改动 (2.8): 谁在什么时候把哪一格改成了什么。"""
+    return {"rows": audit.recent(limit, subject=subject, action=action),
+            "actions": list(audit.ACTIONS), "labels": audit.ACTION_LABELS}
 
 
 @router.post("/models", response_model=SystemModelsOut)
