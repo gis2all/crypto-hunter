@@ -18,11 +18,8 @@ web/.vite/
 # code-review-graph (generated graph database; local only)
 .code-review-graph/
 
-# app data
-data/*.db
-data/*.db-*
-data/raw/
-data/probe/
+# app data (db, raw snapshots, probe output - nothing under it is tracked)
+data/
 
 # stray db accidentally created outside data/ (e.g. running with cwd=api)
 api/*.db
@@ -58,3 +55,5 @@ Desktop.ini
 # local scratch (probes, screenshots, server logs)
 ch_*
 tmp_probe.py
+.playwright-cli/
+.run/
