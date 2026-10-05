@@ -1,0 +1,2478 @@
+[
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-88214",
+    "title": "$NOVA 跨链桥被 exploit，约 1200 万美元异常转出",
+    "url": "https://x.com/chain_watcher/status/88214",
+    "published_at": "-40m",
+    "author": "@chain_watcher",
+    "body": "链上监测显示 Nova 桥的 vault 出现异常转出，团队尚未回应。\n\n异常转出发生在凌晨，桥内的提现通道已被暂停，团队说会在排查结束后给出时间线。",
+    "source_name": "@chain_watcher",
+    "media": [
+      "/feed-media/media-chart.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88213",
+    "title": "Nova bridge drained for $12M, withdrawals paused",
+    "url": "https://www.theblock.co/post/88213",
+    "published_at": "-25m",
+    "body": "The team said the bridge is halted while it investigates, and that no user funds outside the vault are affected.\n\nDeposits and withdrawals stay frozen until the review is done; the team said it will publish a fuller timeline once the halt is lifted."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40122",
+    "title": "Nova Protocol halts bridge after $12M exploit",
+    "url": "https://thedefiant.io/news/defi/td-40122",
+    "published_at": "-18m"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55130",
+    "title": "Nova says bridge exploit was a compromised validator key",
+    "url": "https://www.coindesk.com/tech/cd-55130",
+    "published_at": "-12m",
+    "body": "Nova published a post-mortem pointing at a single compromised validator key rather than a contract bug.\n\nThe validator was rotated out before the pause, and the team says the remaining signers are unaffected."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-88214",
+    "title": "$NOVA 跨链桥被 exploit，约 1200 万美元异常转出",
+    "url": "https://x.com/chain_watcher/status/88214",
+    "published_at": "-30m",
+    "author": "@chain_watcher",
+    "media": [
+      "/feed-media/media-chart.svg"
+    ]
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:binance",
+    "external_id": "bn-2026-1003-a",
+    "title": "Binance Will List Pulse (PULSE)",
+    "url": "https://www.binance.com/en/support/announcement/bn-2026-1003-a",
+    "published_at": "-3h",
+    "body": "Binance will open trading for PULSE against USDT and BTC, with deposits opening ahead of the listing.\n\nTrading was set to begin later in the week, after a short window in which deposits opened first."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:binance",
+    "external_id": "x-bn-1003",
+    "title": "$PULSE 即将上线 Binance 现货",
+    "url": "https://x.com/binance/status/1003",
+    "published_at": "-185m",
+    "author": "@binance",
+    "media": [
+      "/feed-media/media-flow.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88220",
+    "title": "Binance to list Pulse, token up 30% on the news",
+    "url": "https://www.theblock.co/post/88220",
+    "published_at": "-2h",
+    "body": "Pulse is the first listing under Binance's new mid-cap track, which the exchange announced last month.\n\nThe token was up 30% in the hours after the announcement, on volume well above its daily average."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90020",
+    "title": "Pulse listing sends token to a three-month high",
+    "url": "https://cointelegraph.com/news/ct-90020",
+    "published_at": "-100m"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-771",
+    "title": "$ZEPH — Zephyr raises $40M Series A led by Pantera",
+    "url": "https://x.com/funding_watch/status/771",
+    "published_at": "-8h",
+    "author": "@funding_watch",
+    "body": "The round values Zephyr at $400M and follows a $12M seed nine months ago.\n\nThe team says the money goes to hiring and to the next round of product work, not to buybacks."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88190",
+    "title": "Zephyr raises $40 million in Series A",
+    "url": "https://www.theblock.co/post/88190",
+    "published_at": "-450m",
+    "body": "Pantera led the round with participation from existing backers; the team says the money goes to hiring.\n\nThe team says the money goes to hiring, with part of it set aside for the next product push."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2210",
+    "title": "Zephyr's $40M round is the largest infra raise this quarter",
+    "url": "https://blockworks.co/news/bw-2210",
+    "published_at": "-7h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90011",
+    "title": "Stablecoin bill advances in committee",
+    "url": "https://cointelegraph.com/news/ct-90011",
+    "published_at": "-4h",
+    "body": "The bill would require issuers to hold reserves one-to-one and publish monthly attestations.\n\nIssuers would have to publish monthly attestations signed by an accounting firm, and the register would sit with a federal agency."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-33109",
+    "title": "Stablecoin bill advances in committee",
+    "url": "https://decrypt.co/dc-33109",
+    "published_at": "-220m"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55131",
+    "title": "Stablecoin bill clears committee with bipartisan support",
+    "url": "https://www.coindesk.com/policy/cd-55131",
+    "published_at": "-3h",
+    "body": "Two amendments on foreign issuers were adopted before the vote; a floor vote is expected next month.\n\nA floor vote is expected next month; two amendments on foreign issuers were adopted before the vote."
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:base",
+    "external_id": "base-441",
+    "title": "Base mainnet upgrade cuts block time to one second",
+    "url": "https://blog.base.example/base-441",
+    "published_at": "-1h",
+    "body": "The upgrade is live on mainnet; sequencer changes are what make the shorter block time possible.\n\nFee revenue now splits between the sequencer and the chains built on top of it, and the new split is opt-in for the first month."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:base",
+    "external_id": "x-base-441",
+    "title": "Base 主网升级已激活，出块时间降到 1 秒",
+    "url": "https://x.com/base/status/441",
+    "published_at": "-50m",
+    "author": "@base",
+    "media": [
+      "/feed-media/media-bars.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55131b",
+    "title": "Kite partners with Visa on settlement rails",
+    "url": "https://www.coindesk.com/business/cd-55131b",
+    "published_at": "-2h",
+    "body": "Kite says the integration lets its stablecoin rails settle into Visa's network for merchant payouts.\n\nMerchant payouts are the first use case, with settlement landing in the existing card rails rather than a new network."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2201",
+    "title": "Kite and Visa take on cross-border payouts",
+    "url": "https://www.dlnews.com/articles/dl-2201",
+    "published_at": "-90m"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:sec",
+    "external_id": "sec-2026-77",
+    "title": "SEC charges market maker over wash trading",
+    "url": "https://www.sec.gov/news/press-release/2026-77",
+    "published_at": "-5h",
+    "body": "The complaint alleges the firm traded against itself to inflate volume in tokens it also advised.\n\nThe complaint also names two employees; the firm says it will contest the allegations."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88240",
+    "title": "SEC sues market maker, alleges $180M in wash trades",
+    "url": "https://www.theblock.co/post/88240",
+    "published_at": "-4h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40133",
+    "title": "Tether mints 1B USDT on Tron",
+    "url": "https://thedefiant.io/news/defi/td-40133",
+    "published_at": "-6h",
+    "body": "The mint is the fourth this month; Tether says it is inventory for future issuance requests.\n\nIssuance requests have been rising this month, and the new units went out in two transfers."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-9931",
+    "title": "$USDT 流通量本周增加 12 亿",
+    "url": "https://x.com/DefiLlama/status/9931",
+    "published_at": "-5h",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:lido",
+    "external_id": "lido-88",
+    "title": "Lido v3 brings staking to institutions",
+    "url": "https://blog.lido.example/lido-88",
+    "published_at": "-9h",
+    "body": "The new staking module separates validator and withdrawal keys, aimed at regulated custody setups.\n\nCustodians get separate keys for validation and withdrawal, so a regulated setup can keep the two roles apart."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2220",
+    "title": "Lido ships v3 with a module for institutional stakers",
+    "url": "https://blockworks.co/news/bw-2220",
+    "published_at": "-8h"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:aave",
+    "external_id": "aave-51",
+    "title": "Aave V4 liquidation engine goes live",
+    "url": "https://blog.aave.example/aave-51",
+    "published_at": "-12h",
+    "body": "V4 replaces the health-factor model with a risk-tiered liquidation curve.\n\nUnder the new curve, liquidations are tiered by risk instead of a single health factor, so positions unwind in steps."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40150",
+    "title": "Aave V4 rewrites how positions get liquidated",
+    "url": "https://thedefiant.io/news/defi/td-40150",
+    "published_at": "-11h"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:circle",
+    "external_id": "circle-310",
+    "title": "USDC launches natively on Sui",
+    "url": "https://blog.circle.example/circle-310",
+    "published_at": "-14h",
+    "body": "Native issuance replaces the bridged variant; Circle says CCTP support follows later this quarter.\n\nCCTP support follows later this quarter, which would let the native units move between chains without a bridge."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:circle",
+    "external_id": "x-circle-310",
+    "title": "USDC 在 Sui 原生发行",
+    "url": "https://x.com/circle/status/310",
+    "published_at": "-13h",
+    "author": "@circle"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:onchain-alerts",
+    "external_id": "x-oa-5512",
+    "title": "$LDO 巨鲸转入交易所 200 万枚",
+    "url": "https://x.com/onchain_alerts/status/5512",
+    "published_at": "-9h",
+    "author": "@onchain_alerts",
+    "body": "A wallet that has held since 2023 moved two million LDO to a exchange deposit address.\n\nThe last move from that address was in 2023; transfers into exchange deposit addresses are usually read as an intent to sell.",
+    "media": [
+      "/feed-media/media-chart.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55140",
+    "title": "Exchange volumes hit a monthly low",
+    "url": "https://www.coindesk.com/markets/cd-55140",
+    "published_at": "-7h",
+    "body": "Spot volume across the majors is down 22% from last month, the lowest since March.\n\nDesks point to the summer's lower volatility, and to market makers pulling back from the smaller pairs."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2201",
+    "title": "Options desk sees record open interest",
+    "url": "https://blockworks.co/news/bw-2201",
+    "published_at": "-10h",
+    "body": "Open interest on listed options hit a record while spot volume fell, a split desks read as hedging.\n\nDesks read the split as hedging: positions are being held rather than traded, even as the spot side fades."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2231",
+    "title": "Exchange cuts 12% of staff in restructuring",
+    "url": "https://www.dlnews.com/articles/dl-2231",
+    "published_at": "-20h"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-6612",
+    "title": "香港向两家平台发放虚拟资产交易牌照",
+    "url": "https://x.com/WuBlockchain/status/6612",
+    "published_at": "-26h",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:optimism",
+    "external_id": "op-712",
+    "title": "OP Stack ships a new fault-proof release",
+    "url": "https://blog.optimism.example/op-712",
+    "published_at": "-30h",
+    "body": "The release shortens the challenge window and lets chains configure their own proof parameters.\n\nChains can now configure their own proof parameters, and the shorter challenge window applies at the same time."
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:cftc",
+    "external_id": "cftc-2026-31",
+    "title": "CFTC settles with a DeFi front-end over leverage",
+    "url": "https://www.cftc.gov/PressRoom/PressReleases/2026-31",
+    "published_at": "-32h",
+    "body": "The order treats the interface as an unregistered futures commission merchant; no admission of wrongdoing.\n\nLeverage limits and a compliance programme are part of the settlement, and the firm has 60 days to put them in place."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-33120",
+    "title": "NFT marketplace volume falls for a sixth month",
+    "url": "https://decrypt.co/dc-33120",
+    "published_at": "-28h"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:uniswap",
+    "external_id": "uni-902",
+    "title": "Uniswap ships a hook for limit orders",
+    "url": "https://blog.uniswap.example/uni-902",
+    "published_at": "-22h",
+    "body": "The hook lets a pool accept resting limit orders without a separate order book.\n\nThe hook lets a pool accept resting limit orders without a separate order book, so makers can quote inside it directly."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:solana",
+    "external_id": "x-sol-8801",
+    "title": "Solana 主网发布新版本，降低出块抖动",
+    "url": "https://x.com/solana/status/8801",
+    "published_at": "-18h",
+    "author": "@solana"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:ethereum",
+    "external_id": "x-eth-4411",
+    "title": "以太坊下一次升级确定测试网时间",
+    "url": "https://x.com/ethereum/status/4411",
+    "published_at": "-44h",
+    "author": "@ethereum"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:kraken",
+    "external_id": "kr-2026-88",
+    "title": "Kraken opens EUR markets for six tokens",
+    "url": "https://blog.kraken.com/kr-2026-88",
+    "published_at": "-46h"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:okx",
+    "external_id": "okx-2026-51",
+    "title": "OKX lists perpetuals for two L2 tokens",
+    "url": "https://www.okx.com/support/okx-2026-51",
+    "published_at": "-68h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90040",
+    "title": "Regulator in Singapore tightens token listing rules",
+    "url": "https://cointelegraph.com/news/ct-90040",
+    "published_at": "-52h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40160",
+    "title": "Tokenized treasuries pass $8B in deposits",
+    "url": "https://thedefiant.io/news/defi/td-40160",
+    "published_at": "-56h",
+    "body": "Tokenized government funds grew 40% this quarter, led by two issuers.\n\nTwo issuers account for most of the growth, and the tokens are being used as collateral rather than as a trading pair."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2231",
+    "title": "Custody firm adds staking for institutional clients",
+    "url": "https://blockworks.co/news/bw-2231",
+    "published_at": "-60h"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-88401",
+    "title": "某借贷协议遭预言机操纵，损失约 90 万美元",
+    "url": "https://x.com/chain_watcher/status/88401",
+    "published_at": "-64h",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55160",
+    "title": "Spot ETF inflows turn positive after three weeks",
+    "url": "https://www.coindesk.com/markets/cd-55160",
+    "published_at": "-66h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88260",
+    "title": "Research desk cuts its price target for the sector",
+    "url": "https://www.theblock.co/post/88260",
+    "published_at": "-40h"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-790",
+    "title": "$HALO — seed round of $6M led by Galaxy",
+    "url": "https://x.com/funding_watch/status/790",
+    "published_at": "-70h",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2200",
+    "title": "Stablecoin bill advances in committee",
+    "url": "https://www.dlnews.com/articles/dl-2200",
+    "published_at": "-9h"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-6601",
+    "title": "Tether 本月第四次增发，累计 40 亿 USDT",
+    "url": "https://x.com/WuBlockchain/status/6601",
+    "published_at": "-14h",
+    "author": "@WuBlockchain",
+    "media": [
+      "/feed-media/media-bars.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2205",
+    "title": "Pantera leads $40M round into Zephyr",
+    "url": "https://blockworks.co/news/bw-2205",
+    "published_at": "-13h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90005",
+    "title": "Kite partners with Visa on settlement rails",
+    "url": "https://cointelegraph.com/news/ct-90005",
+    "published_at": "-11h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-33100",
+    "title": "Pulse (PULSE) confirms Binance listing date",
+    "url": "https://decrypt.co/dc-33100",
+    "published_at": "-8h"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-88214",
+    "title": "$NOVA 跨链桥被 exploit，约 1200 万美元异常转出",
+    "url": "https://x.com/chain_watcher/status/88214",
+    "published_at": "-30m",
+    "author": "@chain_watcher",
+    "media": [
+      "/feed-media/media-chart.svg"
+    ]
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88000",
+    "title": "Nova bridge TVL tops $900M",
+    "url": "https://www.theblock.co/post/88000",
+    "published_at": "-30h"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2301",
+    "title": "$AERO volume tops $1.2B as the fee switch vote nears",
+    "url": "https://blockworks.co/news/bw-2301",
+    "published_at": "-52m",
+    "author": "Blockworks",
+    "body": "$AERO venue Aerodrome cleared $1.2B in 24-hour volume, its highest reading since launch. Two stablecoin pools carried most of the flow.\n\nA fee switch vote opens next week. The outcome decides whether trading fees go to veAERO lockers or stay with the treasury, which is the difference between a token with a claim on revenue and one without."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40201",
+    "title": "$AERO 24h volume doubles to $1.2B, second only to Uniswap",
+    "url": "https://thedefiant.io/news/defi/td-40201",
+    "published_at": "-40m",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2290",
+    "title": "$AERO volume climbs as Base activity returns",
+    "url": "https://www.dlnews.com/articles/dl-2290",
+    "published_at": "-30m",
+    "author": "DL News"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-9942",
+    "title": "$AERO 24h 成交额 12 亿美元，Base 上第二高",
+    "url": "https://x.com/DefiLlama/status/9942",
+    "published_at": "-26m",
+    "author": "@DefiLlama",
+    "media": [
+      "/feed-media/media-flow.svg"
+    ]
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:arbitrum",
+    "external_id": "arb-2601",
+    "title": "$ARB mainnet upgrade lands, finality drops to two seconds",
+    "url": "https://blog.arbitrum.example/arb-2601",
+    "published_at": "-95m",
+    "author": "Arbitrum Blog",
+    "body": "The upgrade shortens the path between a block being proposed and being final, cutting the wait from roughly ten minutes to about two seconds.\n\nIt is the second change this year aimed at the same number. Sequencer work is next, and the blog says that one is scheduled for the following quarter."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:arbitrum",
+    "external_id": "x-arb-2601",
+    "title": "$ARB 主网 mainnet 升级已激活，确认时间缩短到约 2 秒",
+    "url": "https://x.com/arbitrum/status/2601",
+    "published_at": "-72m",
+    "author": "@arbitrum"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88301",
+    "title": "$ARB rallies as Arbitrum ships a mainnet upgrade for faster finality",
+    "url": "https://www.theblock.co/post/88301",
+    "published_at": "-48m",
+    "author": "The Block"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40250",
+    "title": "$ARB mainnet upgrade puts Arbitrum's finality in line with its L2 rivals",
+    "url": "https://thedefiant.io/news/defi/td-40250",
+    "published_at": "-45m",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88310",
+    "title": "$PYTH adds feeds for 40 new assets, including tokenized equities",
+    "url": "https://www.theblock.co/post/88310",
+    "published_at": "-2h",
+    "author": "The Block",
+    "body": "$PYTH now publishes prices for forty assets it did not cover last month, among them tokenized shares and two commodity indices.\n\nOracle coverage is the quiet limit on what a chain can settle. Feeds that stop at crypto pairs are why most tokenized-equity designs still price off a single venue."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55210",
+    "title": "$PYTH oracle expands into real-world asset pricing",
+    "url": "https://www.coindesk.com/tech/cd-55210",
+    "published_at": "-110m",
+    "author": "CoinDesk"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-9950",
+    "title": "$PYTH 新增 40 个喂价，覆盖代币化股票",
+    "url": "https://x.com/DefiLlama/status/9950",
+    "published_at": "-100m",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:circle",
+    "external_id": "circle-330",
+    "title": "$EURC goes live on three more chains as Circle widens CCTP",
+    "url": "https://blog.circle.example/circle-330",
+    "published_at": "-3h",
+    "author": "Circle Blog",
+    "body": "$EURC is now native on three additional networks, and CCTP carries it between them without a wrapped version on either side.\n\nThe euro leg has been the smaller half of Circle's business. Native issuance on more chains is the precondition for the payment corridors the company keeps pointing at."
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:circle",
+    "external_id": "x-circle-330",
+    "title": "$EURC 已在三条新链原生发行",
+    "url": "https://x.com/circle/status/330",
+    "published_at": "-170m",
+    "author": "@circle"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2261",
+    "title": "$EURC supply grows for a fourth month as payments volume climbs",
+    "url": "https://www.dlnews.com/articles/dl-2261",
+    "published_at": "-165m",
+    "author": "DL News"
+  },
+  {
+    "source_kind": "blog",
+    "source_id": "blog:uniswap",
+    "external_id": "uni-940",
+    "title": "$UNI fee switch vote opens after record DEX volume",
+    "url": "https://blog.uniswap.example/uni-940",
+    "published_at": "-5h",
+    "author": "Uniswap Blog",
+    "body": "The proposal turns on a fraction of trading fees for delegates who lock $UNI, which the protocol has collected and held since launch.\n\nGovernance has rejected versions of this three times. What changed is the volume line: the fee pool is now large enough that the vote is about distribution rather than about survival."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2311",
+    "title": "$UNI holders approve the fee switch in a record turnout",
+    "url": "https://blockworks.co/news/bw-2311",
+    "published_at": "-4h",
+    "author": "Blockworks"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40210",
+    "title": "Uniswap's fee switch passes; $UNI becomes a claim on revenue",
+    "url": "https://thedefiant.io/news/defi/td-40210",
+    "published_at": "-230m",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55220",
+    "title": "$PENDLE deposits pass $6B as tokenized yields draw institutions",
+    "url": "https://www.coindesk.com/tech/cd-55220",
+    "published_at": "-5h",
+    "author": "CoinDesk",
+    "body": "$PENDLE locked value crossed $6B, most of it in markets built on tokenized treasury products rather than on crypto-native yield.\n\nThe desk business is the interesting half: splitting a yield-bearing asset into principal and coupon is what lets a fund hold the first and sell the second."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40220",
+    "title": "$PENDLE rewrites how fixed yield is priced on-chain",
+    "url": "https://thedefiant.io/news/defi/td-40220",
+    "published_at": "-4h",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-9960",
+    "title": "$PENDLE TVL 突破 60 亿美元",
+    "url": "https://x.com/DefiLlama/status/9960",
+    "published_at": "-4h",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2321",
+    "title": "$EIGEN restaking deposits hit a new high after a parameter change",
+    "url": "https://blockworks.co/news/bw-2321",
+    "published_at": "-6h",
+    "author": "Blockworks",
+    "body": "A lower withdrawal delay plus a higher cap on operator sets moved deposits to a new high within a day of the change.\n\nSlashing is the part still being written. Until it has been exercised at scale, the numbers above measure willingness to lock capital, not the cost of being wrong."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55230",
+    "title": "$EIGEN slashing goes live for two more operator sets",
+    "url": "https://www.coindesk.com/tech/cd-55230",
+    "published_at": "-5h",
+    "author": "CoinDesk"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:onchain-alerts",
+    "external_id": "x-oa-5530",
+    "title": "$EIGEN 大户解锁后转入再质押合约",
+    "url": "https://x.com/onchain_alerts/status/5530",
+    "published_at": "-330m",
+    "author": "@onchain_alerts"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90100",
+    "title": "$SOL fee model change clears a governance vote",
+    "url": "https://cointelegraph.com/news/ct-90100",
+    "published_at": "-7h",
+    "author": "Cointelegraph"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:solana",
+    "external_id": "x-sol-8901",
+    "title": "$SOL 治理投票通过，优先费模型将调整",
+    "url": "https://x.com/solana/status/8901",
+    "published_at": "-6h",
+    "author": "@solana"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-33210",
+    "title": "Solana validators back a new fee model ($SOL)",
+    "url": "https://decrypt.co/dc-33210",
+    "published_at": "-380m",
+    "author": "Decrypt"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:coinbase",
+    "external_id": "cb-2026-221",
+    "title": "Coinbase will list $JUP for spot trading",
+    "url": "https://www.coinbase.com/blog/cb-2026-221",
+    "published_at": "-8h",
+    "author": "Coinbase Blog"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88330",
+    "title": "Coinbase adds $JUP, token up 18% before the open",
+    "url": "https://www.theblock.co/post/88330",
+    "published_at": "-7h",
+    "author": "The Block"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90110",
+    "title": "$JUP listing on Coinbase sends the token higher",
+    "url": "https://cointelegraph.com/news/ct-90110",
+    "published_at": "-400m",
+    "author": "Cointelegraph"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:sec",
+    "external_id": "sec-2026-88",
+    "title": "SEC opens a comment period on tokenized fund disclosure ($BUIDL)",
+    "url": "https://www.sec.gov/news/press-release/2026-88",
+    "published_at": "-9h",
+    "author": "SEC Press"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55240",
+    "title": "SEC and CFTC outline disclosure rules for tokenized funds ($BUIDL)",
+    "url": "https://www.coindesk.com/tech/cd-55240",
+    "published_at": "-530m",
+    "author": "CoinDesk"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-6700",
+    "title": "美 SEC 与 CFTC 就代币化基金披露发布联合指引（$BUIDL）",
+    "url": "https://x.com/WuBlockchain/status/6700",
+    "published_at": "-520m",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-8901",
+    "title": "$MORPH 借贷市场被闪电贷攻击，损失约 210 万美元",
+    "url": "https://x.com/chain_watcher/status/8901",
+    "published_at": "-11h",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88340",
+    "title": "$MORPH lending market drained for $2.1M in a flash-loan attack",
+    "url": "https://www.theblock.co/post/88340",
+    "published_at": "-10h",
+    "author": "The Block",
+    "body": "An attacker pushed the price of a thin collateral asset, borrowed against it, and left with about $2.1M before the market was paused.\n\nThe pool had been live for six weeks. The oracle it read was the same one the team documented at launch, which is where the post-mortem is likely to land."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40230",
+    "title": "Morph pauses markets after a $2.1M exploit ($MORPH)",
+    "url": "https://thedefiant.io/news/defi/td-40230",
+    "published_at": "-590m",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55250",
+    "title": "$IBIT ETF inflows hit a three-week high",
+    "url": "https://www.coindesk.com/tech/cd-55250",
+    "published_at": "-13h",
+    "author": "CoinDesk",
+    "body": "Spot bitcoin funds took in their largest daily total in three weeks, and the two largest products took most of it.\n\nThree consecutive positive days after a month of outflows is the kind of turn that gets read as a trend before there is enough of it to call one."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2270",
+    "title": "Custody desks add spot ETF access for $IBIT holders",
+    "url": "https://www.dlnews.com/articles/dl-2270",
+    "published_at": "-20h",
+    "author": "DL News"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88350",
+    "title": "$IBIT spot ETFs take in $480M, a third straight day of inflows",
+    "url": "https://www.theblock.co/post/88350",
+    "published_at": "-31h",
+    "author": "The Block"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-880",
+    "title": "$AXON raises a $25M Series B led by a16z crypto",
+    "url": "https://x.com/funding_watch/status/880",
+    "published_at": "-42h",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88360",
+    "title": "$AXON raises $25 million in a Series B",
+    "url": "https://www.theblock.co/post/88360",
+    "published_at": "-30h",
+    "author": "The Block"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2331",
+    "title": "a16z leads a $25M round into $AXON",
+    "url": "https://blockworks.co/news/bw-2331",
+    "published_at": "-15h",
+    "author": "Blockworks"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-6710",
+    "title": "香港持牌平台将上线 $HKDX 稳定币交易对",
+    "url": "https://x.com/WuBlockchain/status/6710",
+    "published_at": "-50h",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-55260",
+    "title": "Hong Kong venue will list a $HKDX stablecoin pair",
+    "url": "https://www.coindesk.com/tech/cd-55260",
+    "published_at": "-26h",
+    "author": "CoinDesk"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-2280",
+    "title": "Hong Kong's stablecoin regime draws its first listing ($HKDX)",
+    "url": "https://www.dlnews.com/articles/dl-2280",
+    "published_at": "-17h",
+    "author": "DL News"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-88370",
+    "title": "Report: $MKR buybacks are outpacing new issuance",
+    "url": "https://www.theblock.co/post/88370",
+    "published_at": "-56h",
+    "author": "The Block"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-2341",
+    "title": "A research desk raises its $MKR target after a tokenomics change",
+    "url": "https://blockworks.co/news/bw-2341",
+    "published_at": "-28h",
+    "author": "Blockworks"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-9970",
+    "title": "$MKR 回购规模连续三个月超过新增发行",
+    "url": "https://x.com/DefiLlama/status/9970",
+    "published_at": "-19h",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-90120",
+    "title": "$TON opens a grants program for mini-app developers",
+    "url": "https://cointelegraph.com/news/ct-90120",
+    "published_at": "-64h",
+    "author": "Cointelegraph"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-33220",
+    "title": "$TON foundation backs sixty mini-app teams",
+    "url": "https://decrypt.co/dc-33220",
+    "published_at": "-33h",
+    "author": "Decrypt"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-40240",
+    "title": "$TON grants target the mini-app economy",
+    "url": "https://thedefiant.io/news/defi/td-40240",
+    "published_at": "-24h",
+    "author": "The Defiant"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260718",
+    "title": "$VELT vault drained for $4.3M after a share-price exploit",
+    "url": "https://www.theblock.co/post/tb-20260718",
+    "published_at": "2026-07-18T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260718",
+    "title": "Velt confirms a $4.3M loss in a vault exploit",
+    "url": "https://www.coindesk.com/tech/cd-20260718",
+    "published_at": "2026-07-18T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260718",
+    "title": "Velt pauses deposits as an exploit drains $4.3M",
+    "url": "https://decrypt.co/dc-20260718",
+    "published_at": "2026-07-18T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260718",
+    "title": "$VELT falls 55% after a $4.3M vault exploit",
+    "url": "https://cointelegraph.com/news/ct-20260718",
+    "published_at": "2026-07-18T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260718",
+    "title": "$VELT 金库被攻击，约 430 万美元异常转出",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260718",
+    "published_at": "2026-07-18T18:30:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:kraken",
+    "external_id": "kr-20260725",
+    "title": "Kraken will list $KORA against EUR",
+    "url": "https://blog.kraken.com/kr-20260725",
+    "published_at": "2026-07-25T17:30:00+08:00",
+    "author": "Kraken Blog"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260725",
+    "title": "Kraken lists $KORA, opening a euro pair",
+    "url": "https://www.theblock.co/post/tb-20260725",
+    "published_at": "2026-07-25T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260725",
+    "title": "$KORA gains after Kraken announces a listing",
+    "url": "https://www.coindesk.com/tech/cd-20260725",
+    "published_at": "2026-07-25T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260725",
+    "title": "Kraken lists $KORA as its euro books expand",
+    "url": "https://blockworks.co/news/bw-20260725",
+    "published_at": "2026-07-25T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260725",
+    "title": "$KORA 将在 Kraken 上线欧元交易对",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260725",
+    "published_at": "2026-07-25T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260801",
+    "title": "$NIMB raises $18M Series A led by Polychain",
+    "url": "https://www.theblock.co/post/tb-20260801",
+    "published_at": "2026-08-01T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260801",
+    "title": "Nimb raises $18 million in a Series A",
+    "url": "https://www.coindesk.com/tech/cd-20260801",
+    "published_at": "2026-08-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260801",
+    "title": "Polychain leads an $18M Series A into $NIMB",
+    "url": "https://blockworks.co/news/bw-20260801",
+    "published_at": "2026-08-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-20260801",
+    "title": "$NIMB — $18M Series A 由 Polychain 领投",
+    "url": "https://x.com/funding_watch/status/x-fw-20260801",
+    "published_at": "2026-08-01T18:15:00+08:00",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260801",
+    "title": "Nimb's raise points at payments infrastructure ($NIMB)",
+    "url": "https://thedefiant.io/news/defi/td-20260801",
+    "published_at": "2026-08-01T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260808",
+    "title": "$SOMA mainnet upgrade targets a shorter block time",
+    "url": "https://www.theblock.co/post/tb-20260808",
+    "published_at": "2026-08-08T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260808",
+    "title": "Soma ships a mainnet upgrade for faster blocks",
+    "url": "https://www.coindesk.com/tech/cd-20260808",
+    "published_at": "2026-08-08T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260808",
+    "title": "Soma's mainnet upgrade rewrites how blocks are proposed ($SOMA)",
+    "url": "https://decrypt.co/dc-20260808",
+    "published_at": "2026-08-08T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260808",
+    "title": "$SOMA mainnet upgrade goes live",
+    "url": "https://cointelegraph.com/news/ct-20260808",
+    "published_at": "2026-08-08T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260808",
+    "title": "$SOMA 主网 mainnet 升级完成，出块更快",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260808",
+    "published_at": "2026-08-08T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:sec",
+    "external_id": "sec-20260815",
+    "title": "SEC charges the operator of $GRID over unregistered sales",
+    "url": "https://www.sec.gov/news/press-release/sec-20260815",
+    "published_at": "2026-08-15T17:30:00+08:00",
+    "author": "SEC Press"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260815",
+    "title": "SEC sues a $GRID operator over an unregistered token sale",
+    "url": "https://www.coindesk.com/tech/cd-20260815",
+    "published_at": "2026-08-15T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260815",
+    "title": "SEC action against $GRID's operator draws a response",
+    "url": "https://decrypt.co/dc-20260815",
+    "published_at": "2026-08-15T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260815",
+    "title": "SEC charges $GRID's operator, alleging an unregistered sale",
+    "url": "https://www.theblock.co/post/tb-20260815",
+    "published_at": "2026-08-15T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260815",
+    "title": "美 SEC 起诉 $GRID 运营方，指其未注册发行",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260815",
+    "published_at": "2026-08-15T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260822",
+    "title": "$LUMA DEX turns on a fee switch after a record vote",
+    "url": "https://www.theblock.co/post/tb-20260822",
+    "published_at": "2026-08-22T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260822",
+    "title": "$LUMA traders approve the fee switch",
+    "url": "https://www.coindesk.com/tech/cd-20260822",
+    "published_at": "2026-08-22T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260822",
+    "title": "Luma's fee switch is live ($LUMA)",
+    "url": "https://thedefiant.io/news/defi/td-20260822",
+    "published_at": "2026-08-22T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260822",
+    "title": "$LUMA TVL 回升至 8 亿美元",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260822",
+    "published_at": "2026-08-22T18:15:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260822",
+    "title": "Luma fee switch goes live, holders get a claim ($LUMA)",
+    "url": "https://blockworks.co/news/bw-20260822",
+    "published_at": "2026-08-22T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260829",
+    "title": "$TIDE partners with Mastercard on cross-border settlement",
+    "url": "https://www.theblock.co/post/tb-20260829",
+    "published_at": "2026-08-29T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260829",
+    "title": "Tide integrates with Mastercard for payouts ($TIDE)",
+    "url": "https://www.coindesk.com/tech/cd-20260829",
+    "published_at": "2026-08-29T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260829",
+    "title": "$TIDE partnership puts stablecoin payouts on card rails",
+    "url": "https://blockworks.co/news/bw-20260829",
+    "published_at": "2026-08-29T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260829",
+    "title": "Tide partners with Mastercard on settlement",
+    "url": "https://cointelegraph.com/news/ct-20260829",
+    "published_at": "2026-08-29T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260829",
+    "title": "$TIDE 与 Mastercard 达成合作，接入商户结算",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260829",
+    "published_at": "2026-08-29T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260901",
+    "title": "$ARGO bridge exploited for $11M, deposits paused",
+    "url": "https://www.theblock.co/post/tb-20260901",
+    "published_at": "2026-09-01T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260901",
+    "title": "Argo confirms an $11M bridge exploit",
+    "url": "https://www.coindesk.com/tech/cd-20260901",
+    "published_at": "2026-09-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260901",
+    "title": "Argo halts its bridge after an $11M exploit",
+    "url": "https://decrypt.co/dc-20260901",
+    "published_at": "2026-09-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260901",
+    "title": "Argo's bridge drained for $11M ($ARGO)",
+    "url": "https://thedefiant.io/news/defi/td-20260901",
+    "published_at": "2026-09-01T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260901",
+    "title": "$ARGO 跨链桥被攻击，约 1100 万美元转出",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260901",
+    "published_at": "2026-09-01T18:30:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:binance",
+    "external_id": "bn-20260905",
+    "title": "Binance will delist $HELI after a periodic review",
+    "url": "https://www.binance.com/en/support/announcement/bn-20260905",
+    "published_at": "2026-09-05T17:30:00+08:00",
+    "author": "Binance Announcement"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260905",
+    "title": "Binance delists $HELI, token drops 30%",
+    "url": "https://www.theblock.co/post/tb-20260905",
+    "published_at": "2026-09-05T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260905",
+    "title": "$HELI delisted by Binance in a routine review",
+    "url": "https://www.coindesk.com/tech/cd-20260905",
+    "published_at": "2026-09-05T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260905",
+    "title": "$HELI falls after Binance announces a delisting",
+    "url": "https://cointelegraph.com/news/ct-20260905",
+    "published_at": "2026-09-05T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:binance",
+    "external_id": "x-bn-20260905",
+    "title": "$HELI 下架公告：Binance 将移除其现货交易对",
+    "url": "https://x.com/binance/status/x-bn-20260905",
+    "published_at": "2026-09-05T18:30:00+08:00",
+    "author": "@binance"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260912",
+    "title": "$FRTH spot ETF filing accepted for review",
+    "url": "https://www.theblock.co/post/tb-20260912",
+    "published_at": "2026-09-12T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260912",
+    "title": "Regulators accept a $FRTH spot ETF filing",
+    "url": "https://www.coindesk.com/tech/cd-20260912",
+    "published_at": "2026-09-12T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260912",
+    "title": "A $FRTH ETF filing enters the review queue",
+    "url": "https://www.dlnews.com/articles/dl-20260912",
+    "published_at": "2026-09-12T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260912",
+    "title": "$FRTH filing puts another spot ETF on the calendar",
+    "url": "https://blockworks.co/news/bw-20260912",
+    "published_at": "2026-09-12T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260912",
+    "title": "$FRTH ETF 申请进入审核",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260912",
+    "published_at": "2026-09-12T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260913",
+    "title": "$ZELM protocol exploited for $6.8M as a share-price flaw is drained",
+    "url": "https://www.theblock.co/post/tb-20260913",
+    "published_at": "2026-09-13T17:30:00+08:00",
+    "body": "A share-price feed the protocol deployed itself could be moved with a flash loan, and the attacker moved it far enough to borrow against nothing.\n\nThe team paused withdrawals within the hour. Roughly $6.8M left the vault, and the post-mortem is promised for the end of the week."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260913",
+    "title": "Zelm confirms a $6.8M loss in a share-price exploit",
+    "url": "https://www.coindesk.com/tech/cd-20260913",
+    "published_at": "2026-09-13T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260913",
+    "title": "Zelm pauses withdrawals after a $6.8M exploit",
+    "url": "https://decrypt.co/dc-20260913",
+    "published_at": "2026-09-13T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260913",
+    "title": "$ZELM slips 40% as an exploit drains $6.8M",
+    "url": "https://cointelegraph.com/news/ct-20260913",
+    "published_at": "2026-09-13T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260913",
+    "title": "$ZELM 协议被攻击，约 680 万美元异常转出",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260913",
+    "published_at": "2026-09-13T18:30:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:okx",
+    "external_id": "okx-20260914",
+    "title": "OKX will list $BRIS for spot trading",
+    "url": "https://www.okx.com/support/okx-20260914",
+    "published_at": "2026-09-14T17:30:00+08:00",
+    "author": "OKX Announcement",
+    "body": "OKX opened deposits for $BRIS on Monday and trading two days later, with a perp listing held back for a separate announcement.\n\nListing on a second venue usually means the market maker is already quoting on the first. Volume on the token has been thin enough that the new book is most of the story."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260914",
+    "title": "OKX lists $BRIS, token up 12%",
+    "url": "https://www.theblock.co/post/tb-20260914",
+    "published_at": "2026-09-14T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260914",
+    "title": "$BRIS rises after OKX announces a listing",
+    "url": "https://www.coindesk.com/tech/cd-20260914",
+    "published_at": "2026-09-14T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260914",
+    "title": "$BRIS listing on OKX opens spot trading",
+    "url": "https://cointelegraph.com/news/ct-20260914",
+    "published_at": "2026-09-14T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260914",
+    "title": "$BRIS 上线 OKX 现货",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260914",
+    "published_at": "2026-09-14T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260915",
+    "title": "$KIVA raises $22M Series B led by Founders Fund",
+    "url": "https://www.theblock.co/post/tb-20260915",
+    "published_at": "2026-09-15T17:30:00+08:00",
+    "body": "The round values Kiva at $180M post-money and is the second time the team has raised against the same product, an underwriting model that reads wallet history.\n\nTwo of the five lending desks that trialled it last year have signed, which is the only number in the announcement that speaks to demand rather than to ambition."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260915",
+    "title": "Kiva raises $22 million in a Series B",
+    "url": "https://www.coindesk.com/tech/cd-20260915",
+    "published_at": "2026-09-15T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260915",
+    "title": "Founders Fund leads a $22M raise into $KIVA",
+    "url": "https://blockworks.co/news/bw-20260915",
+    "published_at": "2026-09-15T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-20260915",
+    "title": "$KIVA 完成 2200 万美元融资，Founders Fund 领投",
+    "url": "https://x.com/funding_watch/status/x-fw-20260915",
+    "published_at": "2026-09-15T18:15:00+08:00",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260915",
+    "title": "Kiva's raise backs on-chain credit scoring ($KIVA)",
+    "url": "https://thedefiant.io/news/defi/td-20260915",
+    "published_at": "2026-09-15T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260916",
+    "title": "$HYPR mainnet upgrade ships a new fee market",
+    "url": "https://www.theblock.co/post/tb-20260916",
+    "published_at": "2026-09-16T17:30:00+08:00",
+    "body": "The old fee market priced blocks one at a time, so a busy block cleared at whatever the next one would bear. The upgrade clears a block against the demand it actually saw.\n\nValidators are split on the change. Two operator groups have said they expect lower revenue and asked for a parameter review in three months."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260916",
+    "title": "Hypr's mainnet upgrade changes how fees clear",
+    "url": "https://www.coindesk.com/tech/cd-20260916",
+    "published_at": "2026-09-16T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260916",
+    "title": "$HYPR mainnet upgrade goes live",
+    "url": "https://decrypt.co/dc-20260916",
+    "published_at": "2026-09-16T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260916",
+    "title": "Hypr ships a mainnet upgrade with a new fee market",
+    "url": "https://cointelegraph.com/news/ct-20260916",
+    "published_at": "2026-09-16T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260916",
+    "title": "$HYPR 主网 mainnet 升级上线，费用市场重写",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260916",
+    "published_at": "2026-09-16T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:cftc",
+    "external_id": "cftc-20260917",
+    "title": "CFTC settles with $QORB over leveraged products",
+    "url": "https://www.cftc.gov/PressRoom/PressReleases/cftc-20260917",
+    "published_at": "2026-09-17T17:30:00+08:00",
+    "author": "CFTC Press",
+    "body": "The order names a product the venue described as a spot offering but margined at 20x, and requires it to be relabelled or withdrawn within 60 days.\n\nNo fine was announced. For other venues selling the same shape of product, the relabelling deadline is the part that matters."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260917",
+    "title": "CFTC settles a leverage case with $QORB",
+    "url": "https://www.coindesk.com/tech/cd-20260917",
+    "published_at": "2026-09-17T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260917",
+    "title": "$QORB settles with the CFTC over leverage",
+    "url": "https://www.theblock.co/post/tb-20260917",
+    "published_at": "2026-09-17T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260917",
+    "title": "A CFTC settlement puts $QORB's leverage products on notice",
+    "url": "https://www.dlnews.com/articles/dl-20260917",
+    "published_at": "2026-09-17T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260917",
+    "title": "美 CFTC 与 $QORB 就杠杆产品达成和解",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260917",
+    "published_at": "2026-09-17T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260918",
+    "title": "$FLXR adds tokenized treasury collateral to its lending market",
+    "url": "https://www.theblock.co/post/tb-20260918",
+    "published_at": "2026-09-18T17:30:00+08:00",
+    "body": "The market now accepts two tokenized treasury products at a 92% loan-to-value, which is a narrower haircut than the stablecoin pairs it already lists.\n\nCollateral of this kind moves slowly, and the reason is custody rather than code: a fund that holds treasuries on-chain still needs an auditor who will sign off on the wrapper."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260918",
+    "title": "$FLXR lending market takes tokenized treasuries as collateral",
+    "url": "https://www.coindesk.com/tech/cd-20260918",
+    "published_at": "2026-09-18T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260918",
+    "title": "Fluxr's lending market opens to tokenized collateral ($FLXR)",
+    "url": "https://thedefiant.io/news/defi/td-20260918",
+    "published_at": "2026-09-18T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260918",
+    "title": "$FLXR 借贷市场支持代币化国债抵押",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260918",
+    "published_at": "2026-09-18T18:15:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260918",
+    "title": "Tokenized treasuries reach $FLXR's lending pool",
+    "url": "https://blockworks.co/news/bw-20260918",
+    "published_at": "2026-09-18T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260919",
+    "title": "$ATLS partners with Stripe on stablecoin payouts",
+    "url": "https://www.theblock.co/post/tb-20260919",
+    "published_at": "2026-09-19T17:30:00+08:00",
+    "body": "Merchants on the Atlas platform will be able to settle in stablecoins and keep the payout in dollars, with Atlas taking the conversion leg.\n\nThe announcement does not say which corridors go first. That detail decides whether this is a product or a pilot."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260919",
+    "title": "Atlas integrates with Stripe for payouts ($ATLS)",
+    "url": "https://www.coindesk.com/tech/cd-20260919",
+    "published_at": "2026-09-19T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260919",
+    "title": "$ATLS partnership puts merchant payouts on stablecoin rails",
+    "url": "https://blockworks.co/news/bw-20260919",
+    "published_at": "2026-09-19T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260919",
+    "title": "Atlas partners with Stripe ($ATLS)",
+    "url": "https://cointelegraph.com/news/ct-20260919",
+    "published_at": "2026-09-19T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260919",
+    "title": "$ATLS 与 Stripe 达成合作，接入商户结算",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260919",
+    "published_at": "2026-09-19T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260920",
+    "title": "$PEKO falls 62% after a minting bug is exploited",
+    "url": "https://www.theblock.co/post/tb-20260920",
+    "published_at": "2026-09-20T17:30:00+08:00",
+    "body": "The mint function accepted a caller-supplied amount where it should have read one from storage, and the attacker minted into their own balance before the team noticed.\n\nLiquidity on the token's main pair was thin, so the 62% move is a statement about the pool rather than about the token's holders."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260920",
+    "title": "Peko confirms a minting exploit, token down 62%",
+    "url": "https://www.coindesk.com/tech/cd-20260920",
+    "published_at": "2026-09-20T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260920",
+    "title": "$PEKO drained as a minting bug is exploited",
+    "url": "https://decrypt.co/dc-20260920",
+    "published_at": "2026-09-20T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260920",
+    "title": "Peko halts minting after an exploit",
+    "url": "https://cointelegraph.com/news/ct-20260920",
+    "published_at": "2026-09-20T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260920",
+    "title": "$PEKO 铸造漏洞被利用，代币下跌 62%",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260920",
+    "published_at": "2026-09-20T18:30:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:coinbase",
+    "external_id": "cb-20260921",
+    "title": "Coinbase will list $SUNR for spot trading",
+    "url": "https://www.coinbase.com/blog/cb-20260921",
+    "published_at": "2026-09-21T17:30:00+08:00",
+    "author": "Coinbase Blog",
+    "body": "Coinbase opened $SUNR to trading in its usual two stages, with the token already up on the announcement.\n\nThe venue currently carries three tokens with this profile. What they share is a market maker that quotes on both sides from day one."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260921",
+    "title": "Coinbase adds a $SUNR listing, token up 20%",
+    "url": "https://www.theblock.co/post/tb-20260921",
+    "published_at": "2026-09-21T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260921",
+    "title": "$SUNR jumps as the Coinbase listing opens trading",
+    "url": "https://www.coindesk.com/tech/cd-20260921",
+    "published_at": "2026-09-21T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260921",
+    "title": "$SUNR listing on Coinbase sends the token up",
+    "url": "https://cointelegraph.com/news/ct-20260921",
+    "published_at": "2026-09-21T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260921",
+    "title": "$SUNR 上线 Coinbase 现货",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260921",
+    "published_at": "2026-09-21T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260922",
+    "title": "$DRIF raises $30M Series B led by Paradigm",
+    "url": "https://www.theblock.co/post/tb-20260922",
+    "published_at": "2026-09-22T17:30:00+08:00",
+    "body": "The company sells an execution layer that sits between a router and a venue, and says it is already carrying a fifth of the volume on two chains.\n\nThat share is self-reported. The round is priced against it anyway, which is the part a competitor will read twice."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260922",
+    "title": "Drif raises $30 million in a Series B",
+    "url": "https://www.coindesk.com/tech/cd-20260922",
+    "published_at": "2026-09-22T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260922",
+    "title": "Paradigm leads a $30M raise into $DRIF",
+    "url": "https://blockworks.co/news/bw-20260922",
+    "published_at": "2026-09-22T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-20260922",
+    "title": "$DRIF 完成 3000 万美元融资，Paradigm 领投",
+    "url": "https://x.com/funding_watch/status/x-fw-20260922",
+    "published_at": "2026-09-22T18:15:00+08:00",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260922",
+    "title": "Drif's $30M raise backs a new execution layer ($DRIF)",
+    "url": "https://thedefiant.io/news/defi/td-20260922",
+    "published_at": "2026-09-22T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260923",
+    "title": "$ORBY mainnet upgrade doubles throughput",
+    "url": "https://www.theblock.co/post/tb-20260923",
+    "published_at": "2026-09-23T17:30:00+08:00",
+    "body": "The upgrade moves block production to a two-lane schedule so that a heavy contract cannot hold up a light one behind it.\n\nThroughput claims are the easiest thing on a chain to measure and the least useful without a fee number beside them. That number arrives with the next report."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260923",
+    "title": "Orby ships a mainnet upgrade aimed at throughput",
+    "url": "https://www.coindesk.com/tech/cd-20260923",
+    "published_at": "2026-09-23T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260923",
+    "title": "$ORBY mainnet upgrade goes live",
+    "url": "https://decrypt.co/dc-20260923",
+    "published_at": "2026-09-23T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260923",
+    "title": "Orby's mainnet upgrade doubles block capacity",
+    "url": "https://cointelegraph.com/news/ct-20260923",
+    "published_at": "2026-09-23T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:onchain-alerts",
+    "external_id": "x-oa-20260923",
+    "title": "$ORBY 主网 mainnet 升级后吞吐翻倍",
+    "url": "https://x.com/onchain_alerts/status/x-oa-20260923",
+    "published_at": "2026-09-23T18:30:00+08:00",
+    "author": "@onchain_alerts"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:sec",
+    "external_id": "sec-20260924",
+    "title": "SEC opens a comment period on $TETH's tokenized fund",
+    "url": "https://www.sec.gov/news/press-release/sec-20260924",
+    "published_at": "2026-09-24T17:30:00+08:00",
+    "author": "SEC Press",
+    "body": "The filing asks whether a fund whose shares are transferable on a public chain can keep the same disclosure schedule as one whose register is closed.\n\nComments are open for 45 days. Two similar structures were withdrawn last year before that question was answered."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260924",
+    "title": "SEC seeks comment on a tokenized fund structure ($TETH)",
+    "url": "https://www.coindesk.com/tech/cd-20260924",
+    "published_at": "2026-09-24T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260924",
+    "title": "A tokenized fund draws SEC scrutiny ($TETH)",
+    "url": "https://www.theblock.co/post/tb-20260924",
+    "published_at": "2026-09-24T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260924",
+    "title": "SEC asks for comment on $TETH's fund structure",
+    "url": "https://www.dlnews.com/articles/dl-20260924",
+    "published_at": "2026-09-24T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260924",
+    "title": "美 SEC 就 $TETH 代币化基金公开征求意见",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260924",
+    "published_at": "2026-09-24T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260925",
+    "title": "$PRSM vault adds a fixed-rate market for stablecoin deposits",
+    "url": "https://www.theblock.co/post/tb-20260925",
+    "published_at": "2026-09-25T17:30:00+08:00",
+    "body": "Depositors can now lock a rate for three months instead of taking the floating one, with the other side filled by a lending desk.\n\nFixed rates are only as good as the desk behind them. The vault names its counterparties in the interface, which is more than the last one did."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260925",
+    "title": "$PRSM opens fixed-rate deposits",
+    "url": "https://www.coindesk.com/tech/cd-20260925",
+    "published_at": "2026-09-25T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260925",
+    "title": "Prism's fixed-rate market goes live ($PRSM)",
+    "url": "https://thedefiant.io/news/defi/td-20260925",
+    "published_at": "2026-09-25T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260925",
+    "title": "$PRSM 推出固定利率存款市场",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260925",
+    "published_at": "2026-09-25T18:15:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260925",
+    "title": "Fixed-rate deposits arrive at $PRSM",
+    "url": "https://blockworks.co/news/bw-20260925",
+    "published_at": "2026-09-25T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260926",
+    "title": "$IBEX custody adds institutional staking",
+    "url": "https://www.theblock.co/post/tb-20260926",
+    "published_at": "2026-09-26T17:30:00+08:00",
+    "body": "The custody desk now runs validators for clients holding a balance above a minimum, with rewards reported on the same statement as the position.\n\nStaking inside custody is mostly an accounting problem: the reward has to be attributed to a specific holder on a specific day, and most desks still do that by hand."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260926",
+    "title": "Ibex opens staking to institutional clients ($IBEX)",
+    "url": "https://www.coindesk.com/tech/cd-20260926",
+    "published_at": "2026-09-26T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260926",
+    "title": "$IBEX custody desk adds staking",
+    "url": "https://www.dlnews.com/articles/dl-20260926",
+    "published_at": "2026-09-26T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260926",
+    "title": "Ibex adds staking for institutional clients",
+    "url": "https://blockworks.co/news/bw-20260926",
+    "published_at": "2026-09-26T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20260926",
+    "title": "$IBEX 托管新增机构质押服务",
+    "url": "https://x.com/DefiLlama/status/x-dl-20260926",
+    "published_at": "2026-09-26T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260927",
+    "title": "$CRUX oracle manipulated, $2.4M drained from a lending pool",
+    "url": "https://www.theblock.co/post/tb-20260927",
+    "published_at": "2026-09-27T17:30:00+08:00",
+    "body": "The pool read a median price from a venue where the token trades in a single shallow pool, and that pool could be moved for less than the loan it supported.\n\nPausing the market stopped the second transaction that was already queued. The first one had settled."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260927",
+    "title": "Crux pauses markets after a $2.4M oracle exploit",
+    "url": "https://www.coindesk.com/tech/cd-20260927",
+    "published_at": "2026-09-27T17:45:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260927",
+    "title": "$CRUX 遭预言机攻击，损失约 240 万美元",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260927",
+    "published_at": "2026-09-27T18:00:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260927",
+    "title": "Crux drained for $2.4M in an oracle attack",
+    "url": "https://decrypt.co/dc-20260927",
+    "published_at": "2026-09-27T18:15:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260927",
+    "title": "An oracle exploit costs Crux $2.4M ($CRUX)",
+    "url": "https://thedefiant.io/news/defi/td-20260927",
+    "published_at": "2026-09-27T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260928",
+    "title": "$VAPR will list on Upbit",
+    "url": "https://www.theblock.co/post/tb-20260928",
+    "published_at": "2026-09-28T17:30:00+08:00",
+    "body": "Upbit opened a Korean won pair for $VAPR, which is the venue's fourth listing this quarter and its first with a token that has no domestic issuer.\n\nKorean retail access is the reason the move is worth more than the percentage above."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260928",
+    "title": "Upbit lists $VAPR, token up 25%",
+    "url": "https://www.coindesk.com/tech/cd-20260928",
+    "published_at": "2026-09-28T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260928",
+    "title": "$VAPR climbs as Upbit opens a listing",
+    "url": "https://cointelegraph.com/news/ct-20260928",
+    "published_at": "2026-09-28T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260928",
+    "title": "Upbit opens a $VAPR listing on its won books",
+    "url": "https://www.dlnews.com/articles/dl-20260928",
+    "published_at": "2026-09-28T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260928",
+    "title": "$VAPR 将在 Upbit 上线",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260928",
+    "published_at": "2026-09-28T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260929",
+    "title": "$MRDN raises $12M seed led by Electric Capital",
+    "url": "https://www.theblock.co/post/tb-20260929",
+    "published_at": "2026-09-29T17:30:00+08:00",
+    "body": "The team is selling access to a dataset assembled from public nodes rather than building one more indexer, and the round is the first institutional money in.\n\nData networks raise against a moat that is usually just coverage. Whether this one has a second layer is not yet visible from outside."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260929",
+    "title": "Mrdn raises $12 million in a seed round",
+    "url": "https://www.coindesk.com/tech/cd-20260929",
+    "published_at": "2026-09-29T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260929",
+    "title": "Electric Capital leads a $12M raise into $MRDN",
+    "url": "https://blockworks.co/news/bw-20260929",
+    "published_at": "2026-09-29T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-20260929",
+    "title": "$MRDN 完成 1200 万美元融资，Electric Capital 领投",
+    "url": "https://x.com/funding_watch/status/x-fw-20260929",
+    "published_at": "2026-09-29T18:15:00+08:00",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260929",
+    "title": "Mrdn's seed raise backs a data network ($MRDN)",
+    "url": "https://thedefiant.io/news/defi/td-20260929",
+    "published_at": "2026-09-29T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260930",
+    "title": "$PLEI mainnet upgrade adds a new execution client",
+    "url": "https://www.theblock.co/post/tb-20260930",
+    "published_at": "2026-09-30T17:30:00+08:00",
+    "body": "A second execution client now produces blocks, which removes the single-point failure the chain has carried since launch.\n\nClient diversity is the boring item on every roadmap and the one that decides what a bug costs. Until now, that cost was the whole network."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260930",
+    "title": "Plei ships a mainnet upgrade with a second client",
+    "url": "https://www.coindesk.com/tech/cd-20260930",
+    "published_at": "2026-09-30T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260930",
+    "title": "$PLEI mainnet upgrade goes live",
+    "url": "https://decrypt.co/dc-20260930",
+    "published_at": "2026-09-30T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260930",
+    "title": "Plei's mainnet upgrade adds client diversity",
+    "url": "https://cointelegraph.com/news/ct-20260930",
+    "published_at": "2026-09-30T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:onchain-alerts",
+    "external_id": "x-oa-20260930",
+    "title": "$PLEI 主网 mainnet 升级，新增执行客户端",
+    "url": "https://x.com/onchain_alerts/status/x-oa-20260930",
+    "published_at": "2026-09-30T18:30:00+08:00",
+    "author": "@onchain_alerts"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20261001",
+    "title": "$AXIS wins a payments license in Singapore",
+    "url": "https://www.theblock.co/post/tb-20261001",
+    "published_at": "2026-10-01T17:30:00+08:00",
+    "body": "The license covers cross-border transfers but not custody, so the company can hold client money for a payout without holding it for investment.\n\nSingapore has now issued four of these to crypto-native firms. The constraint on the business is not the license but the banking partner behind it."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20261001",
+    "title": "Axis receives a Singapore payments license",
+    "url": "https://www.coindesk.com/tech/cd-20261001",
+    "published_at": "2026-10-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20261001",
+    "title": "A payments license in Singapore goes to $AXIS",
+    "url": "https://www.dlnews.com/articles/dl-20261001",
+    "published_at": "2026-10-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20261001",
+    "title": "$AXIS licensed for payments in Singapore",
+    "url": "https://blockworks.co/news/bw-20261001",
+    "published_at": "2026-10-01T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20261001",
+    "title": "$AXIS 获得新加坡支付牌照",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20261001",
+    "published_at": "2026-10-01T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20261002",
+    "title": "$MESA spot ETF takes in $210M in its first week",
+    "url": "https://www.theblock.co/post/tb-20261002",
+    "published_at": "2026-10-02T17:30:00+08:00",
+    "body": "First-week flows are a statement about the seed buyers and the distribution deal behind them, not about demand in general.\n\nTwo of the four desks that were named as seeders have held their position. The other two have not disclosed."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20261002",
+    "title": "$MESA ETF inflows top $200M in a week",
+    "url": "https://www.coindesk.com/tech/cd-20261002",
+    "published_at": "2026-10-02T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20261002",
+    "title": "$MESA ETF draws institutional allocations",
+    "url": "https://www.dlnews.com/articles/dl-20261002",
+    "published_at": "2026-10-02T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20261002",
+    "title": "$MESA ETF's first week lands above expectations",
+    "url": "https://blockworks.co/news/bw-20261002",
+    "published_at": "2026-10-02T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:defillama",
+    "external_id": "x-dl-20261002",
+    "title": "$MESA ETF 首周净流入 2.1 亿美元",
+    "url": "https://x.com/DefiLlama/status/x-dl-20261002",
+    "published_at": "2026-10-02T18:30:00+08:00",
+    "author": "@DefiLlama"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20261003",
+    "title": "$VOLT exploit drains $3.1M from a staking pool",
+    "url": "https://www.theblock.co/post/tb-20261003",
+    "published_at": "2026-10-03T17:30:00+08:00",
+    "body": "The staking contract credited rewards before it read the pool balance, so a deposit and a withdrawal in the same block paid out twice.\n\nThe attacker used one contract and eleven blocks. The team has paused staking and says the loss is covered by the treasury."
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20261003",
+    "title": "Volt confirms a $3.1M staking exploit",
+    "url": "https://www.coindesk.com/tech/cd-20261003",
+    "published_at": "2026-10-03T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20261003",
+    "title": "Volt pauses its staking contract after an exploit",
+    "url": "https://decrypt.co/dc-20261003",
+    "published_at": "2026-10-03T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20261003",
+    "title": "$VOLT 质押合约被攻击，约 310 万美元转出",
+    "url": "https://x.com/chain_watcher/status/x-cw-20261003",
+    "published_at": "2026-10-03T18:15:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20261003",
+    "title": "$VOLT drops as an exploit hits its staking pool",
+    "url": "https://cointelegraph.com/news/ct-20261003",
+    "published_at": "2026-10-03T18:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260301",
+    "title": "$HRZN raises $9M seed led by Variant",
+    "url": "https://www.theblock.co/post/tb-20260301",
+    "published_at": "2026-03-01T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260301",
+    "title": "Horizon raises $9 million in a seed round ($HRZN)",
+    "url": "https://www.coindesk.com/tech/cd-20260301",
+    "published_at": "2026-03-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:blockworks",
+    "external_id": "bw-20260301",
+    "title": "Variant leads a $9M raise into $HRZN",
+    "url": "https://blockworks.co/news/bw-20260301",
+    "published_at": "2026-03-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:funding-watch",
+    "external_id": "x-fw-20260301",
+    "title": "$HRZN 完成 900 万美元融资，Variant 领投",
+    "url": "https://x.com/funding_watch/status/x-fw-20260301",
+    "published_at": "2026-03-01T18:15:00+08:00",
+    "author": "@funding_watch"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260301",
+    "title": "Horizon's seed raise backs a settlement network ($HRZN)",
+    "url": "https://thedefiant.io/news/defi/td-20260301",
+    "published_at": "2026-03-01T18:30:00+08:00"
+  },
+  {
+    "source_kind": "exchange",
+    "source_id": "exchange:binance",
+    "external_id": "bn-20260401",
+    "title": "Binance will list $CNDL in the innovation zone",
+    "url": "https://www.binance.com/en/support/announcement/bn-20260401",
+    "published_at": "2026-04-01T17:30:00+08:00",
+    "author": "Binance Announcement"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260401",
+    "title": "Binance lists $CNDL, token up 40%",
+    "url": "https://www.theblock.co/post/tb-20260401",
+    "published_at": "2026-04-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260401",
+    "title": "$CNDL jumps as Binance opens its listing",
+    "url": "https://www.coindesk.com/tech/cd-20260401",
+    "published_at": "2026-04-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260401",
+    "title": "Binance opens a $CNDL listing on its spot books",
+    "url": "https://cointelegraph.com/news/ct-20260401",
+    "published_at": "2026-04-01T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:binance",
+    "external_id": "x-bn-20260401",
+    "title": "$CNDL 即将在 Binance 上线",
+    "url": "https://x.com/binance/status/x-bn-20260401",
+    "published_at": "2026-04-01T18:30:00+08:00",
+    "author": "@binance"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260501",
+    "title": "$BEAC mainnet upgrade cuts validator requirements",
+    "url": "https://www.theblock.co/post/tb-20260501",
+    "published_at": "2026-05-01T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260501",
+    "title": "Beacon ships a mainnet upgrade for smaller validators ($BEAC)",
+    "url": "https://www.coindesk.com/tech/cd-20260501",
+    "published_at": "2026-05-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260501",
+    "title": "$BEAC mainnet upgrade goes live",
+    "url": "https://decrypt.co/dc-20260501",
+    "published_at": "2026-05-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:cointelegraph",
+    "external_id": "ct-20260501",
+    "title": "Beacon's mainnet upgrade lowers the validator bar ($BEAC)",
+    "url": "https://cointelegraph.com/news/ct-20260501",
+    "published_at": "2026-05-01T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:onchain-alerts",
+    "external_id": "x-oa-20260501",
+    "title": "$BEAC 主网 mainnet 升级，降低验证者门槛",
+    "url": "https://x.com/onchain_alerts/status/x-oa-20260501",
+    "published_at": "2026-05-01T18:30:00+08:00",
+    "author": "@onchain_alerts"
+  },
+  {
+    "source_kind": "regulator",
+    "source_id": "regulator:cftc",
+    "external_id": "cftc-20260601",
+    "title": "CFTC fines $ORBT's operator over leverage disclosures",
+    "url": "https://www.cftc.gov/PressRoom/PressReleases/cftc-20260601",
+    "published_at": "2026-06-01T17:30:00+08:00",
+    "author": "CFTC Press"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260601",
+    "title": "CFTC fines a $ORBT operator",
+    "url": "https://www.coindesk.com/tech/cd-20260601",
+    "published_at": "2026-06-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260601",
+    "title": "$ORBT operator fined by the CFTC",
+    "url": "https://www.theblock.co/post/tb-20260601",
+    "published_at": "2026-06-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:dlnews",
+    "external_id": "dl-20260601",
+    "title": "A CFTC fine lands on $ORBT's operator",
+    "url": "https://www.dlnews.com/articles/dl-20260601",
+    "published_at": "2026-06-01T18:15:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:wu-blockchain",
+    "external_id": "x-wu-20260601",
+    "title": "美 CFTC 对 $ORBT 运营方处以罚款",
+    "url": "https://x.com/WuBlockchain/status/x-wu-20260601",
+    "published_at": "2026-06-01T18:30:00+08:00",
+    "author": "@WuBlockchain"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:theblock",
+    "external_id": "tb-20260701",
+    "title": "$MEAD rug pulls after a liquidity unlock",
+    "url": "https://www.theblock.co/post/tb-20260701",
+    "published_at": "2026-07-01T17:30:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:coindesk",
+    "external_id": "cd-20260701",
+    "title": "Mead's liquidity vanishes in a suspected rug",
+    "url": "https://www.coindesk.com/tech/cd-20260701",
+    "published_at": "2026-07-01T17:45:00+08:00"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:decrypt",
+    "external_id": "dc-20260701",
+    "title": "$MEAD holders left with nothing after a liquidity pull",
+    "url": "https://decrypt.co/dc-20260701",
+    "published_at": "2026-07-01T18:00:00+08:00"
+  },
+  {
+    "source_kind": "x",
+    "source_id": "x:chain-watcher",
+    "external_id": "x-cw-20260701",
+    "title": "$MEAD 流动性被抽走，疑似跑路",
+    "url": "https://x.com/chain_watcher/status/x-cw-20260701",
+    "published_at": "2026-07-01T18:15:00+08:00",
+    "author": "@chain_watcher"
+  },
+  {
+    "source_kind": "rss",
+    "source_id": "rss:thedefiant",
+    "external_id": "td-20260701",
+    "title": "Mead liquidity pulled, $MEAD down 96%",
+    "url": "https://thedefiant.io/news/defi/td-20260701",
+    "published_at": "2026-07-01T18:30:00+08:00"
+  }
+]
