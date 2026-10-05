@@ -15,8 +15,8 @@ configs:
     locked: true
     sources: []
     schedule:
-      cron: ""
-      interval_hours: 3
+      interval_hours: 0
+      start_hour: 2
       timezone: Asia/Shanghai
       push_delay_minutes: 6
     pipeline:

@@ -16,8 +16,8 @@ configs:
     locked: true
     sources: [geckoterminal, radardex, tolly, gmgn, goplus, sourcify]
     schedule:
-      cron: "0 2,5,8,11,14,17,20,23 * * *"
       interval_hours: 3
+      start_hour: 2
       timezone: Asia/Shanghai
       push_delay_minutes: 6
     pipeline:
