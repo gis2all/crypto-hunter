@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .. import config
+from ..feed.lib import http_policy
 
 T = TypeVar("T")
 
@@ -45,6 +46,20 @@ UA_JSON = {
 }
 UA_HTML = {**UA_JSON, "Accept": "*/*"}
 UA_GMGN = {**UA_HTML, "Referer": "https://gmgn.ai/"}
+
+#: 信息流那条车道用这个: 声明白己是谁, 不冒充浏览器 (AIHOT 的 `DEFAULT_UA`). 它抓的是媒体
+#: 的订阅端点与正文页 —— 那些站点的 robots 与封禁规则按 UA 放行或封禁, 装成 Chrome 是我们替
+#: 读者做的决定, 而不是一个技术细节. 雷达那边的 JSON API 不走这里: 那些站点把 TLS 指纹与 UA
+#: 一起判, 换掉只会静默地少拿到数据. 某一个源确实要别的 UA, 在 sources.yaml 的 `headers` 里写.
+UA_CRAWLER = {
+    "User-Agent": "Mozilla/5.0 (compatible; CryptoHunterBot/1.0)",
+    "Accept": "*/*",
+}
+
+
+def crawler_headers(given: dict | None = None) -> dict:
+    """Feed 车道的请求头: 源自己写了 `headers` 就听它的, 否则申明我们是机器人."""
+    return given or UA_CRAWLER
 
 
 def explorer_headers(explorer: str | None) -> dict:
@@ -211,6 +226,13 @@ def get(
     lane = LANES.get(transport)
     if lane is None:
         raise SourceError("unknown transport: %r" % (transport,))
+    # 出站守卫 (AIHOT 的 `lib/url.ts` + `contracts/http-policy.ts`): 一个来自材料的链接
+    # 不该把我们带到本机、内网或云元数据地址上。归一过的地址继续往下走 —— 两种写法同一个页面
+    # 不该被当成两条材料。
+    try:
+        url = http_policy.guard(url)
+    except http_policy.RefusedURL as exc:
+        raise SourceError("%s -> refused: %s" % (url, exc)) from exc
     last = "no attempt"
     host = urlsplit(url).netloc or "?"
     started = time.monotonic()
@@ -246,6 +268,65 @@ def json_get(
         return json.loads(text)
     except ValueError as exc:
         raise SourceError("%s -> not JSON: %s" % (url, repr(exc)[:80])) from exc
+
+
+def _fetch_meta(url: str, headers: dict, timeout: float, transport: str) -> tuple[int, dict, str]:
+    """The lanes, but keeping the response headers. Not `LANES`: those stay two-valued because
+    the adapters that use them never read a header, and a third lane shape would be a contract
+    change for every one of them."""
+    if transport == "browser":
+        from curl_cffi import requests as curl_requests
+
+        resp = curl_requests.get(url, headers=headers, impersonate=BROWSER, timeout=timeout)
+        return resp.status_code, dict(resp.headers), resp.text
+    resp = _httpx_client().get(url, headers=headers, timeout=timeout)
+    return resp.status_code, dict(resp.headers), resp.text
+
+
+def get_conditional(
+    url: str,
+    headers: dict | None = None,
+    *,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    transport: str = "http",
+    timeout: float = 30.0,
+    tries: int = 3,
+    sleep: float = 0.8,
+) -> tuple[int, dict, str]:
+    """`get`, but conditional and header-aware: answers (status, headers, text).
+
+    304 is a normal answer here rather than a failure. A feed that says "nothing changed" has
+    done its job, and the caller's job is then to leave its cursor alone - which is why this
+    returns the status instead of collapsing the two cases into one string.
+    """
+    try:
+        url = http_policy.guard(url)
+    except http_policy.RefusedURL as exc:
+        raise SourceError("%s -> refused: %s" % (url, exc)) from exc
+    sent = dict(headers or UA_JSON)
+    if etag:
+        sent["If-None-Match"] = etag
+    if last_modified:
+        sent["If-Modified-Since"] = last_modified
+    last = "no attempt"
+    host = urlsplit(url).netloc or "?"
+    started = time.monotonic()
+    for attempt in range(max(1, tries)):
+        try:
+            pacer(url).wait()
+            status, heads, text = _fetch_meta(url, sent, timeout, transport)
+            if status in (200, 304):
+                _tally(host, "ok", time.monotonic() - started)
+                return status, heads, text
+            last = "HTTP %s" % status
+        except Exception as exc:  # network, TLS, timeout: all retryable
+            last = repr(exc)[:120]
+        _tally(host, "retry")
+        if attempt + 1 < tries:
+            time.sleep(sleep)
+    _tally(host, "fail", time.monotonic() - started)
+    raise SourceError("%s -> %s" % (url, last))
 
 
 _cache: dict[str, dict] | None = None
