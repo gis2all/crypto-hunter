@@ -565,6 +565,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Audit
+         * @description 最近的几笔改动 (2.8): 谁在什么时候把哪一格改成了什么。
+         */
+        get: operations["read_audit_api_v1_system_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/models": {
         parameters: {
             query?: never;
@@ -636,6 +656,770 @@ export interface paths {
          *     session from two strings that look like one.
          */
         post: operations["post_x_api_v1_system_x_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/taxonomy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Taxonomy
+         * @description 筛选栏自己的词表.
+         *
+         *     页面不认识任何一个类别: 它是画出来的, 不是写死的. 加一个类别只改 `feed/taxonomy.py`,
+         *     前端一个字节都不动 (CLAUDE.md 2.3.3).
+         */
+        get: operations["read_taxonomy_api_v1_feed_taxonomy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Items
+         * @description 全部动态 (scope=all) 与精选 (scope=curated), 按天分组.
+         *
+         *     两个视图共用一条路由和一份形状, 因为它们问的是同一批条目的两个问题: "窗口里有什么" 与
+         *     "其中哪些够得上精选". 分成两条路由, 两个形状很快就会各自长出对方没有的字段.
+         *
+         *     分页走游标 (`next_cursor`): 这一秒新来一条, OFFSET 会让后面的每一页都错位一次。读不懂的
+         *     游标报 422 而不是退回第一页 —— 退回第一页会让"翻到底"变成一个死循环。
+         */
+        get: operations["read_items_api_v1_feed_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Hot
+         * @description 热点榜: 同一批条目先聚成事件, 再按热度排.
+         *
+         *     排序在服务端, 因为热度是 `sources` (有几家独立来源在说) 折扣上时间算出来的, 而"几家"
+         *     这个数页面看不到也不该自己算.
+         *
+         *     读的是**写下来的那份榜** (5 分钟内的请求读同一份), 没有或过期才现算一份再落库
+         *     (snapshot_heat.hot_payload / AIHOT 的 `hot.rank` 每 5 分钟一趟): 一次请求算一遍, 卡片上
+         *     的名次和详情页的"榜内第 N 名"迟早会对不上.
+         */
+        get: operations["read_hot_api_v1_feed_hot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Topics
+         * @description 主题页左栏的目录: 实体名录分组, 每组带一个窗口内的条数.
+         *
+         *     它不按类别分, 因为类别是"这条东西是什么" (每条恰好一个, 全部动态的筛选栏已经在用),
+         *     而这里是"这条东西牵了谁" (一条可以牵好几个, 也可以一个都不牵). 两个问题, 两份词表.
+         */
+        get: operations["read_topics_api_v1_feed_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/topics/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Topic Items
+         * @description 一条线上的条目, 按天分组 —— 主题页中栏那一列.
+         *
+         *     `topic` 走查询串而不是路径段: `BNB Chain` 这样的名字里有空格, 而路径段里出现空格之后,
+         *     每一种客户端都会各自决定怎么转义它一次.
+         */
+        get: operations["read_topic_items_api_v1_feed_topics_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Item
+         * @description 一条的整页.
+         *
+         *     按 id 取, 不是把列表里那个对象原样传下来: 详情页要印的东西列表 payload 里没有, 而"传下来"
+         *     会让详情页依赖"用户是从哪个列表点进来的", 三页就长出三个形状.
+         */
+        get: operations["read_item_api_v1_feed_item_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/story": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Story
+         * @description 一件事的整页.
+         *
+         *     名次在这里补: 它是"这件事在热点榜上排第几", 榜单的次序只有后端算得出来, 页面看不到.
+         */
+        get: operations["read_story_api_v1_feed_story_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Sources
+         * @description 源体检 (1.9): 每个源的名字、间隔、连续失败与最近一次抓取。
+         *
+         *     一个连续失败的源在页面上必须看得见 —— 只有 `fail_count` 一个数在库里,
+         *     没有读口的时候,"这个源三天没吐东西"就只能靠人去查表。
+         */
+        get: operations["read_sources_api_v1_feed_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Eval
+         * @description 金标评测 (5.22): 人工标好的那份样本, 与现在的规则对一遍。
+         *
+         *     读一下就算, 不写库也不调模型: 它量的是回归 —— 改了规则之后, 那些原本判对的
+         *     还对不对。对不上的一条一条列出来, 因为「不合格」比「合格率 91%」更能告诉人改哪里。
+         */
+        get: operations["read_eval_api_v1_feed_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Eligibility
+         * @description 资格的名单 (5.5): 一共有哪几道门槛、各自问什么、为什么是这个口径。
+         *
+         *     它是一张**表**而不是一次判定: 判在 `eligibility.py` 一处做, 这里只把那一处读出来。
+         */
+        get: operations["read_eligibility_api_v1_feed_eligibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Availability
+         * @description 星标有效性 (5.18): 这些 id 里哪些还在、哪些已经不公开了。
+         *
+         *     星标存在浏览器里, 而一条东西可以在被星标之后下架。页面不能自己猜"它还在吧"。
+         */
+        get: operations["read_availability_api_v1_feed_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/v1": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read V1
+         * @description v1 快照与增量 (5.14): `since` 之后的新条目 + 下一次要带的游标。
+         */
+        get: operations["read_v1_api_v1_feed_v1_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Agent
+         * @description 给 agent 读的一份 (5.13): 比 v1 多正文的纯文本, 少版式字段。
+         */
+        get: operations["read_agent_api_v1_feed_agent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/item.md": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Item Markdown
+         * @description 一条的 Markdown 导出 (5.17): 和页面同一套可见性与许可规则。
+         */
+        get: operations["read_item_markdown_api_v1_feed_item_md_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/editions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Editions
+         * @description The issues of one kind that have been put out, newest first. No bodies: a list draws a
+         *     mark, a headline and a time, and nothing else.
+         */
+        get: operations["list_editions_api_v1_feed_editions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/editions/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Latest Edition
+         * @description The newest issue, so a first visit has something to draw.
+         *
+         *     Declared above `/editions/{edition_id}` on purpose: FastAPI matches routes in the order they
+         *     are written, and the other one would read "latest" as an id and answer 404 - the same trap
+         *     `api/v1/lookup.py` documents for its own two routes.
+         */
+        get: operations["read_latest_edition_api_v1_feed_editions_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/editions/{edition_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Edition
+         * @description One issue, body and all.
+         */
+        get: operations["read_edition_api_v1_feed_editions__edition_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/admin/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Admin Session
+         * @description 现在是设防还是不设防, 以及这一枚 cookie 算不算登录。
+         *
+         *     页面拿它决定画不画那个密码框 —— 而不是让每一个请求自己去猜 401 的意思。
+         */
+        get: operations["read_admin_session_api_v1_feed_admin_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/admin/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Login
+         * @description 答对口令换一枚 cookie。答错就是 401 —— 不告诉对方「差一点」还是「差很多」。
+         */
+        post: operations["admin_login_api_v1_feed_admin_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/admin/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Logout */
+        post: operations["admin_logout_api_v1_feed_admin_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Admin Settings
+         * @description 管理台能改的那几个键 (5.12): 每一个都是这台机器本地的配置,
+         *     不是清单里的一行 (它们是 key, 进 git 就等于公开)。
+         */
+        get: operations["read_admin_settings_api_v1_feed_admin_settings_get"];
+        /**
+         * Write Admin Settings
+         * @description 改管理台的几个键。空串 = 清掉这一个键 (而不是写一个空串进去)。
+         *     每一次写都落一条审计 —— 改口令这件事本该有人记得。
+         */
+        put: operations["write_admin_settings_api_v1_feed_admin_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/admin/image-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Image Secret
+         * @description 换一枚图片代理的签名密钥 (5.9)。换完之前发出去的链接全部失效 ——
+         *     所以它是一个需要登录的动作, 不是一个本地的小技巧。
+         */
+        post: operations["rotate_image_secret_api_v1_feed_admin_image_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run One Pass
+         * @description Read every source, work out what happened, and put out an issue.
+         *
+         *     Answers with the issue that is now on file, which is not always a new one: running the same
+         *     window twice answers with the issue the first run published (store/db.py `feed_edition_put`),
+         *     because a reader who already read this morning is not owed a second draft of it.
+         */
+        post: operations["run_one_pass_api_v1_feed_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Overrides
+         * @description 人工归属决定 (4.8b): 哪些条被人钉住了、谁钉的、什么时候。
+         */
+        get: operations["read_overrides_api_v1_feed_overrides_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Override
+         * @description 记一条人工决定: 这一条不再自动归组, 只有显式「重新分组」才会再判它。
+         *
+         *     人的一票就是结论 —— 不先问「它现在归在哪」; 自动分组在查询那一侧已经排除它。
+         */
+        post: operations["put_override_api_v1_feed_override_post"];
+        /**
+         * Drop Override
+         * @description 撤掉一条人工决定: 下一次自动分组再判它一遍。
+         */
+        delete: operations["drop_override_api_v1_feed_override_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/ops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ops
+         * @description 运维读口 (5.11): 定时活儿什么状态、最近几趟跑成什么样、抓取与审计的尾巴。
+         *
+         *     给值守的人和机器看的, 不是页面的一部分: 一条活儿坏掉, 只有这里回答得了
+         *     「它上一次跑在哪个槽、为什么没跑」。
+         */
+        get: operations["read_ops_api_v1_feed_ops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ledger
+         * @description 精选台账 (5.6): 哪一条什么时候上过首页、又什么时候下来了。
+         *
+         *     给一个 `item_id` 就只看那一条的历史 —— 它是跟着定时的一趟写的 (jobs 'selected-ledger'),
+         *     而不是请求这一下现算的。
+         */
+        get: operations["read_ledger_api_v1_feed_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Settings
+         * @description 出刊节奏与两道预算 (8.6 / 3.4)。出刊那三行留空 = 这一期不出, 到点出的是刚过去的那一期。
+         */
+        get: operations["read_settings_api_v1_feed_settings_get"];
+        /**
+         * Write Settings
+         * @description 存下改动, 然后把文件现在的样子答回去。
+         *
+         *     整份表单回传而不是一个「已保存」: 一次保存可能让某一格看起来和输入的不一样
+         *     (一个时刻被写回 `08:00`, 一格清成 0), 页面要画的是写进去的东西, 不是发出去的东西。
+         *     改这个文件不用重启 —— 每一轮 tick 现读一次 (见 `pipeline.py`)。
+         */
+        put: operations["write_settings_api_v1_feed_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sitemap.xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sitemap */
+        get: operations["sitemap_sitemap_xml_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/robots.txt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Robots */
+        get: operations["robots_robots_txt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llms.txt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Llms */
+        get: operations["llms_llms_txt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feeds/{channel}.xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feed */
+        get: operations["feed_feeds__channel__xml_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Describe
+         * @description MCP 出口 (routes/mcp) 的人读版说明: 有哪些工具、各要什么参数。
+         *
+         *     真正的协议在 POST 上。这一条存在是因为一个只能用 curl 的出口
+         *     不是一个能被人检查的出口。
+         */
+        get: operations["mcp_describe_api_mcp_get"];
+        put?: never;
+        /**
+         * Mcp Call
+         * @description JSON-RPC 2.0: initialize / tools/list / tools/call / ping。只读, 不写库、不调模型。
+         */
+        post: operations["mcp_call_api_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/img-proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Img Proxy
+         * @description 签名图片代理 (5.9)。未签名 / 签名错 / 过期一律 403, 一个字节都不去上游取。
+         */
+        get: operations["img_proxy_api_img_proxy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/og/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Og */
+        get: operations["og_og__item_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1006,6 +1790,1926 @@ export interface components {
             /** Updated At */
             updated_at: string;
             card: components["schemas"]["CardOut"];
+        };
+        /** FeedAdminLoginIn */
+        FeedAdminLoginIn: {
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /**
+         * FeedAdminSessionOut
+         * @description 管理台的开关 (5.12): 设不设防, 以及这一个请求算不算登录。
+         *
+         *     两个都要回答 —— 只回后一个的话, 页面在没配口令时看不出自己是不是正在裸奔。
+         */
+        FeedAdminSessionOut: {
+            /**
+             * Guarded
+             * @default false
+             */
+            guarded: boolean;
+            /**
+             * Signed In
+             * @default false
+             */
+            signed_in: boolean;
+        };
+        /**
+         * FeedAdminSettingOut
+         * @description 一个本地键在页面上的样子: 名字、配没配、以及一个掩码。
+         *
+         *     `masked` 而不是明文: 这几个键都是密钥, 而一个能在页面上读出来的密钥
+         *     就不再是密钥。页面要的只是「这一格空不空」。
+         */
+        FeedAdminSettingOut: {
+            /** Key */
+            key: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Configured
+             * @default false
+             */
+            configured: boolean;
+            /**
+             * Masked
+             * @default
+             */
+            masked: string;
+        };
+        /** FeedAdminSettingsIn */
+        FeedAdminSettingsIn: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: string;
+            };
+        };
+        /** FeedAdminSettingsOut */
+        FeedAdminSettingsOut: {
+            /**
+             * Settings
+             * @default []
+             */
+            settings: components["schemas"]["FeedAdminSettingOut"][];
+        };
+        /**
+         * FeedCategoryOut
+         * @description 筛选栏上的一个类别: 它的名字, 以及这一类在当前这批里有多少条.
+         *
+         *     `section` 是它在一份刊物里归到哪一节 —— 那是类别的属性, 不是页面的属性, 所以它跟着
+         *     类别走 (日报还没做, 见 DESIGN.md 8).
+         */
+        FeedCategoryOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Section
+             * @default
+             */
+            section: string;
+        };
+        /**
+         * FeedChannelOut
+         * @description 筛选栏上的一路: 它的键, 以及这一路在当前这批里有多少条.
+         *
+         *     `all` / `news` / `x` / `firstParty` 由后端给 (AIHOT 的 `CHANNEL_KEYS`): 页面不认识
+         *     任何一路, 加一路只改 `feed/rules.py`, 前端一个字节都不动.
+         */
+        FeedChannelOut: {
+            /** Key */
+            key: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+        };
+        /**
+         * FeedCoverageOut
+         * @description 写作站的覆盖率 (2.3b): 每一档各有多少条。
+         *
+         *     档名就是 `llm_stage` (没问过的是 `none`); 不合并成一个百分比 —— 卡在哪一步看得见。
+         */
+        FeedCoverageOut: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Stages
+             * @default {}
+             */
+            stages: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * FeedDayOut
+         * @description 一天. 日期与星期是这一组的头, 条数是右边那个数.
+         */
+        FeedDayOut: {
+            /** Date */
+            date: string;
+            /** Date Label */
+            date_label: string;
+            /** Weekday Label */
+            weekday_label: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FeedListItemOut"][];
+        };
+        /**
+         * FeedDisplayTagOut
+         * @description 卡片上的一格角标: 印什么字, 以及点不点得动.
+         */
+        FeedDisplayTagOut: {
+            /** Text */
+            text: string;
+            /**
+             * Entity
+             * @default false
+             */
+            entity: boolean;
+        };
+        /**
+         * FeedEditionOut
+         * @description One issue.
+         *
+         *     `kind` and `key` are the period it is about: `key` is a name a reader recognises
+         *     (`2026-10-03` / `2026-W40` / `2026-10`), which is why the page does not derive one - a week
+         *     number cannot be recovered from a timestamp without re-implementing ISO weeks.
+         *
+         *     `seen` and `entries` are different numbers on purpose: the window held `seen` records and
+         *     `entries` of them were worth printing. A quiet morning is an issue that read four hundred
+         *     things and printed three, which is a finding - not the same screen as a run that failed.
+         */
+        FeedEditionOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Key */
+            key: string;
+            /** Window From */
+            window_from: string;
+            /** Window To */
+            window_to: string;
+            /**
+             * Seen
+             * @default 0
+             */
+            seen: number;
+            /**
+             * Issue Number
+             * @default 0
+             */
+            issue_number: number;
+            /**
+             * Headline
+             * @default
+             */
+            headline: string;
+            /**
+             * Lead
+             * @default
+             */
+            lead: string;
+            /**
+             * Metrics
+             * @default []
+             */
+            metrics: components["schemas"]["FeedMetricOut"][];
+            /** Created At */
+            created_at: string;
+            /**
+             * Entries
+             * @default []
+             */
+            entries: components["schemas"]["FeedEventOut"][];
+            /**
+             * Highlights
+             * @default []
+             */
+            highlights: components["schemas"]["FeedHighlightOut"][];
+            /**
+             * Flashes
+             * @default []
+             */
+            flashes: components["schemas"]["FeedFlashOut"][];
+            /**
+             * Prev
+             * @default
+             */
+            prev: string;
+            /**
+             * Next
+             * @default
+             */
+            next: string;
+        };
+        /**
+         * FeedEditionRowOut
+         * @description One issue in the list, without its body: a list draws a mark, a title and a time.
+         *
+         *     `headline` and `issue_number` are here rather than derived on the page for the same reason
+         *     they are stored: the list loads the last few dozen issues, and neither "what was this issue
+         *     about" nor "which issue is this" can be read off a truncated list.
+         */
+        FeedEditionRowOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Key */
+            key: string;
+            /** Window From */
+            window_from: string;
+            /** Window To */
+            window_to: string;
+            /** Seen */
+            seen: number;
+            /** Entries */
+            entries: number;
+            /** Issue Number */
+            issue_number: number;
+            /** Headline */
+            headline: string;
+            /** Created At */
+            created_at: string;
+        };
+        /**
+         * FeedEligibilityOut
+         * @description 资格的全体 (5.5): 名单 + 那两条数字线。
+         */
+        FeedEligibilityOut: {
+            /**
+             * Release Delay Seconds
+             * @default 0
+             */
+            release_delay_seconds: number;
+            /**
+             * Curated Min Score
+             * @default 0
+             */
+            curated_min_score: number;
+            /**
+             * Gates
+             * @default []
+             */
+            gates: components["schemas"]["FeedGateOut"][];
+        };
+        /**
+         * FeedEvalAxisOut
+         * @description 金标评测里一个轴的成绩 (5.22): 这一类判断对了几条。
+         */
+        FeedEvalAxisOut: {
+            /** Axis */
+            axis: string;
+            /**
+             * Passed
+             * @default 0
+             */
+            passed: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
+         * FeedEvalMissOut
+         * @description 一条没对上的样本: 人标的是什么, 机器答的是什么, 以及为什么这样标。
+         */
+        FeedEvalMissOut: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Axis
+             * @default
+             */
+            axis: string;
+            /** Want */
+            want?: unknown;
+            /** Got */
+            got?: unknown;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+        };
+        /**
+         * FeedEvalOut
+         * @description 金标评测 (5.22): 人工标好的样本与现在的规则对一遍的结果。
+         */
+        FeedEvalOut: {
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Passed
+             * @default 0
+             */
+            passed: number;
+            /**
+             * Agreement
+             * @default 0
+             */
+            agreement: number;
+            /**
+             * Axes
+             * @default []
+             */
+            axes: components["schemas"]["FeedEvalAxisOut"][];
+            /**
+             * Misses
+             * @default []
+             */
+            misses: components["schemas"]["FeedEvalMissOut"][];
+        };
+        /**
+         * FeedEventOut
+         * @description One thing that happened, and how many independent parties said so.
+         *
+         *     `sources` is the count everything downstream is built on, and it is deliberately not
+         *     `len(discoveries)`: one wire service reprinted nine times is one party, and a page that
+         *     showed nine would make a story look hot when it is not. `heat` is that count discounted by
+         *     how long ago the last word came in.
+         *
+         *     `judgement` is the reading pass's answer, and it travels with the event rather than being
+         *     baked into the text: `certainty` is the one field a reader must be able to see, because a
+         *     fact and a rumour of one look identical once they are summarised.
+         */
+        FeedEventOut: {
+            /** Identity Key */
+            identity_key: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /**
+             * Kind Label
+             * @default
+             */
+            kind_label: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** First Seen At */
+            first_seen_at: string;
+            /** Last Seen At */
+            last_seen_at: string;
+            /**
+             * Sources
+             * @default 0
+             */
+            sources: number;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+            judgement?: components["schemas"]["FeedJudgementOut"] | null;
+            /**
+             * Discoveries
+             * @default []
+             */
+            discoveries: components["schemas"]["FeedItemOut"][];
+        };
+        /**
+         * FeedFaceOut
+         * @description 参与者头像 (AIHOT 的 `Faces.tsx`): 一家一枚, 没图用首字母。
+         */
+        FeedFaceOut: {
+            /**
+             * Source Id
+             * @default
+             */
+            source_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Initial
+             * @default A
+             */
+            initial: string;
+            /**
+             * Icon
+             * @default
+             */
+            icon: string;
+        };
+        /** FeedFetchRunOut */
+        FeedFetchRunOut: {
+            /** Id */
+            id: number;
+            /** Source Id */
+            source_id: string;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Found
+             * @default 0
+             */
+            found: number;
+            /**
+             * Created
+             * @default 0
+             */
+            created: number;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * FeedFlashOut
+         * @description 纸尾那一行快讯 (AIHOT 的 `flashes`): 只够一行的一条, 点开才是详情.
+         */
+        FeedFlashOut: {
+            /** Identity Key */
+            identity_key: string;
+            /** Title */
+            title: string;
+            /**
+             * Last Seen At
+             * @default
+             */
+            last_seen_at: string;
+        };
+        /**
+         * FeedGateOut
+         * @description 门槛本身 (5.5): 叫什么、问什么、为什么是这个口径。
+         */
+        FeedGateOut: {
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+            /**
+             * Needs
+             * @default []
+             */
+            needs: string[];
+        };
+        /**
+         * FeedGateResultOut
+         * @description 一道门槛在**这一条**上的结论 (5.5). `ok` 是 null = 这一层答不上来, 不是"没过"。
+         */
+        FeedGateResultOut: {
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Ok */
+            ok?: boolean | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /**
+         * FeedHeatPointOut
+         * @description 热度曲线上的一格 (AIHOT `heatSeries` 的 `HeatPoint`): 一个小时的指数与参与者家数。
+         */
+        FeedHeatPointOut: {
+            /** Hour */
+            hour: string;
+            /**
+             * Heat
+             * @default 0
+             */
+            heat: number;
+            /**
+             * Participants
+             * @default 0
+             */
+            participants: number;
+        };
+        /**
+         * FeedHighlightOut
+         * @description 这一期的要点一条 (AIHOT 的 `highlights`): 标题、一句摘要、几家在说.
+         */
+        FeedHighlightOut: {
+            /** Identity Key */
+            identity_key: string;
+            /** Title */
+            title: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Sources
+             * @default 0
+             */
+            sources: number;
+            /**
+             * Kind Label
+             * @default
+             */
+            kind_label: string;
+        };
+        /** FeedHotOut */
+        FeedHotOut: {
+            /**
+             * Window Hours
+             * @default 0
+             */
+            window_hours: number;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Stories
+             * @default []
+             */
+            stories: components["schemas"]["FeedStoryOut"][];
+        };
+        /**
+         * FeedItemDetailOut
+         * @description 一条的整页.
+         *
+         *     继承列表那一行而不是另写一份: 同一件事写两遍, 迟早有一边多一个字段, 而读的人不知道哪边
+         *     是对的. 这里只加**只有详情页看得见**的那几样.
+         */
+        FeedItemDetailOut: {
+            /** Id */
+            id: string;
+            /**
+             * Story Id
+             * @default
+             */
+            story_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Title Original
+             * @default
+             */
+            title_original: string;
+            /**
+             * Written
+             * @default false
+             */
+            written: boolean;
+            /** Url */
+            url: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Category Label
+             * @default
+             */
+            category_label: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Entities
+             * @default []
+             */
+            entities: string[];
+            /**
+             * Display Tags
+             * @default []
+             */
+            display_tags: components["schemas"]["FeedDisplayTagOut"][];
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * First Party
+             * @default false
+             */
+            first_party: boolean;
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Source Kind
+             * @default
+             */
+            source_kind: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Published At */
+            published_at: string;
+            /**
+             * Time Label
+             * @default
+             */
+            time_label: string;
+            /**
+             * Media
+             * @default []
+             */
+            media: string[];
+            /**
+             * Other Reports
+             * @default []
+             */
+            other_reports: components["schemas"]["FeedOtherReportOut"][];
+            /**
+             * Other Report Count
+             * @default 0
+             */
+            other_report_count: number;
+            /**
+             * Channel
+             * @default
+             */
+            channel: string;
+            /**
+             * Body Mode
+             * @default summary
+             */
+            body_mode: string;
+            /**
+             * Has Page
+             * @default true
+             */
+            has_page: boolean;
+            x_view?: components["schemas"]["FeedXViewOut"] | null;
+            /**
+             * Analysis Scope
+             * @default
+             */
+            analysis_scope: string;
+            /**
+             * Scope Label
+             * @default
+             */
+            scope_label: string;
+            /**
+             * Body Html
+             * @default
+             */
+            body_html: string;
+            /**
+             * Body Zh
+             * @default
+             */
+            body_zh: string;
+            /**
+             * Body Complete
+             * @default false
+             */
+            body_complete: boolean;
+            /**
+             * Domain
+             * @default
+             */
+            domain: string;
+            /**
+             * Published Label
+             * @default
+             */
+            published_label: string;
+            /**
+             * Published Ago
+             * @default
+             */
+            published_ago: string;
+            /**
+             * Story Title
+             * @default
+             */
+            story_title: string;
+            /**
+             * Followups
+             * @default []
+             */
+            followups: components["schemas"]["FeedOtherReportOut"][];
+            /**
+             * Followup Count
+             * @default 0
+             */
+            followup_count: number;
+            eligibility?: components["schemas"]["FeedGateResultOut"] | null;
+            /**
+             * Mentions
+             * @default []
+             */
+            mentions: components["schemas"]["FeedMentionOut"][];
+            /**
+             * Outline
+             * @default []
+             */
+            outline: components["schemas"]["FeedOutlineOut"][];
+        };
+        /**
+         * FeedItemOut
+         * @description One source saying one thing, exactly as it was read.
+         *
+         *     The raw record, not a summary of it: an issue is allowed to be wrong about what a thing
+         *     means, but it must never be wrong about who said it and when. This is the shape it can be
+         *     checked against.
+         */
+        FeedItemOut: {
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string;
+            /** External Id */
+            external_id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Published At */
+            published_at: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+        };
+        /**
+         * FeedItemsOut
+         * @description 全部动态 (scope=all) 与精选 (scope=curated) 共用的一份答案.
+         */
+        FeedItemsOut: {
+            /** Scope */
+            scope: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Channel
+             * @default all
+             */
+            channel: string;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 0
+             */
+            page_size: number;
+            /**
+             * Next Cursor
+             * @default
+             */
+            next_cursor: string;
+            /**
+             * Window Hours
+             * @default 0
+             */
+            window_hours: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Filtered
+             * @default 0
+             */
+            filtered: number;
+            /**
+             * Shown
+             * @default 0
+             */
+            shown: number;
+            /**
+             * Channels
+             * @default []
+             */
+            channels: components["schemas"]["FeedChannelOut"][];
+            /**
+             * Categories
+             * @default []
+             */
+            categories: components["schemas"]["FeedCategoryOut"][];
+            /**
+             * Days
+             * @default []
+             */
+            days: components["schemas"]["FeedDayOut"][];
+        };
+        /** FeedJobOut */
+        FeedJobOut: {
+            /** Name */
+            name: string;
+            /** Cadence Minutes */
+            cadence_minutes: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Last Slot */
+            last_slot?: string | null;
+            /** Last Run At */
+            last_run_at?: string | null;
+            /** Last Status */
+            last_status?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+        };
+        /** FeedJobRunOut */
+        FeedJobRunOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Slot */
+            slot: string;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Detail
+             * @default {}
+             */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * FeedJudgementOut
+         * @description What the reading pass decided about one event.
+         *
+         *     A model rather than a bare dict (the rule this file opens with): an untyped answer reaches
+         *     the page as `unknown`, the page has to guess, and guessing is how a label ends up hardcoded
+         *     in the frontend and drifting from the rule that produced it.
+         *
+         *     `certainty_label` is the whole reason this is a contract. An event two parties reported and
+         *     an event one party reported read identically once each is one sentence long, and this is the
+         *     field that keeps them from looking identical on the page.
+         */
+        FeedJudgementOut: {
+            /** Provider */
+            provider: string;
+            /** Summary */
+            summary: string;
+            /** Why */
+            why: string;
+            /** Certainty */
+            certainty: string;
+            /** Certainty Label */
+            certainty_label: string;
+        };
+        /** FeedLedgerOut */
+        FeedLedgerOut: {
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["FeedLedgerRowOut"][];
+        };
+        /**
+         * FeedLedgerRowOut
+         * @description 精选台账上的一笔 (5.6): 这一条什么时候进的首页 / 什么时候下来的.
+         */
+        FeedLedgerRowOut: {
+            /** Id */
+            id: number;
+            /** Item Id */
+            item_id: string;
+            /** Op */
+            op: string;
+            /** Changed At */
+            changed_at: string;
+            /** Visible At */
+            visible_at: string;
+        };
+        /**
+         * FeedListItemOut
+         * @description 列表里的一行, 全部动态与精选共用.
+         *
+         *     这是**条目**不是事件: 一个条目有唯一的一个来源、唯一的一个时刻、唯一的一个类别, 而这三样
+         *     正是一个读者扫列表时看的东西. 要读"多少家都在说", 看热点榜.
+         *
+         *     `score` 是这一行的分量 (0-100), `reason` 是"为什么值得看", `summary` 是它说了什么.
+         *     三者都随行走, 页面不再查任何地方.
+         */
+        FeedListItemOut: {
+            /** Id */
+            id: string;
+            /**
+             * Story Id
+             * @default
+             */
+            story_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Title Original
+             * @default
+             */
+            title_original: string;
+            /**
+             * Written
+             * @default false
+             */
+            written: boolean;
+            /** Url */
+            url: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Category Label
+             * @default
+             */
+            category_label: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Entities
+             * @default []
+             */
+            entities: string[];
+            /**
+             * Display Tags
+             * @default []
+             */
+            display_tags: components["schemas"]["FeedDisplayTagOut"][];
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * First Party
+             * @default false
+             */
+            first_party: boolean;
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name: string;
+            /**
+             * Source Kind
+             * @default
+             */
+            source_kind: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Published At */
+            published_at: string;
+            /**
+             * Time Label
+             * @default
+             */
+            time_label: string;
+            /**
+             * Media
+             * @default []
+             */
+            media: string[];
+            /**
+             * Other Reports
+             * @default []
+             */
+            other_reports: components["schemas"]["FeedOtherReportOut"][];
+            /**
+             * Other Report Count
+             * @default 0
+             */
+            other_report_count: number;
+            /**
+             * Channel
+             * @default
+             */
+            channel: string;
+            /**
+             * Body Mode
+             * @default summary
+             */
+            body_mode: string;
+            /**
+             * Has Page
+             * @default true
+             */
+            has_page: boolean;
+            x_view?: components["schemas"]["FeedXViewOut"] | null;
+            /**
+             * Analysis Scope
+             * @default
+             */
+            analysis_scope: string;
+            /**
+             * Scope Label
+             * @default
+             */
+            scope_label: string;
+        };
+        /**
+         * FeedMentionOut
+         * @description 复合分析提到的一件事 (4.9b): 事件 id、标题与它挂在哪个事实上.
+         */
+        FeedMentionOut: {
+            /**
+             * Story Id
+             * @default
+             */
+            story_id: string;
+            /**
+             * Story Title
+             * @default
+             */
+            story_title: string;
+            /**
+             * Fact Id
+             * @default 0
+             */
+            fact_id: number;
+        };
+        /**
+         * FeedMetricOut
+         * @description 报头上的一个数, 连同它旁边那个词.
+         *
+         *     The word is not decoration and it is not the page's to write: "个来源" means "independent
+         *     parties after dedupe by source_id", which is a fact about a rule in `heat.py`. A page that
+         *     wrote its own word would be restating that rule a second time, and it would drift.
+         */
+        FeedMetricOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * FeedOpsOut
+         * @description 运维读口 (5.11): 定时活儿的健康、最近几趟活儿与抓取、最近的审计。
+         */
+        FeedOpsOut: {
+            /**
+             * Jobs
+             * @default []
+             */
+            jobs: components["schemas"]["FeedJobOut"][];
+            /**
+             * Job Runs
+             * @default []
+             */
+            job_runs: components["schemas"]["FeedJobRunOut"][];
+            /**
+             * Fetch Runs
+             * @default []
+             */
+            fetch_runs: components["schemas"]["FeedFetchRunOut"][];
+            /**
+             * Audit
+             * @default []
+             */
+            audit: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * @default {
+             *       "total": 0,
+             *       "stages": {}
+             *     }
+             */
+            coverage: components["schemas"]["FeedCoverageOut"];
+            /**
+             * Queue
+             * @default {}
+             */
+            queue: {
+                [key: string]: unknown;
+            };
+            /**
+             * Deliveries
+             * @default []
+             */
+            deliveries: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * FeedOtherReportOut
+         * @description 同一件事里, 别家还怎么说过它 —— 卡片上「另有 N 家信源报道」展开后的那一行.
+         *
+         *     署名是**来源**不是作者: 折叠行数的是"几家在说", 所以这一列只到来源为止.
+         */
+        FeedOtherReportOut: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Time Label
+             * @default
+             */
+            time_label: string;
+        };
+        /**
+         * FeedOutlineOut
+         * @description 正文目录的一条 (AIHOT 的 `OutlineEntry`): 锚点、标题、层级.
+         *
+         *     锚点是后端注进正文的 (`sec-N`), 所以页面点目录只要滚到那个 id 上, 不必自己认标题.
+         */
+        FeedOutlineOut: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+            /**
+             * Level
+             * @default 2
+             */
+            level: number;
+        };
+        /**
+         * FeedOverrideIn
+         * @description 人写下的一条决定: 这一条不许自动归组。actor 与 reason 是追查的两个键。
+         */
+        FeedOverrideIn: {
+            /** Source Id */
+            source_id: string;
+            /** External Id */
+            external_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+        };
+        /**
+         * FeedOverrideRowOut
+         * @description 一条人工归属决定 (4.8b). 自动分组读到就跳过这条, 只有显式「重新分组」才清。
+         */
+        FeedOverrideRowOut: {
+            /** Source Id */
+            source_id: string;
+            /** External Id */
+            external_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /** Created At */
+            created_at: string;
+        };
+        /** FeedOverridesOut */
+        FeedOverridesOut: {
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["FeedOverrideRowOut"][];
+        };
+        /**
+         * FeedQuotedOut
+         * @description 被引的那条帖子 (AIHOT 的 `XPostView.quoted`)。
+         *
+         *     `translation` 是给读者看的那一份 (3.6): 别人的原话单独走一遍翻译, 不是正文那一段的译文。
+         *     它为空就是还没译上, 页面只印原文.
+         */
+        FeedQuotedOut: {
+            /**
+             * Handle
+             * @default
+             */
+            handle: string;
+            /**
+             * Author Name
+             * @default
+             */
+            author_name: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /**
+             * Translation
+             * @default
+             */
+            translation: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /**
+         * FeedSettingsIn
+         * @description A patch keyed by each row's own path in the file (`llm.maxItems`).
+         */
+        FeedSettingsIn: {
+            /** Patch */
+            patch?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * FeedStoryDetailOut
+         * @description 一件事的整页.
+         *
+         *     `items` 是卡上那份"谁在说", `days` 是同一批报道按天的分组 —— 两个投影来自同一份列表,
+         *     算在同一个函数里, 所以不可能对不上; 页面读 `days`.
+         */
+        FeedStoryDetailOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Latest
+             * @default
+             */
+            latest: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Category Label
+             * @default
+             */
+            category_label: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Entities
+             * @default []
+             */
+            entities: string[];
+            /**
+             * Display Tags
+             * @default []
+             */
+            display_tags: components["schemas"]["FeedDisplayTagOut"][];
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * Sources
+             * @default 0
+             */
+            sources: number;
+            /**
+             * Participants
+             * @default 0
+             */
+            participants: number;
+            /**
+             * Source Count
+             * @default 0
+             */
+            source_count: number;
+            /**
+             * Signal Count
+             * @default 0
+             */
+            signal_count: number;
+            /**
+             * Source Names
+             * @default []
+             */
+            source_names: string[];
+            /**
+             * Heat Index
+             * @default 0
+             */
+            heat_index: number;
+            /**
+             * Series
+             * @default []
+             */
+            series: (number | null)[];
+            /**
+             * Trend
+             * @default
+             */
+            trend: string;
+            /** Trend Pct */
+            trend_pct?: number | null;
+            /**
+             * Hot Badges
+             * @default []
+             */
+            hot_badges: string[];
+            /** First Seen At */
+            first_seen_at: string;
+            /** Last Seen At */
+            last_seen_at: string;
+            /**
+             * Lead Source
+             * @default
+             */
+            lead_source: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FeedStoryItemOut"][];
+            /**
+             * Item Count
+             * @default 0
+             */
+            item_count: number;
+            /**
+             * Faces
+             * @default []
+             */
+            faces: components["schemas"]["FeedFaceOut"][];
+            /**
+             * Rank
+             * @default 0
+             */
+            rank: number;
+            /**
+             * Badges
+             * @default []
+             */
+            badges: string[];
+            /**
+             * Summary
+             * @default []
+             */
+            summary: string[];
+            /**
+             * Recent Sources
+             * @default 0
+             */
+            recent_sources: number;
+            /**
+             * Recent Reports
+             * @default 0
+             */
+            recent_reports: number;
+            /**
+             * First Seen Ago
+             * @default
+             */
+            first_seen_ago: string;
+            /**
+             * Last Seen Ago
+             * @default
+             */
+            last_seen_ago: string;
+            /**
+             * Heat
+             * @default []
+             */
+            heat: components["schemas"]["FeedHeatPointOut"][];
+            /**
+             * Related
+             * @default []
+             */
+            related: components["schemas"]["FeedStoryRefOut"][];
+            /**
+             * Days
+             * @default []
+             */
+            days: components["schemas"]["FeedTimelineDayOut"][];
+            /**
+             * Official Reports
+             * @default []
+             */
+            official_reports: components["schemas"]["FeedOtherReportOut"][];
+        };
+        /**
+         * FeedStoryItemOut
+         * @description 热点榜里, 一条故事下面挂着的一条来源.
+         */
+        FeedStoryItemOut: {
+            /** Source Name */
+            source_name: string;
+            /**
+             * First Party
+             * @default false
+             */
+            first_party: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Time Label
+             * @default
+             */
+            time_label: string;
+        };
+        /**
+         * FeedStoryOut
+         * @description 热点榜上的一条.
+         *
+         *     `sources` 是整件事见过的独立来源数, `participants` 是**窗口里**还在说的家数, 其中
+         *     `source_count` 家是发布源、`signal_count` 家是讨论源 (页面印的"来源数"是 `source_count`:
+         *     讨论帖不是"谁在报这件事"). `heat_index` 是热度指数 (10 倍值, 一位小数), `series` 是榜单
+         *     那一刻往前 24 小时的 25 个**小时**格子, 缺的小时补 `null` —— 读的是落库的快照, 不是每个
+         *     请求重算一遍 (snapshot_heat). `trend` 是五态走势 (new/unknown/up/down/flat), `trend_pct` 是
+         *     它那一眼的具体涨幅 —— `None` 表示那时它还不在. `hot_badges` 是标题上那几枚小标签, 可以同时
+         *     带 `surge` 和 `new` (heat.badges).
+         */
+        FeedStoryOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Latest
+             * @default
+             */
+            latest: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Category Label
+             * @default
+             */
+            category_label: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Entities
+             * @default []
+             */
+            entities: string[];
+            /**
+             * Display Tags
+             * @default []
+             */
+            display_tags: components["schemas"]["FeedDisplayTagOut"][];
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * Sources
+             * @default 0
+             */
+            sources: number;
+            /**
+             * Participants
+             * @default 0
+             */
+            participants: number;
+            /**
+             * Source Count
+             * @default 0
+             */
+            source_count: number;
+            /**
+             * Signal Count
+             * @default 0
+             */
+            signal_count: number;
+            /**
+             * Source Names
+             * @default []
+             */
+            source_names: string[];
+            /**
+             * Heat Index
+             * @default 0
+             */
+            heat_index: number;
+            /**
+             * Series
+             * @default []
+             */
+            series: (number | null)[];
+            /**
+             * Trend
+             * @default
+             */
+            trend: string;
+            /** Trend Pct */
+            trend_pct?: number | null;
+            /**
+             * Hot Badges
+             * @default []
+             */
+            hot_badges: string[];
+            /** First Seen At */
+            first_seen_at: string;
+            /** Last Seen At */
+            last_seen_at: string;
+            /**
+             * Lead Source
+             * @default
+             */
+            lead_source: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FeedStoryItemOut"][];
+            /**
+             * Item Count
+             * @default 0
+             */
+            item_count: number;
+            /**
+             * Faces
+             * @default []
+             */
+            faces: components["schemas"]["FeedFaceOut"][];
+        };
+        /**
+         * FeedStoryRefOut
+         * @description 关联事件那一栏的一行 (AIHOT 的 `StoryRef`): 另一件事的 id、标题与关系词。
+         *
+         *     `relation` 是枚举 (`storyline` / `related`), `relation_label` 是它在这一页上的中文 ——
+         *     词由后端给, 页面不认识那个枚举 (CLAUDE.md 2.3.3).
+         */
+        FeedStoryRefOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Relation
+             * @default related
+             */
+            relation: string;
+            /**
+             * Relation Label
+             * @default
+             */
+            relation_label: string;
+            /**
+             * Last Seen Ago
+             * @default
+             */
+            last_seen_ago: string;
+        };
+        /**
+         * FeedTaxonomyOut
+         * @description 筛选栏自己的词表: 类别、主题标签、实体名录.
+         *
+         *     页面拿它画筛选栏, 所以类别一个也不认识也画得出来 —— 加一个类别只改后端.
+         */
+        FeedTaxonomyOut: {
+            /**
+             * Categories
+             * @default []
+             */
+            categories: components["schemas"]["FeedCategoryOut"][];
+            /**
+             * Topics
+             * @default []
+             */
+            topics: string[];
+            /**
+             * Entities
+             * @default []
+             */
+            entities: string[];
+            /**
+             * Labels
+             * @default {}
+             */
+            labels: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * FeedTimelineDayOut
+         * @description 一天. 和列表页的按天分组同一个形状, 理由也一样: 日期是这套语言的写法, 由后端写.
+         */
+        FeedTimelineDayOut: {
+            /** Date */
+            date: string;
+            /** Date Label */
+            date_label: string;
+            /** Weekday Label */
+            weekday_label: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["FeedTimelineItemOut"][];
+        };
+        /**
+         * FeedTimelineItemOut
+         * @description 事件时间线上的一行. 有 id, 所以点得进去 —— 时间线是去条目详情页的另一个入口.
+         */
+        FeedTimelineItemOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * First Party
+             * @default false
+             */
+            first_party: boolean;
+            /**
+             * Category Label
+             * @default
+             */
+            category_label: string;
+            /**
+             * Score
+             * @default 0
+             */
+            score: number;
+            /**
+             * Time Label
+             * @default
+             */
+            time_label: string;
+            /**
+             * Folded
+             * @default 0
+             */
+            folded: number;
+            /**
+             * Ids
+             * @default []
+             */
+            ids: string[];
+        };
+        /**
+         * FeedTopicGroupOut
+         * @description 左栏的一段. `name` 是页面上那行小标题 (链与协议 / 交易所 / 机构与监管).
+         */
+        FeedTopicGroupOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["FeedTopicRowOut"][];
+        };
+        /**
+         * FeedTopicItemsOut
+         * @description 一个实体名下的条目, 按天分组.
+         *
+         *     与 `FeedItemsOut` 同源 (`by_day`), 少了筛选栏那几样: 左栏就是筛选栏, 这里不需要第二份
+         *     类别计数. `topic` 原样带回, 所以页面不必记住自己刚才问的是哪条线.
+         */
+        FeedTopicItemsOut: {
+            /** Topic */
+            topic: string;
+            /**
+             * Window Days
+             * @default 0
+             */
+            window_days: number;
+            /**
+             * Shown
+             * @default 0
+             */
+            shown: number;
+            /**
+             * Days
+             * @default []
+             */
+            days: components["schemas"]["FeedDayOut"][];
+        };
+        /**
+         * FeedTopicRowOut
+         * @description 主题页左栏的一行: 一个实体, 以及它在窗口里有多少条.
+         *
+         *     `id` 就是名录里的名字 (`Binance` / `BNB Chain`), 因为它已经是唯一的, 再编一个 id 只是
+         *     多一处能对不上的东西. 页面拿它当 URL 的一部分, 所以它必须稳 —— 改词表里的写法就是改网址.
+         */
+        FeedTopicRowOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+        };
+        /**
+         * FeedTopicsOut
+         * @description 主题页左栏的目录.
+         *
+         *     `window_days` 是那句「近 N 天」里的 N. 由后端给而不是页面写死 30: 窗口的长短是一条
+         *     规则 (`views.TOPIC_HOURS`), 规则改了词要跟着改, 而页面不认识那条规则 (CLAUDE.md 2.3.3).
+         */
+        FeedTopicsOut: {
+            /**
+             * Window Days
+             * @default 0
+             */
+            window_days: number;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["FeedTopicGroupOut"][];
+        };
+        /**
+         * FeedXViewOut
+         * @description X 这一条在卡片上的几格 (AIHOT 的 `XPostView`)。不是 X 的条目没有这一个对象。
+         */
+        FeedXViewOut: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /**
+             * Original
+             * @default
+             */
+            original: string;
+            /**
+             * Media
+             * @default []
+             */
+            media: string[];
+            quoted?: components["schemas"]["FeedQuotedOut"] | null;
         };
         /** FieldOptionOut */
         FieldOptionOut: {
@@ -2788,6 +5492,41 @@ export interface operations {
             };
         };
     };
+    read_audit_api_v1_system_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                subject?: string;
+                action?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_models_api_v1_system_models_post: {
         parameters: {
             query?: never;
@@ -2874,6 +5613,1105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemXOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_taxonomy_api_v1_feed_taxonomy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedTaxonomyOut"];
+                };
+            };
+        };
+    };
+    read_items_api_v1_feed_items_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+                category?: string;
+                channel?: string;
+                query?: string;
+                page?: number;
+                cursor?: string;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedItemsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_hot_api_v1_feed_hot_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedHotOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_topics_api_v1_feed_topics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedTopicsOut"];
+                };
+            };
+        };
+    };
+    read_topic_items_api_v1_feed_topics_items_get: {
+        parameters: {
+            query?: {
+                topic?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedTopicItemsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_item_api_v1_feed_item_get: {
+        parameters: {
+            query: {
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedItemDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_story_api_v1_feed_story_get: {
+        parameters: {
+            query: {
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedStoryDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_sources_api_v1_feed_sources_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_eval_api_v1_feed_eval_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEvalOut"];
+                };
+            };
+        };
+    };
+    read_eligibility_api_v1_feed_eligibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEligibilityOut"];
+                };
+            };
+        };
+    };
+    read_availability_api_v1_feed_availability_get: {
+        parameters: {
+            query?: {
+                ids?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_v1_api_v1_feed_v1_get: {
+        parameters: {
+            query?: {
+                since?: string;
+                channel?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_agent_api_v1_feed_agent_get: {
+        parameters: {
+            query?: {
+                channel?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_item_markdown_api_v1_feed_item_md_get: {
+        parameters: {
+            query: {
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_editions_api_v1_feed_editions_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEditionRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_latest_edition_api_v1_feed_editions_latest_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEditionOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_edition_api_v1_feed_editions__edition_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEditionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_admin_session_api_v1_feed_admin_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSessionOut"];
+                };
+            };
+        };
+    };
+    admin_login_api_v1_feed_admin_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedAdminLoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_logout_api_v1_feed_admin_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSessionOut"];
+                };
+            };
+        };
+    };
+    read_admin_settings_api_v1_feed_admin_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSettingsOut"];
+                };
+            };
+        };
+    };
+    write_admin_settings_api_v1_feed_admin_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedAdminSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_image_secret_api_v1_feed_admin_image_secret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedAdminSettingsOut"];
+                };
+            };
+        };
+    };
+    run_one_pass_api_v1_feed_run_post: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedEditionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_overrides_api_v1_feed_overrides_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedOverridesOut"];
+                };
+            };
+        };
+    };
+    put_override_api_v1_feed_override_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedOverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedOverrideRowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drop_override_api_v1_feed_override_delete: {
+        parameters: {
+            query: {
+                source_id: string;
+                external_id: string;
+                actor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_ops_api_v1_feed_ops_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedOpsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_ledger_api_v1_feed_ledger_get: {
+        parameters: {
+            query?: {
+                item_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedLedgerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_feed_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemFormOut"];
+                };
+            };
+        };
+    };
+    write_settings_api_v1_feed_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemFormOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sitemap_sitemap_xml_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    robots_robots_txt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    llms_llms_txt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    feed_feeds__channel__xml_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_describe_api_mcp_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    mcp_call_api_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    img_proxy_api_img_proxy_get: {
+        parameters: {
+            query?: {
+                u?: string;
+                mode?: string;
+                exp?: string;
+                sig?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    og_og__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -6,7 +6,7 @@
  *  one set's runs to a page that is showing another's - the page would look right and be
  *  reading a library nobody asked for. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as api from "./client";
 import type { Run } from "./client";
@@ -266,5 +266,108 @@ export function useCollectFavorite() {
     mutationFn: ({ chainId, ca }: { chainId: string; ca: string }) =>
       api.collectFavorite(chainId, ca),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["favorites"] }),
+  });
+}
+
+/** 信息流's three reads. No chain and no set of settings in any key, unlike everything above:
+ *  a key carrying a chain would refetch the page for a context that cannot change the answer.
+ *
+ *  The taxonomy is cached the way the chain list is - it is a vocabulary, and a vocabulary only
+ *  changes when the backend is redeployed - while the two content reads keep the window in the
+ *  key so switching category or scope is a refetch, not a re-render of somebody else's rows. */
+export function useFeedTaxonomy() {
+  return useQuery({ queryKey: ["feed-taxonomy"], queryFn: api.getFeedTaxonomy, staleTime: Infinity });
+}
+
+/** 一页多少条. 值必须和后端的 `rules.PAGE_SIZE` 一样 —— 那是"一次读多少"的口径, 两处各写一个
+ *  数, 迟早会一个 40 一个 60. 页面滚动到底再要下一页 (`next_cursor`), 所以第一屏不必背着一整
+ *  个窗口的条目. */
+const FEED_PAGE_SIZE = 40;
+
+/** 全部动态 与 精选 的滚动加载: 一页 40 条, 游标读"上一页最后那一条之后". */
+export function useFeedItemsPaged(scope: "all" | "curated", category: string) {
+  return useInfiniteQuery({
+    queryKey: ["feed-items", scope, category],
+    queryFn: ({ pageParam }) => api.getFeedItems(scope, category, pageParam, FEED_PAGE_SIZE),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor || undefined,
+  });
+}
+
+export function useFeedHot(limit = 10) {
+  return useQuery({ queryKey: ["feed-hot", limit], queryFn: () => api.getFeedHot(limit) });
+}
+
+/** 主题页左栏的目录. 和词表一样按"只有后端重新部署才变"缓存: 它是名录, 不是内容.
+ *  条数会随窗口移动, 所以 60 秒后允许重取一次 —— 目录里的数字不该比中栏那批落后一整天. */
+export function useFeedTopics() {
+  return useQuery({
+    queryKey: ["feed-topics"],
+    queryFn: api.getFeedTopics,
+    staleTime: 60_000,
+  });
+}
+
+/** 一条线上的条目. `topic` 空串时不发请求: 主题页在没有选中任何一条线时不问后端要东西,
+ *  和两个详情页同一个道理. */
+export function useFeedTopicItems(topic: string) {
+  return useQuery({
+    queryKey: ["feed-topic-items", topic],
+    queryFn: () => api.getFeedTopicItems(topic),
+    enabled: Boolean(topic),
+  });
+}
+
+/** 一条 / 一件事的整页. `enabled` on the id because the reading pane is closed most of the time:
+ *  a closed pane should not be asking the backend for anything. */
+export function useFeedItem(id: string | undefined) {
+  return useQuery({
+    queryKey: ["feed-item", id],
+    queryFn: () => api.getFeedItem(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useFeedStory(id: string | undefined) {
+  return useQuery({
+    queryKey: ["feed-story", id],
+    queryFn: () => api.getFeedStory(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+/** 出过的各期. 只有左栏那一列读它, 一期一行. */
+export function useFeedEditions(kind: string, limit = 50) {
+  return useQuery({
+    queryKey: ["feed-editions", kind, limit],
+    queryFn: () => api.getFeedEditions(kind, limit),
+  });
+}
+
+/** 一期的正文. 和两个详情页同一个道理: 没选中任何一期时, 不向后端要东西. */
+export function useFeedEdition(id: string | undefined) {
+  return useQuery({
+    queryKey: ["feed-edition", id],
+    queryFn: () => api.getFeedEdition(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+/** 信息流设定: 出刊节奏与两道预算. 一个装置一份, 所以键里没有链条也没有配置. */
+export function useFeedSettingsForm() {
+  return useQuery({ queryKey: ["feed-settings"], queryFn: api.getFeedSettings });
+}
+
+/** 存下改过的那几行, 然后拿文件现在的样子替换掉表单.
+ *
+ *  响应不被丢掉: 一次保存可能让某一格看起来和输入的不一样 (一个时刻被写回 08:00, 一格清成 0),
+ *  页面要画的是写进去的东西. */
+export function useSaveFeedSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.putFeedSettings(patch),
+    onSuccess: (form) => {
+      qc.setQueryData(["feed-settings"], form);
+    },
   });
 }

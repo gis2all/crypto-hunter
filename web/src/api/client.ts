@@ -36,6 +36,29 @@ export type Funnel = components["schemas"]["FunnelOut"];
 export type Favorite = components["schemas"]["FavoriteOut"];
 export type Job = components["schemas"]["JobOut"];
 export type JobStage = components["schemas"]["JobStageOut"];
+export type FeedCategory = components["schemas"]["FeedCategoryOut"];
+export type FeedListItem = components["schemas"]["FeedListItemOut"];
+export type FeedDay = components["schemas"]["FeedDayOut"];
+export type FeedItems = components["schemas"]["FeedItemsOut"];
+export type FeedTopicRow = components["schemas"]["FeedTopicRowOut"];
+export type FeedTopicGroup = components["schemas"]["FeedTopicGroupOut"];
+export type FeedTopics = components["schemas"]["FeedTopicsOut"];
+export type FeedTopicItems = components["schemas"]["FeedTopicItemsOut"];
+export type FeedStoryItem = components["schemas"]["FeedStoryItemOut"];
+export type FeedStory = components["schemas"]["FeedStoryOut"];
+export type FeedHot = components["schemas"]["FeedHotOut"];
+export type FeedTaxonomy = components["schemas"]["FeedTaxonomyOut"];
+export type FeedOtherReport = components["schemas"]["FeedOtherReportOut"];
+export type FeedFace = components["schemas"]["FeedFaceOut"];
+export type FeedItemDetail = components["schemas"]["FeedItemDetailOut"];
+export type FeedTimelineItem = components["schemas"]["FeedTimelineItemOut"];
+export type FeedTimelineDay = components["schemas"]["FeedTimelineDayOut"];
+export type FeedStoryDetail = components["schemas"]["FeedStoryDetailOut"];
+export type FeedEdition = components["schemas"]["FeedEditionOut"];
+export type FeedEditionRow = components["schemas"]["FeedEditionRowOut"];
+export type FeedEditionEntry = components["schemas"]["FeedEventOut"];
+export type FeedMetric = components["schemas"]["FeedMetricOut"];
+export type FeedDisplayTag = components["schemas"]["FeedDisplayTagOut"];
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
@@ -272,3 +295,83 @@ export const testSystem = (patch: Record<string, unknown>) =>
  *  page's unsaved rows, and unrecorded - a search spends a rate budget a round needs. */
 export const probeXSession = (patch: Record<string, unknown>) =>
   request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch }) });
+
+/** 信息流: the macro feed - the industry's own news, not one chain's tokens.
+ *
+ *  Nothing below is scoped by a chain or by a set of settings, and that is not an omission: the
+ *  feed reads the industry, and the industry is not on one chain. It is also why these live
+ *  beside the radar's calls instead of under them - the page that reads them is a place of its
+ *  own (Rail, 信息流).
+ *
+ *  Three reads for three pages, and they are three questions about one body of items rather than
+ *  three datasets: 全部动态 asks what the window holds, 精选 asks which of it cleared the bar,
+ *  and 热点榜 asks which *stories* the window's items add up to. Nothing here takes a chain, a
+ *  set of settings or a window - all three are the backend's to decide.
+ */
+export const getFeedTaxonomy = () => request<FeedTaxonomy>("/feed/taxonomy");
+
+/** 全部动态 (scope=all) and 精选 (scope=curated) are one route: same rows, one filter apart.
+ *
+ *  `cursor` 是"上一页最后那一条之后"的位置 (后端 lib/cursor), 不是页码 —— 这一秒新来一条,
+ *  页码会让后面每一页都错位一次. `pageSize = 0` 是"一次给全", 页面滚动加载时才传 40.
+ */
+export const getFeedItems = (scope: "all" | "curated", category = "",
+                             cursor = "", pageSize = 0) =>
+  request<FeedItems>(`/feed/items?scope=${scope}`
+    + (category ? `&category=${encodeURIComponent(category)}` : "")
+    + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "")
+    + (pageSize ? `&page_size=${pageSize}` : ""));
+
+/** 热点榜. The ranking is the backend's: "how many parties are saying it" is not a number the
+ *  page can see, so it is not a number the page gets to compute. */
+export const getFeedHot = (limit = 10) => request<FeedHot>(`/feed/hot?limit=${limit}`);
+
+/** 主题页左栏的目录: 实体分组, 每组带一个窗口内的条数.
+ *
+ *  条数是"这条线在窗口里有多少条", 窗口的长短在后端 (views.TOPIC_HOURS), 所以页面拿到的是
+ *  `window_days` 这个现成的数, 不是自己写死的 30.
+ */
+export const getFeedTopics = () => request<FeedTopics>("/feed/topics");
+
+/** 一条线上的条目, 按天分组 —— 主题页中栏那一列.
+ *
+ *  走查询串而不是路径段: `BNB Chain` 这样的名字里有空格, 而路径段里的空格每一种客户端都会
+ *  各自决定怎么转义一次.
+ */
+export const getFeedTopicItems = (topic: string) =>
+  request<FeedTopicItems>(`/feed/topics/items?topic=${encodeURIComponent(topic)}`);
+
+/** 一条的整页. The list row above it is a summary of this, not a substitute for it: a feed that
+ *  never shows the source's own words is asking to be believed rather than read.
+ *
+ *  By id rather than "whatever the list happened to hand down": the detail page prints things no
+ *  list payload holds, and a page that draws only what it was handed grows one shape per entry
+ *  point - three lists, three detail pages.
+ */
+export const getFeedItem = (id: string) =>
+  request<FeedItemDetail>(`/feed/item?id=${encodeURIComponent(id)}`);
+
+/** 一件事的整页. The rank comes down with it: which place a story holds is the ranking's own
+ *  answer and the ranking is the backend's (2.3.4). */
+export const getFeedStory = (id: string) =>
+  request<FeedStoryDetail>(`/feed/story?id=${encodeURIComponent(id)}`);
+
+/** 出过的各期, 按刊取. 三种刊是三份档案, 所以 kind 是必填的那一半. 新的在前, 一行只画日期
+ *  和条数 —— 所以列表不带正文. */
+export const getFeedEditions = (kind: string, limit = 50) =>
+  request<FeedEditionRow[]>(`/feed/editions?kind=${kind}&limit=${limit}`);
+
+/** 一期的整份. 按 id 取, 不是"把列表那行摊开": 一期是出刊那一刻的定稿, 它比一行多出正文. */
+export const getFeedEdition = (id: string) =>
+  request<FeedEdition>(`/feed/editions/${encodeURIComponent(id)}`);
+
+/** 信息流设定: 出刊节奏与两道预算 (8.6 / 3.4).
+ *
+ *  和 系统设置 同一套门面 (8.9): 文件是唯一真相, 页面只是它的表 —— patch 的键就是各行在文件里
+ *  的路径, PUT 回来的是文件现在的样子, 不是一句「已保存」. 它答的形状因此和 系统设置 是同一个,
+ *  两个页面也就由同一套渲染器画.
+ */
+export const getFeedSettings = () => request<SystemForm>("/feed/settings");
+
+export const putFeedSettings = (patch: Record<string, unknown>) =>
+  request<SystemForm>("/feed/settings", { method: "PUT", body: JSON.stringify({ patch }) });
