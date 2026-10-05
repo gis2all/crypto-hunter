@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   updated_at    TEXT NOT NULL
 );
 
--- One screening round. Immutable. run_key makes the cron tick idempotent.
+-- One screening round. Immutable. run_key makes the scheduled tick idempotent.
 CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
   run_key       TEXT NOT NULL UNIQUE,

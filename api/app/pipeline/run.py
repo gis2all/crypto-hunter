@@ -170,7 +170,7 @@ def close_abandoned(run_id: str) -> str:
 
 
 def scheduled_run(chain_id: str, config_id: str, slot: str) -> dict | None:
-    """The round for one cron slot under one set of settings, or None when it has one."""
+    """The round for one scheduled slot under one set of settings, or None when it has one."""
     conn = db.connect()
     try:
         seen = conn.execute(
@@ -342,7 +342,7 @@ def stop_run(run_id: str) -> dict:
 def fail_run(run_id: str, error: str) -> None:
     """Put a round that never got going into a terminal state.
 
-    A run created for a cron slot and then not driven looks exactly like a run that is
+    A run created for a scheduled slot and then not driven looks exactly like a run that is
     still working, and an operator cannot tell the two apart from the page. Whoever
     fails to start a round owns saying so.
     """
