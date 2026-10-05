@@ -65,6 +65,13 @@ SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
     ("log_level", "CH_LOG_LEVEL", "choice:DEBUG|INFO|WARNING|ERROR"),
 )
 
+#: Keys the file accepts and the page deliberately does not show: the page would invite the
+#: operator to write by hand what the client already sends for the gateway (6.4.8), while the
+#: file keeps taking them, because an install may already have written one and needing the
+#: exception should not wait for a release. The test that pairs rows with keys reads this - a
+#: key is either a row or file-only, never both.
+FILE_ONLY_KEYS: frozenset[str] = frozenset({"llm.extra_headers"})
+
 #: What the file put in the environment, and what it put there. A value that is still exactly
 #: this is still the file's to withdraw; anything else means somebody else owns the variable
 #: now and the file must keep its hands off.

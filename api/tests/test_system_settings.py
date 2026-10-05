@@ -61,8 +61,18 @@ def _fields() -> dict[str, dict]:
 
 def test_every_key_has_a_row():
     """A key in the table with no label is a row nobody can read, and a label with no key is a
-    box nothing writes. Both are caught here rather than on the page."""
-    assert set(forms.SYSTEM_LABELS) == {key for key, _env, _kind in config.SYSTEM_KEYS}
+    box nothing writes - unless the key is file-only, which is the one deliberate way for the
+    page not to offer something the file takes (6.4.8's gateway headers). Both are caught here
+    rather than on the page."""
+    keys = {key for key, _env, _kind in config.SYSTEM_KEYS}
+    assert set(forms.SYSTEM_LABELS) | config.FILE_ONLY_KEYS == keys
+    assert not (set(forms.SYSTEM_LABELS) & config.FILE_ONLY_KEYS)
+
+
+def test_a_file_only_key_is_not_drawn():
+    """The other half of the same rule: file-only is not a drawer for keys somebody forgot to
+    label, so a key listed there must really be absent from what the page is sent."""
+    assert config.FILE_ONLY_KEYS.isdisjoint(_fields())
 
 
 def test_the_page_draws_the_file_and_never_a_credential(system_file):
