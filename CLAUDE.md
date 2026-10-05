@@ -7,7 +7,7 @@ stack:
   deploy: 同域单进程 —— FastAPI 托管 web/dist，只有一个端口 8787；dev 用 Vite 5173，/api 代理到 8787
   schedule: 服务内 ticker + runs 表唯一约束做幂等（run_key），不用 APScheduler
   icon: lucide-react，统一走 web/src/components/Icon.tsx
-run: uv run --project api python -m app
+run: uv run --directory api python -m app
 build: cd web; npm run build
 verify: cd api; uv run python -m pytest -q
 truth:                                           # 每个领域的唯一出处，本文件只写规矩、不抄内容
@@ -15,7 +15,9 @@ truth:                                           # 每个领域的唯一出处�
   - web/src/styles/               视觉（tokens -> proto -> app，加载顺序即优先级）
   - config/chains/*.yaml          出厂设定（一条链一个文件，文件里是一套套设定）
   - config/system.yaml            本机接线（LLM 网关 / X 会话 / 日志等级）；页面「系统设置」是它的表
+  - config/feed/pipeline.yaml     信息流的出刊节奏与两道预算；页面「信息流设定」是它的表
   - api/app/sources/<chain>/SOURCES.md  逐源端点、传输方式、实测结论
+  - api/app/feed/DESIGN.md        宏观信息流：四个实时视图 ＋ 报刊、规则与待定
 ---
 
 # 1. 这份文档怎么用
@@ -46,6 +48,8 @@ truth:                                           # 每个领域的唯一出处�
 ## 2.1 是什么
 
 每 3 小时，从一条链上的几千个币里挑出 N 个（默认 5 ＝ `per_round`），每个附一份两分钟能读完的判断。**研究流水线，不是行情终端。**
+
+另有一条**宏观信息流**（左栏「信息流」：精选 / 全部动态 / 热点榜 / 主题 / 报刊，后面跟着这一栏自己的「信息流设定」）：读的是行业在说什么，不是某个币在做什么。独立路由、独立表，**不在一轮的编排里**，也不复用雷达的卡片、设定与切换器（`api/app/feed/DESIGN.md`）。
 
 ## 2.2 不做什么
 
@@ -83,7 +87,7 @@ truth:                                           # 每个领域的唯一出处�
 ## 2.5 怎么跑
 
 ```powershell
-uv run --project api python -m app          # 后端 127.0.0.1:8787，生产也只有一个进程，它同时托管 web/dist
+uv run --directory api python -m app          # 后端 127.0.0.1:8787，生产也只有一个进程，它同时托管 web/dist
 cd web; npm install; npm run dev            # 前端开发 5173，/api 代理到 8787
 cd web; npm run build                       # 生产：tsc -b + vite build，然后强刷浏览器
 ```
@@ -130,6 +134,8 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | 改 CA 搜索 | 8.8 | `api/app/lookup.py` ＋ `api/app/api/v1/lookup.py` ＋ `web/src/features/lookup/` |
 | 改搜索（挖链） | 6.4.3 / 6.4.4 | `api/app/search/`（配置 `config/system.yaml` 的 X 搜索段） |
 | 改本机接线（LLM / X / 日志） | 8.9 | `config/system.yaml` ＋ `api/app/system_settings.py` ＋ `web/src/features/system/` |
+| 改信息流（宏观） | `api/app/feed/DESIGN.md` | `api/app/feed/` ＋ `api/app/api/v1/feed.py` ＋ `web/src/features/feed/` |
+| 改信息流的出刊、预算与档位 | 8.3.10 / 8.10.8 | `config/feed/pipeline.yaml` ＋ `api/app/feed/sources/pipeline.py` ＋ `api/app/feed/writing.py` ＋ `api/app/feed/localtranslate.py` ＋ `api/app/feed/jobs.py` ＋ `web/src/features/feed/FeedSettingsView.tsx` |
 | 想动待决里的东西 | **先问用户** | 10 |
 
 # 4. 术语
@@ -158,7 +164,8 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 
 | 路径 | 责任 |
 | --- | --- |
-| `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health` |
+| `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health` / `feed` |
+| `api/app/feed/` | 宏观信息流：读源 -> 去重 -> 切窗口 -> 归组 -> 热度 -> 打标签与评分 -> 四个实时视图（精选 / 全部动态 / 热点榜 / 主题）＋ 报刊。**不在一轮的编排里**，独立路由与独立表（`api/app/feed/DESIGN.md`） |
 | `api/app/system_settings.py` | 系统设置页的那张表：读写 `config/system.yaml`（行级往返，没改的行逐字节不变）、把值灌进 `os.environ`；键表 `config.SYSTEM_KEYS` 同时喂 loader 与页面，页面因此提不出一个没人读的旋钮（8.9） |
 | `api/app/lookup.py` | CA 搜索的全部工作，一个地址一条链：认链 -> 逐源读这一个币 -> 链上 LP 判定 -> 链下调研 -> 出卡并落成一行搜索记录；`STAGES` / `start` / `drive` / `submit` 把它包成一个可轮询的 job（表 `search_jobs`）。**不在一轮的编排里**，也不碰 `runs` |
 | `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models`（**不许有 IO**） |
@@ -169,10 +176,10 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `api/app/sources/` | 一个源一个适配器：**跨链的放根目录，只服务一条链的放 `<chain>/`**；都从 `registry.ALL` 取 ＋ `http`（缓存与节流）＋ 各自 `SOURCES.md` |
 | `api/app/store/` | SQLite：`schema.sql` ＋ `db.py` |
 | `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
-| `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
+| `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` / `feed` |
 | `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
 | `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `Logo` / `chainMark` / `Pick` |
-| `config/` | `chains/*.yaml`（出厂设定，一条链一个文件）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
+| `config/` | `chains/*.yaml`（出厂设定，一条链一个文件）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**）/ `feed/*.yaml`（信息流的源清单、实体词典与全局旋钮；页面「信息流设定」写的就是 `feed/pipeline.yaml`） |
 | `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
 
 **分层是硬约束**（2.3.1）：`api/app/core/` 不许有 IO；`api/app/api/v1/` 是唯一 HTTP 层，页面文案只在 `forms.py`；前端不碰数据源与数据库、不自己算分。动一个模块前先在图里确认它的调用方（1.1）。
@@ -310,8 +317,8 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 7.2.1 | 数据模型以 `api/app/store/schema.sql` 为准（13 张表）。加列走 `db.init_db` 的 `_ADDED_COLUMNS`（配 `SCHEMA_VERSION`），老库靠它补齐并回填。 | **别手改 `.db`** —— 老库不会自动长出那一列。 |
-| 7.2.3 | 三种表不许改写：`settings_versions`（改设定 ＝ 追加一行）、`snapshots`（每轮每币一写）、`reports`（落库即冻结）。`favorites` **不在此列** —— 那一行说的是「这个币现在该看哪张卡」，不是某一轮说了什么（8.7.7）。 | 就地 UPDATE 已发布报告，历史轮次与当时的卡片就对不上。 |
+| 7.2.1 | 数据模型以 `api/app/store/schema.sql` 为准（15 张表）。加列走 `db.init_db` 的 `_ADDED_COLUMNS`（配 `SCHEMA_VERSION`），老库靠它补齐并回填。 | **别手改 `.db`** —— 老库不会自动长出那一列。 |
+| 7.2.3 | 四种表不许改写：`settings_versions`（改设定 ＝ 追加一行）、`snapshots`（每轮每币一写）、`reports`（落库即冻结）、`feed_editions`（一个窗口只落一期，`api/app/feed/DESIGN.md` 3.3）。`favorites` **不在此列** —— 那一行说的是「这个币现在该看哪张卡」，不是某一轮说了什么（8.7.7）。 | 就地 UPDATE 已发布报告，历史轮次与当时的卡片就对不上。 |
 
 # 8. 界面
 
@@ -345,7 +352,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 8.3.7 | 动作行**最左端**是「运行结果」开关：它折的是整条顶栏**下面**那层面板，属于这一轮，不属于你正站着的那个 tab，所以排在动作行第一个。这是**唯一**的折叠处 —— 面板自己没有关闭按钮，所以「停止的一轮把页面交回去」搭在它的**收起**那一半上（展开不挪人）。 | 塞回 tab 组旁边，读者会以为它换的是右边那片内容 —— 它折的是整页下面那条。 |
 | 8.3.8 · 8.3.9 | 刷新要落在原来那一页：链 / 配置 / tab / 地方四个选择写 `ch.*`，读法就是 `useState` 的初值；**报告轮次下标不存** —— 它由开页那一次列表回答，存下来会和那份回答打架。链列表**里面**、紧跟最后一条链的是 `搜索` 和 `收藏` 两行（`搜索` 在上），**不画分隔线、不留额外内边距**，四行**同墨色**，人在哪里由**亮行**说明。**同一时刻只有一行是亮的**：链行亮 ＝ 在雷达且是当前链，在书架上链行全灭。 | 把轮次下标一起存了，下一轮跑完后刷新会翻开一个旧批次。把这两行调淡，读者会以为它们不可点；两行同时亮，读者会以为书架是那条链底下的东西；同一个地方三个名字（`搜索` 不叫 `CA`），读者要猜它们是不是同一页。 |
 
-| 8.3.10 | 「系统设置」是**一行 rail 行、也是一个 Place**：它不属于任何链，所以排在链与两条书架那一列之下、主题开关之上（`.nav-foot` ＋ `.nav` 是列 flex），侧栏里全局的东西都落在这一带。**它是页面不是 tab**：点开就是整页表单，没有 `搜索 / 设定` 那对 tab。**同一时刻仍只有一行是亮的**（8.3.8）。 | 塞进某条链的 tab 组里，读者会以为这份接线是那条链的；挂在最上面，等于告诉读者它比链还常用。 |
+| 8.3.10 | 「信息流」是**一组六行**（精选 / 全部动态 / 热点榜 / 主题 / 报刊 / 信息流设定），六行与「系统设置」**都是 Place**：都不属于任何链，所以排在链与两条书架那一列之下；信息流在上，系统设置独占最底（`.nav-foot{margin-top:auto}` ＋ `.nav` 是列 flex）。**信息流在前** —— 它是第二个产品，不是一项设置。它们**是页面不是 tab**：点开就是整页，没有 `搜索 / 设定` 那对 tab。**同一时刻仍只有一行是亮的**（8.3.8）。**第六行「信息流设定」与那五行不同类**：它不是这一栏的一页，是这一栏自己的旋钮（出刊节奏 / 两道预算），所以排在那五行之下而不是并进它们。 | 塞进某条链的 tab 组里，读者会以为它是那条链的；挂在最上面，等于告诉读者它比链还常用。这几页若合成一行加页内 tab，同一件事就有两个能改的地方 —— 左栏点一下、页内再点一下，迟早不一致。 |
 
 ## 8.4 视觉（字体 / 颜色 / 圆角 / 图标 / 主题）
 
@@ -402,6 +409,22 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 8.9.9 | **候选只往框里打字**：端点预设（`forms.SYSTEM_ENDPOINTS`）与端点回的模型列表都是 `Pick`，点一下写进旁边的输入框，**框还是框**。按钮与结果行由后端的 `ActionOut` 给，`id` 是这一页唯一认识的词，键名一个不认识。 | 做成纯下拉 = 自建 vLLM、或端点没列出的模型，都进不来。 |
 | 8.9.10 | **X 会话的「测试连接」问的是「这串 cookie 还是登录态吗」**：`POST /system/x` → `XEngine.probe()` 跑一次 `twitter whoami --json`，30s（`PROBE_TIMEOUT`，不是一轮的 120s）、不搜关键词、不记账、不碰冷却；拒绝的原话回页面，缺凭据 / 没装客户端 / 超时都各自成句而不是 500。 | X 没有 `/models` 那种「门开着」的免费探针；用一次真搜索来验会话，点错一次就花掉一轮要用的额度（429 会让币丢链接）。 |
 
+## 8.10 信息流（宏观）
+
+**参考**：信息流的规则、字段与待定全在 `api/app/feed/DESIGN.md`；本节只写它与雷达的边界。
+
+左栏「信息流」五行：精选 / 全部动态 / 热点榜 / 主题 / 报刊，后面跟着「信息流设定」。全站唯一不关于某个币、也不属于任何一条链的地方（**没有配置切换器** —— 它读的是行业，行业不在某条链上）。工作全在 `api/app/feed/`。
+
+| 编号 | 规则 | 说明 / 反例 |
+| --- | --- | --- |
+| 8.10.1 | **一次读入，三个视图**：三页问的是同一批条目的三个问题（窗口里有什么 / 哪些过线 / 聚成哪几件事），所以它们是同一个 `collect()` 上的三个纯函数，不是三份数据。列表读 72 小时、按天分组；热点榜读 48 小时。 | 三页各自去采一次源，同一件事在三页上的来源数会不一样，而读者看不出哪个是错的。 |
+| 8.10.2 | **热 ＝ 几个独立来源在说它**：热度 = 来源数 x `0.5^(age/12h)`（`heat.py` 的 `value_at`）—— 一条只有一家在说的新闻，说得再响也压不过四家都在说的；四家昨天的旧事会掉到两家今天的下面。页面上印的 `热度指数` 是热度 x 20 的整数。 | 印一个带小数的热度分，读者得反推它的量纲；印「独立来源 4」，读者一眼看见「这条只有一家在说」—— 那正是标题本身说不出来的事。 |
+| 8.10.3 | **未来的时间戳在该时刻不计入**：`value_at(event, when)` 只数发布时间不晚于 `when` 的条目，所以那条线的最后一个点必定等于它上面印着的那个数。 | 整条曲线一起算，最后一个点会大于合计 —— 两处对不上的图比没有图更糟。 |
+| 8.10.4 | **精选的门槛是分数，不是热度**：`views.CURATED_MIN_SCORE = 65`，分数在 `analysis.py` 里按类别权重、信源分级、一手、实体、标签、新鲜度算出来；热点榜入榜是另一条门槛（来源数 > 1 或分数过线）。 | 拿热度当精选门槛，精选就成了「热点榜减几名」，那一页没有存在的理由。 |
+| 8.10.5 | **页面一个字都不判**：类别、标签、实体、分数、推荐理由、空态句子，以及 `热度指数` / `独立来源` / `一手` / `新` / `持平` 这些词全部随 payload 下来（2.3.3 / 2.3.4）。页面认识的只有版式标题：精选 / 全部动态 / 热点榜 / 当前热点 / 继续看 / 排名。 | 前端自己认一个类别、自己排一次序，就是第二个能改精选口径的地方。 |
+| 8.10.6 | **三页共用一个壳，不共用一个切换器**：导航只在左栏（8.3.10），页面里没有第二排 tab。 | 同一件事两个入口，读者总会点到那个不生效的。 |
+| 8.10.7 | **页面上没有「跑一轮」**：写入不靠读者去点 —— 采集 / 补正文 / 出刊 / 推送各有一条定时活儿（9.5.6）。要手动催一次只有 `POST /feed/run`（2026-10-05 起设置页那个管理台面板已移除，页面上没有入口）。 | 给纯读的页面配一个「跑一轮」，读者会以为不点它就没有内容；而真正的写入是定时在跑的。 |
+| 8.10.8 | **出刊、预算与档位在「信息流设定」，写的是 `config/feed/pipeline.yaml`**：那一页和「系统设置」同一套门面（8.9）—— 文件是唯一真相，行 key 就是它在文件里的路径，PUT 回来的是文件现在的样子；出刊三行是**北京时间**（`schedule.day/week/month`），**留空 = 这一期不出**，到点出的是**刚过去的那一期**。`llm.preset` 用一个下拉管四个写作站：`saver` / `standard` / `full`（页面「节省 / 标准 / 完整」），表在 `pipeline.PRESETS`，键缺席按 `full`、表外值拒绝这一轮；翻译档走本地时用 `localtranslate.py` 的 Argos，不花调用。这一层**没有缓存**：改完下一轮 tick 就读到，不用重启。出过的期**不再重出** —— 一期是出刊那一刻的定稿。 | 四个站各读一遍 `maxItems`，同一行旋钮要在四处生效；给「出不出这一期」再加一个布尔，它和时刻迟早互相矛盾；用「当前时刻减一天」找上一期，进程停一整天再起来会印出一张刚开头半天的纸。 |
 # 9. 运行与验证
 
 ## 9.1 读路径
@@ -451,6 +474,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 9.5.2 | 一键重算 | `POST /settings/recompute` 返回 501（一轮的 universe 没落库）；前端以为它可用就会点了没反应。 |
 | 9.5.3 | 搜索没配 cookie | `config/system.yaml` 的 X 会话段空着时 X 搜索整层静默失效，卡片只用本轮登记的链接，**不阻塞流程**（6.4.3）。 |
 | 9.5.4 · 9.5.5 | 两条「看起来没接、其实是有意的」 | 链下调研没回来的标的本轮不参与排名（不是 0 分，6.3.4 / 6.5.11）；`holders_max` 默认 `null` 就是不设上限（6.1.7 / 10.4）。 |
+| 9.5.6 | 信息流的落库与真源 | 条目先落 `feed_items`，四个实时视图读快照、每次请求重算（热点 / 名次 / 窗口内条数不落库）；报刊读 `feed_editions`。写入由定时活儿做（采集 / 补正文队列 / 写作站 / 出刊 / 推送），页面不催也不点；出刊的时刻、各站预算与 `llm.preset` 档位是 `config/feed/pipeline.yaml`，页面「信息流设定」写它（8.10.8）。真源已接（`api/app/feed/sources/`）；管理台 / MCP / 运维读口见 `ALIGN-AIHOT.md` #1。 | 视图是「算出来的东西」，快照是「读到的东西」—— 两样混在一张表里，改一次规则就要动一次历史。 |
 
 ## 9.6 进度与完成态
 
