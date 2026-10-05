@@ -28,6 +28,13 @@ ROOT = Path(__file__).resolve().parents[2]
 #: One file per chain under `config/chains/`. Adding a chain is adding a file there: there
 #: is no shared list to edit and no way for two chains to disagree about the file's shape.
 CHAINS_DIR = Path(os.environ.get("CH_CHAINS_DIR", str(ROOT / "config" / "chains")))
+
+#: What marks the tracked template in that directory: `robinhood.example.yaml` is the factory
+#: default and the only one in git, `robinhood.yaml` is this install's copy of it. The app
+#: writes the second and never the first, which is what keeps switching the live set - or adding
+#: one - out of every diff. Same directory rather than a subdirectory so the two can be diffed
+#: against each other by eye.
+EXAMPLE_MARK = ".example."
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 DB_PATH = Path(os.environ.get("CH_DB", str(DATA_DIR / "crypto-hunter.db")))
@@ -174,6 +181,7 @@ def load_chains() -> dict[str, dict]:
     same chain under its own口径 and keeps its own report library, so two entries on one
     chain never blend into each other.
     """
+    seed_chain_files()
     chains: dict[str, dict] = {}
     for path in _chain_files():
         with open(path, encoding="utf-8") as fh:
@@ -195,9 +203,37 @@ def load_chains() -> dict[str, dict]:
     return chains
 
 
-def _chain_files() -> list[Path]:
-    """Every chain file on disk, in the order they are read in."""
+def _all_files() -> list[Path]:
+    """Every yaml in the chain directory, templates included, in the order they are read in."""
     return sorted(CHAINS_DIR.glob("*.yaml")) + sorted(CHAINS_DIR.glob("*.yml"))
+
+
+def _chain_files() -> list[Path]:
+    """The files an install runs on, in the order they are read in - the templates are not chains.
+
+    Reading a template here would give one chain id two entries, and the same set of settings
+    twice on the rail.
+    """
+    return [path for path in _all_files() if EXAMPLE_MARK not in path.name]
+
+
+def seed_chain_files() -> int:
+    """Give every chain the live file this install has not got yet, from the tracked template.
+
+    Only the template is in git; the live file is this install's, and it is what the page writes
+    - switching the live set, adding one, renaming it - so keeping the two apart is what keeps
+    that out of every diff. The same shape `system.yaml` already has. It copies rather than
+    aliases, so an install that deletes its file is handed the factory one again on the next
+    read, and it runs on the read path because every way in - the API, the ticker, a test - has
+    to find a chain this machine has never started.
+    """
+    made = 0
+    for example in (path for path in _all_files() if EXAMPLE_MARK in path.name):
+        live = example.with_name(example.name.replace(EXAMPLE_MARK, ".", 1))
+        if not live.exists():
+            live.write_bytes(example.read_bytes())
+            made += 1
+    return made
 
 
 def _chain_id_of(raw: dict, path: Path) -> str:

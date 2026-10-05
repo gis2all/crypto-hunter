@@ -33,6 +33,11 @@ api/*.db-*
 .env
 config/system.yaml
 
+# chain settings: the tracked file is the factory template, the live copy beside it is seeded
+# from it on first read and is what the page writes - so switching a set never dirties git
+config/chains/*.yaml
+!config/chains/*.example.yaml
+
 # logs and coverage
 *.log
 .coverage

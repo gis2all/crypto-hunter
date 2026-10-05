@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from app import config
 
 
@@ -140,3 +142,66 @@ def test_prune_unknown_keeps_the_yaml_shape_and_nothing_else():
                "dropped_section": {"a": 1}}
     assert config.prune_unknown(base, payload) == {
         "pipeline": {"scoring": {"offchain_weight": 45}, "gate_limit": 20}}
+
+
+@pytest.fixture()
+def chains_dir(tmp_path, monkeypatch):
+    """A throwaway chain directory, with the loader's cache emptied on both sides of the test.
+
+    `load_chains()` is cached for the life of the process, so a test that points the loader at
+    its own directory has to clear it first - or whichever test read first answers - and again
+    on the way out, or this directory answers for the rest of the run.
+    """
+    monkeypatch.setattr(config, "CHAINS_DIR", tmp_path)
+    config.reload()
+    yield tmp_path
+    config.reload()
+
+
+def test_the_tracked_template_is_not_a_chain(chains_dir):
+    """The factory file is `<id>.example.yaml`; the live one is `<id>.yaml` beside it.
+
+    Both in one directory so a reader can diff what they have against what we ship, which only
+    holds if the loader skips the template - reading it would give one chain id two entries and
+    the same set of settings twice on the rail.
+    """
+    (chains_dir / "demo.example.yaml").write_text(
+        "id: demo\nenabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: 出厂默认\n"
+        "  - id: wide\n"
+        "    label: 宽口\n",
+        encoding="utf-8")
+    (chains_dir / "demo.yaml").write_text(
+        "id: demo\nenabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: 本机的默认配置\n"
+        "  - id: wide\n"
+        "    label: 宽口\n"
+        "  - id: tight\n"
+        "    label: 紧口\n",
+        encoding="utf-8")
+
+    chains = config.load_chains()
+    assert set(chains) == {"demo"}
+    assert [cfg["id"] for cfg in chains["demo"]["configs"]] == ["default", "wide", "tight"]
+    assert chains["demo"]["configs"][0]["label"] == "本机的默认配置"
+
+
+def test_a_machine_that_has_never_run_gets_the_file_from_the_template(chains_dir):
+    """A clone has the templates only; the first read writes the live file beside one.
+
+    That read is every way into the app - the API, the ticker, a test - so the seeding sits on
+    the loader rather than on a startup hook the tests would never run.
+    """
+    (chains_dir / "demo.example.yaml").write_text(
+        "id: demo\nenabled: true\nconfigs:\n  - id: default\n    label: 默认配置\n",
+        encoding="utf-8")
+
+    chains = config.load_chains()
+    assert set(chains) == {"demo"}
+    live = chains_dir / "demo.yaml"
+    assert live.exists()
+    assert live.read_bytes() == (chains_dir / "demo.example.yaml").read_bytes()

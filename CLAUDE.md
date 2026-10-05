@@ -13,7 +13,7 @@ verify: cd api; uv run python -m pytest -q
 truth:                                           # 每个领域的唯一出处，本文件只写规矩、不抄内容
   - api/app/store/schema.sql      数据模型
   - web/src/styles/               视觉（tokens -> proto -> app，加载顺序即优先级）
-  - config/chains/*.yaml          出厂设定（一条链一个文件，文件里是一套套设定）
+  - config/chains/*.example.yaml  出厂设定模板（跟仓库）；同名的 *.yaml 是本机那份，首次从模板播种、不进 git
   - config/system.yaml            本机接线（LLM 网关 / X 会话 / 日志等级）；页面「系统设置」是它的表
   - api/app/sources/<chain>/SOURCES.md  逐源端点、传输方式、实测结论
 ---
@@ -117,8 +117,8 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | 我要做… | 读 | 动 |
 | --- | --- | --- |
 | 加 / 改一个数据源 | 6.2 ＋ 该链的 `SOURCES.md` | 通用源 `api/app/sources/`，链专属源 `api/app/sources/<chain>/`；**新源必须同时进 `registry.ALL` 和 `FIELD_PRIORITY` + `DEFAULT_PRIORITY`**（三个静默的坑见 6.2） |
-| 调硬过滤默认值 | 6.1 | `config/chains/*.yaml`（保存后以 `settings_versions` 表为准） |
-| 改评分权重 / 因子 | 6.3 | `core/scoring.py` ＋ `config/chains/*.yaml` |
+| 调硬过滤默认值 | 6.1 | 出厂默认 `config/chains/*.example.yaml`，本机那份是同名 `*.yaml`（首读从模板播种；改模板不覆盖它）。保存后以 `settings_versions` 表为准 |
+| 改评分权重 / 因子 | 6.3 | `core/scoring.py` ＋ 出厂默认 `config/chains/*.example.yaml`（本机那份同名 `*.yaml`） |
 | 改卡片印什么 | 8.1 | `api/app/report/cards.py` |
 | 改卡片文案规则 / 结论写法 | 6.5 | `api/app/report/prompts/research.md` ＋ `report/schema.py` |
 | 改设定页字段 / 说明文案 | 8.2 | `api/app/api/v1/forms.py` ＋ `web/src/features/settings/` |
@@ -172,7 +172,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
 | `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
 | `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `Logo` / `chainMark` / `Pick` |
-| `config/` | `chains/*.yaml`（出厂设定，一条链一个文件）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
+| `config/` | `chains/*.example.yaml`（出厂设定模板，一条链一个文件，跟仓库）/ 同名的 `chains/*.yaml`（本机那份：首次读时从模板播种，页面的增删改都写它，**不入库**）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
 | `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
 
 **分层是硬约束**（2.3.1）：`api/app/core/` 不许有 IO；`api/app/api/v1/` 是唯一 HTTP 层，页面文案只在 `forms.py`；前端不碰数据源与数据库、不自己算分。动一个模块前先在图里确认它的调用方（1.1）。
@@ -330,8 +330,8 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 8.2.1 | 保存走 `settings_versions`（不可变，之后以表为准），出厂默认在 `config/chains/*.yaml`。**链与链不共享设定，同一条链的多套设定之间也不共享**。一次 PUT 是一张 dotted-path 的 patch，落到两层以上的组里要**深合并**。 | 同一组里改两个键，浅合并的 `{**a, **b}` 会把先改的那个整组覆盖掉。被拒的保存要写成操作者能照着做的一句话（中文、带当前值、把 key 翻成页面上的行名）—— 前端不翻译，只把 `detail` 印出来。 |
-| 8.2.2 | 一条链一个 yaml 文件：文件里 `configs` 是这条链的一套套设定，链自己的事实（`explorer` / `rpc`）写在文件顶层、不进 `configs`。内部名字是 `arc:wide` 这种复合 id，落库是 `chain_id` ＋ `config_id` 两列。`default` 带 `locked`、任何链都留着、删不掉。**每条链同一时刻只跑一套**。 | 隔离的边界：`settings_versions` / `runs` / `reports` / `lexicon` / `previous_picks` 都按设定分开；**不隔离**的是 `tokens` 与 `peak_market_cap_usd` —— 那是链级事实，与哪套在看它无关。几套设定并排跑只会抢同一批源与限流，让第一套更慢。 |
+| 8.2.1 | 保存走 `settings_versions`（不可变，之后以表为准），出厂默认在 `config/chains/*.example.yaml`（本机那份从它播种，8.2.2）。**链与链不共享设定，同一条链的多套设定之间也不共享**。一次 PUT 是一张 dotted-path 的 patch，落到两层以上的组里要**深合并**。 | 同一组里改两个键，浅合并的 `{**a, **b}` 会把先改的那个整组覆盖掉。被拒的保存要写成操作者能照着做的一句话（中文、带当前值、把 key 翻成页面上的行名）—— 前端不翻译，只把 `detail` 印出来。 |
+| 8.2.2 | 一条链一个 yaml 文件：文件里 `configs` 是这条链的一套套设定，链自己的事实（`explorer` / `rpc`）写在文件顶层、不进 `configs`。内部名字是 `arc:wide` 这种复合 id，落库是 `chain_id` ＋ `config_id` 两列。`default` 带 `locked`、任何链都留着、删不掉。**每条链同一时刻只跑一套**。跟仓库的只有 `<id>.example.yaml` 模板，运行时那份 `<id>.yaml` 首次读时从它播种、不入库 —— 页面的所有写入都落在后者，所以切配置不会脏 git。 | 隔离的边界：`settings_versions` / `runs` / `reports` / `lexicon` / `previous_picks` 都按设定分开；**不隔离**的是 `tokens` 与 `peak_market_cap_usd` —— 那是链级事实，与哪套在看它无关。几套设定并排跑只会抢同一批源与限流，让第一套更慢。 |
 | 8.2.3 | 名字与 id 分开：`config_id` 是随机生成、**永不改、永不复用、不上页面**；页面上写的一律是 `label`（链内唯一）。新建的一律 `enabled: false` —— 加一套设定不该悄悄把正在跑的那套换掉；`PUT /settings` 除了存 patch 还调 `set_active_config()`（按钮就叫**保存并生效**）。**每条链最多一个 `enabled: true`**：多过一个是数据坏了，只留一个并把话写进 `ChainOut.warning`，链照常能读。 | 反例：把 `config_id` 当 label 用，改名就要动五个主键和每条 run 的 key。报错会让整条链打不开，而操作者才是能决定留哪个的人。拒绝分三个码（400 名字问题 / 404 没有这套 / 409 现在不能动），删除前要把 label **原样打一遍** —— 点一下就能过的「二次确认」不是确认。删除连带清空这套的全部痕迹（`runs` / `reports` / `snapshots` / `lexicon` / `settings_versions` 与 `data/raw/<run_id>/`）；**`tokens` 与 `llm_calls` 不动**。文件是**往返改写**不是重写（`ruamel.yaml` 保注释、保引号、保 CRLF），改完 `arc.yaml` 往返应当逐字节相同。 |
 | 8.2.4 | **参数设置页头整个撤掉**（链名与「正在编辑哪一套」都在顶栏）。解释折进「说明」icon，判据是「这句是这一轮的**读数**，还是关于字段本身的规定」：读数留屏幕，规定进 icon；**文案仍只在 `forms.py`**（2.3.3）。 | 标题下面挂一行解释，一屏里就全是灰字、读者找不到真正的读数。反过来把规定性的口径搬到屏幕上，就是在重复「这是规则」。 |
 | 8.2.8 · 8.2.9 | `市值` 与 `持有人` 都是**区间**，持有人上限与下限共用同一条规则，所以淘汰计数、漏斗行、设定页那一行都不用跟着改；设定页只多一条 —— **空格子必须能存回去**（空 -> `None`，数字 -> `int`，已存过再清空要原样活过类型转换）。链下五项各 0–5、按 `offchain_factor_weights` 合成，与链上那半边**同形**：改一个就要把合计调回 100，否则 422。 | 把上限写成 `0` 就是「一个都不留」；缺键当 0 权重会把没这个键的老快照的币全砍掉；把五项做成只读说明，权重这类口径就只能靠改代码（10.8）。 |

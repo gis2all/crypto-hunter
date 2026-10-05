@@ -55,7 +55,7 @@ log_level: INFO                      # DEBUG / INFO / WARNING / ERROR
 | --- | --- |
 | `api/` | FastAPI + SQLite(WAL)，uv 管理。`app/` 下：`api/v1`（HTTP）/ `core`（纯逻辑，**不许有 IO**）/ `pipeline`（一轮的编排）/ `report`（报告与 prompt）/ `search`（挖链：X 搜索与判别）/ `sources`（一个源一个适配器）/ `store`（schema） |
 | `web/` | React 19 + TS(strict) + Vite + TanStack Query，无 UI 组件库。`src/styles/` 是视觉的唯一真相（tokens → proto → app） |
-| `config/` | `chains/*.yaml` 出厂默认设定（一条链一个文件，文件里的 `configs` 是一套套设定，各有一套报告库，保存后以 `settings_versions` 表为准；页面上可增删改名，只有一套生效）；`system.yaml` 本机私密接线（LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，页面上是「系统设置」） |
+| `config/` | `chains/*.example.yaml` 出厂默认设定模板（一条链一个文件，文件里的 `configs` 是一套套设定，各有一套报告库，保存后以 `settings_versions` 表为准；页面上可增删改名，只有一套生效）；同名的 `chains/*.yaml` 是本机那份（首次读时从模板播种，页面的写入都落它，不入库）；`system.yaml` 本机私密接线（LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，页面上是「系统设置」） |
 | `data/` | `crypto-hunter.db` + `raw/`（每轮原始响应与 HTTP 缓存）。不入库 |
 | `api/app/sources/<链>/SOURCES.md` | 逐源端点、传输方式、实测结论（数据源口径），含 X 搜索挖链层。链专属源放 `sources/<链>/`，通用源在 `sources/` 根目录；目前只有 `arc/` 那份（Robinhood 待补） |
 
