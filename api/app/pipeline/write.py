@@ -35,6 +35,7 @@ RULE_ROWS: tuple[tuple[str, str], ...] = (
     ("lp_unlocked", "LP 已锁"),
     ("dangerous_perm", "无危险权限"),
     ("entrapment", "陷阱占比"),
+    ("empty_shell", "空壳淘汰"),
     ("missing_data", "零数据淘汰"),
     ("market_cap_drawdown", "距高回撤"),
 )

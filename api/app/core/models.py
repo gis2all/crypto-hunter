@@ -26,6 +26,11 @@ class DropReason(str, Enum):
     SOURCE_UNVERIFIED = "source_unverified"
     LP_UNLOCKED = "lp_unlocked"
     DANGEROUS_PERM = "dangerous_perm"
+    #: A row the pull carried as an address and nothing else: neither a market cap nor a
+    #: reserve. Its own reason, not MISSING_DATA: the panel prints the two under different
+    #: rows (空壳币 / 零数据淘汰), and this one is decided in the free half - before the
+    #: five factors the other one counts exist.
+    EMPTY_SHELL = "empty_shell"
     MISSING_DATA = "missing_data"
 
 

@@ -1095,6 +1095,8 @@ def _rule_note(reason: str, metrics: TokenMetrics, prefilter: dict, safety: dict
         readings = filters.drawdown_readings(metrics, prefilter, peak_market_cap_usd)
         return _clause("距高回撤", min(readings) if readings else None,
                        prefilter.get("drawdown_max_pct"), formatter=_pct, wording="超过")
+    if reason == "empty_shell":
+        return "市值与流动性都没有（源只给到地址）"
     if reason == "missing_data":
         return "五个评分因子全无数据"
     if reason == "source_unverified":

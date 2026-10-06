@@ -207,6 +207,7 @@ def build(
         _field(
             "pipeline.prefilter.require_market_data", "空壳币", "bool",
             bool(prefilter.get("require_market_data")), check_label="无市值且无流动性即淘汰",
+            drop_count=drops("empty_shell"),
         ),
         _field(
             "pipeline.prefilter.min_scored_fields", "零数据淘汰", "num",

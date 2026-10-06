@@ -49,6 +49,7 @@ RULE_LABEL: dict[str, str] = {
     "source_unverified": "源码已验证",
     "lp_unlocked": "LP 已锁",
     "dangerous_perm": "无危险权限",
+    "empty_shell": "空壳淘汰",
     "missing_data": "零数据淘汰",
     "market_cap_drawdown": "距高回撤",
 }

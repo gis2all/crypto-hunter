@@ -245,6 +245,17 @@ def test_zero_data_gives_a_real_threshold_the_credit(monkeypatch):
     assert credited == DropReason.LIQUIDITY.value
 
 
+def test_a_shell_and_a_zero_data_drop_are_not_the_same_reason():
+    """空壳淘汰 (the pull carried an address and nothing else) and 零数据淘汰 (every source
+    answered and none of the five factors came back) shared one reason until 2026-10-06, so
+    the panel printed both under 零数据淘汰 - 85 shell rows read as 85 zero-data drops."""
+    shell = check_prefilter(_metrics(market_cap_usd=None, liquidity_usd=None), PRE)
+    assert shell.failed == [DropReason.EMPTY_SHELL]
+
+    cfg = {"prefilter": {**PRE, "min_scored_fields": 1}, "safety": {}}
+    assert check_all(_bare_metrics(), SafetyFacts(), cfg).failed == [DropReason.MISSING_DATA]
+
+
 def test_the_shell_rule_drops_a_row_with_no_market_data_at_all():
     """未知不淘汰 exists for a source that did not answer. A row carrying neither a market
     cap nor a reserve is not an unanswered question, it is a token with nothing to answer
@@ -253,7 +264,7 @@ def test_the_shell_rule_drops_a_row_with_no_market_data_at_all():
     verdict = check_prefilter(_metrics(market_cap_usd=None, liquidity_usd=None,
                                        volume_24h_usd=None), cfg)
     assert not verdict.passed
-    assert DropReason.MISSING_DATA in verdict.failed
+    assert DropReason.EMPTY_SHELL in verdict.failed
 
 
 def test_one_market_number_is_enough_to_keep_a_row():
@@ -272,7 +283,7 @@ def test_the_shell_rule_is_on_unless_the_chain_turns_it_off():
     verdict = check_prefilter(_metrics(market_cap_usd=None, liquidity_usd=None,
                                        volume_24h_usd=None), PRE)
     assert not verdict.passed
-    assert DropReason.MISSING_DATA in verdict.failed
+    assert DropReason.EMPTY_SHELL in verdict.failed
 
 
 def test_the_shell_rule_can_still_be_switched_off_by_the_chain():
@@ -281,7 +292,7 @@ def test_the_shell_rule_can_still_be_switched_off_by_the_chain():
     cfg = {**PRE, "require_market_data": False}
     verdict = check_prefilter(_metrics(market_cap_usd=None, liquidity_usd=None,
                                        volume_24h_usd=None), cfg)
-    assert DropReason.MISSING_DATA not in verdict.failed
+    assert DropReason.EMPTY_SHELL not in verdict.failed
 
 
 DD = {"market_cap_max_usd": 200000, "liquidity_min_usd": 8000, "volume_24h_min_usd": 1000,

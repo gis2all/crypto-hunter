@@ -23,6 +23,10 @@ PREFILTER_PRIORITY = (
     DropReason.BUNDLING,
     DropReason.HONEYPOT,
     DropReason.VOLUME_24H,
+    #: 空壳淘汰 is the free half rule: the pull carried an address and nothing else. Credited
+    #: ahead of MISSING_DATA so that row reads in the panel as itself, not as a token whose
+    #: five factors all came back empty after enrichment.
+    DropReason.EMPTY_SHELL,
     #: Last on purpose. 零数据淘汰 is a hard filter, but a token that both has nothing to
     #: rank on and misses a real threshold is more usefully credited to the threshold.
     DropReason.MISSING_DATA,
@@ -68,6 +72,17 @@ def _ordered(reasons: list[DropReason]) -> list[DropReason]:
     return sorted(set(reasons), key=lambda reason: order.get(reason, len(order)))
 
 
+def is_empty_shell(metrics: TokenMetrics) -> bool:
+    """A row the pull carried as an address and nothing else: nothing to measure, not a
+    miss.
+
+    Two readers share this one predicate: the 空壳淘汰 rule below, and the bulk adapters that
+    skip these rows before they ever become funnel rows. A second copy of 'both fields
+    missing' is how the two would come to disagree about what a shell is.
+    """
+    return metrics.market_cap_usd is None and metrics.liquidity_usd is None
+
+
 def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdict:
     """The pool rules the bulk pull alone can settle: the market-cap band, and the
     empty-shell rule.
@@ -103,8 +118,8 @@ def check_prefilter_free(metrics: TokenMetrics, prefilter: dict) -> FilterVerdic
     # running against a settings version saved before the key existed judged four thousand
     # empty rows on "every floor answered 未知". A missing knob is not a missing rule.
     if prefilter.get("require_market_data", True):
-        if metrics.market_cap_usd is None and metrics.liquidity_usd is None:
-            failed.append(DropReason.MISSING_DATA)
+        if is_empty_shell(metrics):
+            failed.append(DropReason.EMPTY_SHELL)
 
     return FilterVerdict(passed=not failed, failed=_ordered(failed), unknown=_ordered(unknown))
 
