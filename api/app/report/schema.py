@@ -32,7 +32,7 @@ class NewTokenEntry(BaseModel):
     """The lexicon entry for one token: the five judgements and the prose beside them.
 
     The five `f_*` fields are the 0-5 judgements the off-chain block is computed from -
-    产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与官方关系 / 社区活跃度. They
+    产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与主线 / 社区活跃度. They
     are required because an entry without them cannot enter the ranking, and a required
     field the model cannot skip is cheaper than a score that silently does not exist.
     There is no "undetermined": 0 is the judgement that the search found nothing.
