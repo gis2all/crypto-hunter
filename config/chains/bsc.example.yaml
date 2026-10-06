@@ -4,6 +4,8 @@
 id: bsc
 # 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
 name: BSC
+# 这条链的主线，一句话。f_narrative 只判「在不在主线上」，判据就是这句话（写进 research.md 的 __THESIS__）。
+thesis: 超低费高吞吐的散户交易场：meme、美股代币化、稳定币支付
 label: BSC
 enabled: false
 explorer: https://bscscan.com

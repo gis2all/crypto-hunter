@@ -47,7 +47,7 @@ from html import unescape
 from typing import Any, Callable, Mapping, Sequence
 
 from .. import llm
-from ..config import chain_name
+from ..config import chain_name, chain_thesis
 from ..pipeline import collect
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
@@ -67,7 +67,18 @@ log = logging.getLogger("crypto-hunter.pipeline")
 #: question (user, 2026-09-30).
 CHAIN_TOKEN = "__CHAIN__"
 
-PROMPT_VERSION = "research.md@8"
+#: The chain's own thesis - one line saying what this chain is for - spelled in the prompt as
+#: this token. `f_narrative` is judged against exactly that sentence, and nothing else, so
+#: the line travels with the chain and not with the settings: two configs on one chain
+#: screen the same tokens, and the same project must not score two ways because a different
+#: set happened to be live.
+THESIS_TOKEN = "__THESIS__"
+#: What the prompt shows when a chain never registered a thesis. Leaving the blank would
+#: leave the judgement with no target at all - saying so is at least a fact the model can
+#: read, and the chain yaml is where the line gets written.
+NO_THESIS = "（本链未登记主线）"
+
+PROMPT_VERSION = "research.md@9"
 
 #: What a rejected answer is told before it is asked again. Its own JSON goes back with it
 #: along with the finding that rejected it, because the validator is the one thing here
@@ -420,7 +431,7 @@ def talk_block(rows: Sequence[TweetRow], official: Sequence[str]) -> str:
 
 
 def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dict],
-        safety: Mapping[str, Any] | None = None, *, chain: str = "",
+        safety: Mapping[str, Any] | None = None, *, chain: str = "", thesis: str = "",
         timeline: Sequence[TweetRow] = (), talk: Sequence[TweetRow] = (),
         official: Sequence[str] = (), run_id: str = "") -> dict:
     """One model call: the pages and the posts in, the entry out, the same contract.
@@ -443,10 +454,11 @@ def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dic
         blocks.append(TALK_HEAD + "\n" + discussion)
     blocks.append(_facts_line(ca, symbol, metrics, safety))
     messages = [
-        # The prompt is one file for every chain; the chain name is substituted here so a
-        # Robinhood card is never asked what it has to do with Arc.
+        # The prompt is one file for every chain; the name and the thesis are substituted
+        # here, so a Robinhood card is never asked about Arc or judged against no line.
         {"role": "system", "content": lexicon.read_prompt("research.md")
-                                        .replace(CHAIN_TOKEN, chain or "本链")},
+                                        .replace(CHAIN_TOKEN, chain or "本链")
+                                        .replace(THESIS_TOKEN, thesis or NO_THESIS)},
         {"role": "user", "content": "\n\n".join(blocks)},
     ]
     raw = llm.complete_json(messages, purpose="research", prompt_version=PROMPT_VERSION,
@@ -576,6 +588,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
         raise SourceError("外链都打不开或读不到正文")
     read_s = time.monotonic() - started
     raw = ask(ca, symbol, metrics, pages, safety, chain=str(row.get("chain_name") or ""),
+              thesis=str(row.get("chain_thesis") or ""),
               timeline=gathered.get("timeline") or (),
               talk=gathered.get("talk") or (),
               official=gathered.get("official") or (),
@@ -623,6 +636,7 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     config_id = str(chain.get("config_id") or "default")
     rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
              "chain_name": chain_name(chain),
+             "chain_thesis": chain_thesis(chain),
              "config_id": config_id, "symbol": target.get("symbol"),
              "run_id": run_id} for target in targets]
     total = len(rows)

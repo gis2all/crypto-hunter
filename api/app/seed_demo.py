@@ -486,7 +486,7 @@ def _write_reports(conn, run_id, ranked, run_dir, top, now) -> None:
             "sections": {
                 title: sections[title]
                 for title in ("产品完成度", "项目实质与亮点", "团队与 dev 可信度",
-                              "叙事与官方关系", "社区活跃度")
+                              "叙事与主线", "社区活跃度")
                 if sections.get(title)
             },
         }

@@ -322,6 +322,19 @@ def chain_name(chain: Mapping[str, Any] | None) -> str:
     return ""
 
 
+def chain_thesis(chain: Mapping[str, Any] | None) -> str:
+    """这句话就是这条链的主线，也是 `f_narrative` 唯一的判据。
+
+    It belongs to the chain and not to a set of settings: two configs on one chain screen
+    the same tokens, and a thesis that moved with the settings would score one project two
+    ways depending on which set happened to be live. A file that never registered one reads
+    as empty here, and the prompt says so rather than showing a blank - a blank is a
+    question with no target, and the chain yaml is where the line gets written.
+    """
+    chain = chain or {}
+    return str(chain.get("thesis") or "").strip()
+
+
 def chain_entry(chain_id: str) -> dict:
     """The chain's file as written: its own facts plus every set of settings."""
     chains = load_chains()

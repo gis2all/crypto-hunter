@@ -247,7 +247,7 @@ def _seed_round(conn, run_id, ca=CA, symbol="TKN", score=71.2, chain_id=ARC,
         " VALUES (?, ?, 1, ?, 'written', ?, ?)",
         (run_id, ca, "一句话结论",
          json.dumps({"verdict": "一句话结论",
-                     "sections": {"叙事与官方关系": "和本链有关"}}), at),
+                     "sections": {"叙事与主线": "和本链有关"}}), at),
     )
     conn.execute(
         "INSERT INTO run_summary (run_id, payload_json, created_at) VALUES (?, ?, ?)",

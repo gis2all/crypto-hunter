@@ -172,6 +172,7 @@ def run(ca: str, tell: Callable[[str], None] | None = None) -> dict:
         "ca": ca,
         "chain_id": chain_id,
         "chain_name": config.chain_name(chain),
+        "chain_thesis": config.chain_thesis(chain),
         "symbol": metrics.symbol,
         "run_id": "",
         "config_id": "",

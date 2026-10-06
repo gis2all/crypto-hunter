@@ -4,6 +4,8 @@
 id: arc
 # 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
 name: Arc
+# 这条链的主线，一句话。f_narrative 只判「在不在主线上」，判据就是这句话（写进 research.md 的 __THESIS__）。
+thesis: 稳定币的支付与结算轨：用 USDC 结算、agent 付费、机构资产上链生息
 label: Arc 雷达
 enabled: true
 explorer: https://explorer.arc.io

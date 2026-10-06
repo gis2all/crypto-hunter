@@ -72,14 +72,14 @@ INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
 #: The five 0-5 judgements the off-chain block is computed from, with the anchor each one
 #: is scored against. The anchors are 口径, not knobs: they ride in the group's 说明, and
 #: the weights that split the block live in `pipeline.scoring.offchain_factor_weights`.
-#: The narrative anchor names a chain, and the page must name its own: 「离开 Arc 跑不起来 = 5」
+#: The narrative anchor names a chain, and the page must name its own: 「核心业务就是 Arc 的主线 = 5」
 #: printed on the Robinhood page scores the wrong chain's question. Substituted per page from
 #: `config.chain_name` - the chain's own name, not the radar's label (user, 2026-09-30).
 OFFCHAIN_LABELS = {
     "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
     "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
     "f_team": ("团队与 dev 可信度", "0–5 · 只奖可追溯；批量建币一票降档"),
-    "f_narrative": ("叙事与官方关系", "0–5 · 离开 %s 跑不起来 = 5"),
+    "f_narrative": ("叙事与主线", "0–5 · 核心业务就是 %s 的主线 = 5"),
     "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
 }
 ALERT_LABELS = {

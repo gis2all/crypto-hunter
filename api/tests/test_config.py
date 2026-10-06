@@ -75,6 +75,15 @@ def test_every_chain_declared():
 
 
 def test_robinhood_scans_its_own_sources():
+    """`f_narrative` is judged against the chain's own line, so a chain that ships none
+    ships a prompt with no target. Every shipped chain carries one, and a file that leaves
+    it out reads as empty rather than as some other chain's line."""
+    for chain_id in ("arc", "bsc", "robinhood"):
+        assert config.chain_thesis(config.chain(chain_id)), chain_id
+    assert config.chain_thesis({"thesis": "  x  "}) == "x", "the line is trimmed"
+    assert config.chain_thesis({}) == ""
+
+
     """The three launchpad feeds only exist for Robinhood, and the two Arc-only sources must
     not be in the list: RadarDEX and Tolly answer about Robinhood with the Arc rollout, so a
     config that named them would fill the pool with another chain's tokens."""

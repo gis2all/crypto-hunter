@@ -122,13 +122,13 @@ def forget_other_rounds(chain_id: str, config_id: str, run_id: str) -> int:
 BLOCKS = (("产品完成度", "prod_text"),
           ("项目实质与亮点", "substance_text"),
           ("团队与 dev 可信度", "team_text"),
-          ("叙事与官方关系", "narr_text"),
+          ("叙事与主线", "narr_text"),
           ("社区活跃度", "social"))
 
 #: The block an official endorsement is reported under. The badge is display-only - it never
 #: reaches the score - so it travels beside the block that argues the relationship rather
 #: than as a field of its own on the card.
-BADGE_TITLE = "叙事与官方关系"
+BADGE_TITLE = "叙事与主线"
 
 
 def report_payload(entry: dict | None, deltas: list[dict]) -> dict:
