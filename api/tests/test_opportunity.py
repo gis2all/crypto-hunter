@@ -1830,7 +1830,7 @@ def test_the_settings_page_reads_every_knob_with_its_words(client):
     keys = {field["key"] for field in fields}
     assert {"sources_per_scan", "calls_per_scan", "classify_per_scan", "extract_per_scan",
             "traces_per_scan", "x_interval", "window_hours", "slice_hours",
-            "pass_score"} == keys
+            "pass_score", "sites_per_scan"} == keys
     for field in fields:
         assert field["label"] and field["hint"], "每个旋钮都要说清它是什么、为什么"
         assert field["min"] <= field["value"] <= field["max"]
@@ -2399,3 +2399,147 @@ def test_a_disabled_official_handle_is_still_known(isolated_db):
     assert "sleepy_project" in scan.known_handles([])
     assert "sleepy_project" not in {
         row["target"] for row in db.opportunity_sources_enabled()}
+
+
+# ------------------------------------------------------------------ 官网刷新（site lane）
+
+def _html(text: str, links: str = "") -> str:
+    return "<html><body><p>%s</p>%s</body></html>" % (text, links)
+
+
+def _fetch(pages: dict):
+    def reader(url):
+        if url not in pages:
+            raise RuntimeError("404")
+        return pages[url]
+    return reader
+
+
+def test_site_bootstrap_registers_one_row_per_host(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", official_url="https://foo.xyz/about")
+    _an_entry("opp-site-b", official_url="https://foo.xyz/blog")
+    _an_entry("opp-site-c", official_url="https://x.com/someone")
+
+    assert site.bootstrap() == 1, "同一个域名只登记一行，社交频道不算官网"
+    rows = db.opportunity_sites()
+    assert [row["host"] for row in rows] == ["foo.xyz"]
+    assert rows[0]["url"] == "https://foo.xyz/"
+    assert site.bootstrap() == 0, "重复播种不新增行"
+
+
+def test_the_first_site_read_only_takes_a_snapshot(isolated_db):
+    """第一次读只记快照：否则打开这条 lane 一次就多出每个项目一张卡。"""
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", official_url="https://foo.xyz/")
+    site.bootstrap()
+    out = site.run("scan-1", fetch=_fetch({"https://foo.xyz/": _html("Mainnet is live today")}))
+
+    assert out["read"] == 1 and out["changed"] == 0 and out["posts"] == 0
+    assert db.opportunity_sites()[0]["snapshot_json"]
+
+
+def test_a_changed_page_becomes_a_material(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", title="Foo", official_url="https://foo.xyz/")
+    site.bootstrap()
+    site.run("scan-1", fetch=_fetch({"https://foo.xyz/": _html("The old homepage")}))
+    out = site.run("scan-2", fetch=_fetch({
+        "https://foo.xyz/": _html("A brand new testnet is live, join the faucet now")}))
+
+    assert out["changed"] == 1 and out["posts"] == 1
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT tweet_id, text, trace_level, url, source_target"
+                           " FROM opportunity_posts").fetchone()
+    finally:
+        conn.close()
+    assert row["text"].startswith("官网更新 · Foo")
+    assert row["trace_level"] == "A", "材料即官网：不需要再搜一次"
+    assert row["source_target"] == "site:foo.xyz"
+    assert row["url"] == "https://foo.xyz/"
+
+
+def test_a_repaint_is_not_a_change(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", official_url="https://foo.xyz/")
+    site.bootstrap()
+    base = " ".join("line %d of the same page" % i for i in range(60))
+    site.run("scan-1", fetch=_fetch({"https://foo.xyz/": _html(base)}))
+    out = site.run("scan-2", fetch=_fetch({
+        "https://foo.xyz/": _html(base.replace("line 3 ", "row 3 "))}))
+
+    assert out["changed"] == 0 and out["posts"] == 0, "0.98 以下的差异是改版噪音"
+
+
+def test_the_lane_follows_the_site_s_blog_link(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", official_url="https://a.xyz/")
+    site.bootstrap()
+    home = _html("Home page text", '<a href="https://a.xyz/blog">Blog</a>')
+    site.run("scan-1", fetch=_fetch({
+        "https://a.xyz/": home, "https://a.xyz/blog": _html("First post")}))
+    snapshot = json.loads(db.opportunity_sites()[0]["snapshot_json"])
+    assert {page["url"] for page in snapshot["pages"]} == {
+        "https://a.xyz/", "https://a.xyz/blog"}
+
+    out = site.run("scan-2", fetch=_fetch({
+        "https://a.xyz/": home,
+        "https://a.xyz/blog": _html("Second post: the new testnet is live")}))
+    assert out["posts"] == 1
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT url FROM opportunity_posts").fetchone()
+    finally:
+        conn.close()
+    assert row["url"] == "https://a.xyz/blog", "变的是博客页，材料就写博客页"
+
+
+def test_three_misses_disable_a_site(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-site-a", official_url="https://foo.xyz/")
+    site.bootstrap()
+    for _ in range(2):
+        out = site.run("scan-x", fetch=_fetch({}))
+        assert out["failed"] == 1 and out["disabled"] == 0
+    out = site.run("scan-x", fetch=_fetch({}))
+    assert out["disabled"] == 1
+    assert db.opportunity_sites()[0]["enabled"] == 0
+
+
+def test_the_site_lane_rotates_by_last_refresh(isolated_db, monkeypatch):
+    from app.opportunity import settings as opp_settings
+    from app.opportunity import site
+
+    monkeypatch.setattr(opp_settings, "value",
+                        lambda key, default=None: 1 if key == "sites_per_scan" else default)
+    _an_entry("opp-a", official_url="https://a.xyz/")
+    _an_entry("opp-b", official_url="https://b.xyz/")
+    site.bootstrap()
+    fetch = _fetch({"https://a.xyz/": _html("a home"), "https://b.xyz/": _html("b home")})
+
+    first = site.run("s1", fetch=fetch)
+    assert first["sites"] == 1 and first["deferred"] == 1
+    rows = {row["host"]: row for row in db.opportunity_sites()}
+    assert sum(1 for row in rows.values() if row["last_refresh_at"]) == 1
+
+    site.run("s2", fetch=fetch)
+    rows = {row["host"]: row for row in db.opportunity_sites()}
+    assert all(row["last_refresh_at"] for row in rows.values()), "第二轮读另一条"
+
+
+def test_the_site_lane_stops_on_cancel(isolated_db):
+    from app.opportunity import site
+
+    _an_entry("opp-a", official_url="https://a.xyz/")
+    site.bootstrap()
+    flag = threading.Event()
+    flag.set()
+    with pytest.raises(RuntimeError):
+        site.run("s1", cancel=flag, fetch=_fetch({"https://a.xyz/": _html("x")}))
