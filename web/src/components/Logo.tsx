@@ -7,9 +7,11 @@ import { useState } from "react";
  *  shelf reserves the score's corner (8.8.2). It is a square because the whole screen is, and
  *  the fill when it is empty is the theme's own black or white (--logo-empty) rather than
  *  nothing at all, so an empty box reads as empty. The box is drawn in the accent at 2px, and
- *  with a 6px radius (2026-10-01, user): the fill says which box it is, and the ring says
- *  there is a box at all - a hairline in --border was too quiet on the light theme, where the
- *  empty fill is white on a near-white card.
+ *  The fill says which box it is, and the ring says there is a box at all - a hairline in
+ *  --border was too quiet on the light theme, where the empty fill is white on a near-white
+ *  card. The corners are square, like the rest of the screen (2026-10-06, user): the box
+ *  carried a 6px radius for a while and was the second exception to the global zero radius,
+ *  and it is not one any more.
  *
  *  On a card it is the height of the two lines beside it - the symbol and the address, which
  *  the head is - so the head stands or falls on the text, and a mark can be any shape it likes

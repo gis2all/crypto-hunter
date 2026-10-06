@@ -239,10 +239,11 @@ html{scrollbar-gutter:stable}
    so a head with no mark is the same head with nothing in that box - not a card of a
    different height. The ring is the accent at 2px: a hairline in --border was invisible in the
    light theme, where an empty box is white on a near-white card, so it is drawn at the weight
-   of a thing you are meant to notice rather than of a thing meant to disappear. The 6px
-   radius is the second !important exception to 8.4.5 after .cfg-dot (2026-10-01, user), and
-   the box clips its own picture (overflow) so a mark cannot paint out of the corners the ring
-   draws.
+   of a thing you are meant to notice rather than of a thing meant to disappear. The corners are
+   square (2026-10-06, user): the box carried a 6px radius for a while, which made it the
+   second !important exception to 8.4.5 after .cfg-dot, and that exception is gone - the run
+   dot is the only one left. The box still clips its own picture (overflow) so a mark cannot
+   paint outside the ring.
 
    The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the
    two lines it stands beside, and 19px in a 最近搜索 row - inside the 19.4px that row's own
@@ -250,7 +251,7 @@ html{scrollbar-gutter:stable}
    the list keeps its 33.4px. Everything else about the box is this one rule, so the two sizes
    cannot drift apart. */
 .logo{flex:0 0 auto;align-self:center;background:var(--logo-empty);
-  border:2px solid var(--accent);border-radius:6px!important;overflow:hidden}
+  border:2px solid var(--accent);overflow:hidden}
 .logo img{display:block;width:100%;height:100%;object-fit:cover}
 
 /* Equal cards, approved 2026-09-26 - the 结论 box, and it now says when it is cut.
