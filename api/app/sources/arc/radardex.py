@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics
 from ..base import social_url, web_url
 from ..http import SourceError, UA_JSON, cached, json_get
@@ -56,33 +57,39 @@ class RadarDEX:
         return cached("rd:tokens:%s" % chain_id, UNIVERSE_TTL, produce) or {}
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
-        out = []
+        """Every row the registry lists, minus the ones carrying nothing to measure.
+
+        Same predicate as the free half's 空壳淘汰 rule (`filters.is_empty_shell`): a row with
+        neither a market cap nor a reserve has nothing for any floor to read.
+        """
+        out: list[TokenMetrics] = []
         for ca, row in self.rows(chain_id).items():
-            out.append(
-                TokenMetrics(
-                    ca=ca,
-                    symbol=(row.get("symbol") or None),
-                    market_cap_usd=_num(row.get("mcap")),
-                    liquidity_usd=_num(row.get("liquidityUsdc")),
-                    volume_24h_usd=_num(row.get("volume24")),
-                    # The only bulk source that ships a pool count (measured: 2000/2000
-                    # rows filled). GeckoTerminal is still believed first; this is the
-                    # fallback for the tokens it does not index.
-                    pools=int(row["pools"]) if row.get("pools") else None,
-                    holders=int(row["holderCount"]) if row.get("holderCount") else None,
-                    price_usd=_num(row.get("price")),
-                    price_change_24h_pct=_num(row.get("change24h")),
-                    launchpad=row.get("launchpad") or None,
-                    created_at=_iso(row.get("deployTs") or row.get("firstSeen")),
-                    socials=_socials(row),
-                    websites=_websites(row),
-                    provenance={
-                        "market_cap_usd": "radardex", "liquidity_usd": "radardex",
-                        "volume_24h_usd": "radardex", "holders": "radardex",
-                        "pools": "radardex",
-                    },
-                )
+            metrics = TokenMetrics(
+                ca=ca,
+                symbol=(row.get("symbol") or None),
+                market_cap_usd=_num(row.get("mcap")),
+                liquidity_usd=_num(row.get("liquidityUsdc")),
+                volume_24h_usd=_num(row.get("volume24")),
+                # The only bulk source that ships a pool count (measured: 2000/2000
+                # rows filled). GeckoTerminal is still believed first; this is the
+                # fallback for the tokens it does not index.
+                pools=int(row["pools"]) if row.get("pools") else None,
+                holders=int(row["holderCount"]) if row.get("holderCount") else None,
+                price_usd=_num(row.get("price")),
+                price_change_24h_pct=_num(row.get("change24h")),
+                launchpad=row.get("launchpad") or None,
+                created_at=_iso(row.get("deployTs") or row.get("firstSeen")),
+                socials=_socials(row),
+                websites=_websites(row),
+                provenance={
+                    "market_cap_usd": "radardex", "liquidity_usd": "radardex",
+                    "volume_24h_usd": "radardex", "holders": "radardex",
+                    "pools": "radardex",
+                },
             )
+            if is_empty_shell(metrics):
+                continue
+            out.append(metrics)
         return out[:limit] if limit else out
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:

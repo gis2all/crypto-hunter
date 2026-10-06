@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics
 from ..base import social_url, web_url
 from ..http import SourceError, UA_JSON, cached, json_get, pmap
@@ -156,7 +157,20 @@ class Tolly:
             return None
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
-        out = [self._metrics(ca, row) for ca, row in self.rows(chain_id).items()]
+        """Every row the registry lists, minus the ones carrying nothing to measure.
+
+        A row with neither a market cap nor a reserve is a launchpad placeholder with an
+        address on it, and the free half drops that exact shape a moment later as 空壳淘汰.
+        Handing them over spends funnel rows on tokens no rule can judge, and credits the
+        count to the rule rather than to the source that shipped them.
+        `filters.is_empty_shell` is the predicate on both sides.
+        """
+        out: list[TokenMetrics] = []
+        for ca, row in self.rows(chain_id).items():
+            metrics = self._metrics(ca, row)
+            if is_empty_shell(metrics):
+                continue
+            out.append(metrics)
         return out[:limit] if limit else out
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:

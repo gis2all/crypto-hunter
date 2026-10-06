@@ -108,6 +108,18 @@ def test_coinbarrel_publishes_the_token_high_in_token_units():
     assert metrics.creator == "0x68aD419DB7ee5D4748C484005c48125eA3FF139e"
 
 
+def test_coinbarrel_leaves_out_a_row_that_is_only_an_address(monkeypatch):
+    """A row with neither a market cap nor a reserve is a shell: the free half drops that
+    shape anyway, and on 2026-10-06 all 85 of them were the whole of one panel reading.
+    Either number answering keeps the row - the same predicate the rule uses."""
+    shell = {**CB_ROW, "fdv_usd": None, "peak_fdv_usd": None,
+             "pool_total_liquidity_native": None, "liquidity_primary_usd": None}
+    rows = {"0xshell": shell, "0xreal": CB_ROW}
+    monkeypatch.setattr(coinbarrel.CoinBarrel, "rows", lambda self, chain_id: rows)
+    out = coinbarrel.CoinBarrel().fetch_universe("robinhood", 0)
+    assert [m.ca for m in out] == ["0xreal"]
+
+
 def test_pez_converts_a_quote_denominated_volume_into_dollars():
     """The quote asset on this chain is not a stablecoin - one row's is a tokenised share -
     so the raw `volume` is not dollars and printing it as if it were would be a wrong number

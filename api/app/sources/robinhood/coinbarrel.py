@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics
 from ..http import SourceError, UA_JSON, cached, json_get
 
@@ -104,7 +105,21 @@ class CoinBarrel:
         return cached("cb:tokens:%s" % chain_id, UNIVERSE_TTL, produce) or {}
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
-        out = [self._metrics(ca, row) for ca, row in self.rows(chain_id).items()]
+        """Every row the index lists, minus the ones carrying nothing to measure.
+
+        A row with neither a market cap nor a reserve is an address with a symbol on it,
+        and the free half drops exactly that shape a moment later as 空壳淘汰 (measured
+        2026-10-06: 85 of the 302 rows this feed lists, against 0 from every other source
+        on the chain). Leaving them in the pull spends funnel rows on tokens no rule can
+        judge. Either number answering keeps the row: the predicate is
+        `filters.is_empty_shell`, the same one the 空壳淘汰 rule reads.
+        """
+        out: list[TokenMetrics] = []
+        for ca, row in self.rows(chain_id).items():
+            metrics = self._metrics(ca, row)
+            if is_empty_shell(metrics):
+                continue
+            out.append(metrics)
         return out[:limit] if limit else out
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:

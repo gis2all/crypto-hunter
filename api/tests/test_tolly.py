@@ -188,3 +188,14 @@ def test_the_row_carries_market_facts_and_never_a_holder_count():
 def test_the_launch_flag_becomes_a_launchpad_name():
     assert tolly.Tolly()._metrics(CA_A, _row(CA_A, tolly=True)).launchpad == "tolly"
     assert tolly.Tolly()._metrics(CA_A, _row(CA_A)).launchpad is None
+
+
+def test_a_row_with_no_market_data_is_not_handed_over(monkeypatch):
+    """An address with neither a market cap nor a reserve is a launchpad placeholder, and
+    the free half drops that shape a moment later as 空壳淘汰. Skipping it here is the same
+    predicate (`filters.is_empty_shell`), and it keeps the funnel's row count on tokens a
+    rule can actually judge."""
+    rows = {CA_A: _row(CA_A), CA_B: _row(CA_B, mcap=0, liq=0)}
+    monkeypatch.setattr(tolly.Tolly, "rows", lambda self, chain_id: rows)
+    assert [m.ca for m in tolly.Tolly().fetch_universe("arc", 0)] == [CA_A]
+    assert [m.ca for m in tolly.Tolly().fetch_universe("arc", 1)] == [CA_A]
