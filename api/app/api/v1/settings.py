@@ -32,7 +32,7 @@ from .schemas import SettingsFormOut, SettingsOut
 
 router = APIRouter(prefix="/chains/{chain_id}/settings", tags=["settings"])
 
-SECTIONS = ("schedule", "pipeline", "report", "alerts", "sources")
+SECTIONS = ("schedule", "pipeline", "report", "sources")
 
 
 class SettingsIn(BaseModel):

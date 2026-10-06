@@ -1,4 +1,4 @@
-# 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
+# 每条链的独立设定：节奏、过滤、评分、出口都属于链自己。
 # 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
 # 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
 id: bsc
@@ -67,7 +67,6 @@ configs:
       per_round: 5
       push_target: telegram
       push_content: [cards, table]
-    alerts:
       rename_count_min: 2
       rename_count: true
       creator_token_count: true

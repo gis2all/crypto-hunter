@@ -82,12 +82,6 @@ OFFCHAIN_LABELS = {
     "f_narrative": ("叙事与主线", "0–5 · 核心业务就是 %s 的主线 = 5"),
     "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
 }
-ALERT_LABELS = {
-    "rename_count": "X 改名次数",
-    "creator_token_count": "X 建币数量",
-    "duplicate_symbol": "同名合约并行",
-    "missing_socials": "官网漏收录 X/TG",
-}
 
 
 def _offchain_labels(chain: dict) -> dict[str, tuple[str, str]]:
@@ -163,7 +157,6 @@ def build(
     scoring = pipeline.get("scoring") or {}
     schedule = chain.get("schedule") or {}
     report = chain.get("report") or {}
-    alerts = chain.get("alerts") or {}
     factor_weights = scoring.get("onchain_factor_weights") or {}
     offchain_weights = scoring.get("offchain_factor_weights") or {}
 
@@ -330,21 +323,6 @@ def build(
                checks=scan_checks),
     ]
 
-    alert_fields = []
-    for key, label in ALERT_LABELS.items():
-        if key == "rename_count":
-            alert_fields.append(
-                _field("alerts.rename_count_min", label, "num",
-                       str(alerts.get("rename_count_min", 2)), op="≥", unit="次",
-                       dim=None, enabled_key="alerts.rename_count", drop_x="下轮生效",
-                       enabled=bool(alerts.get("rename_count", True)))
-            )
-        else:
-            alert_fields.append(
-                _field("alerts.%s" % key, label, "bool", bool(alerts.get(key, True)),
-                       check_label="开启", drop_x="下轮生效")
-            )
-
     push_fields = [
         _field("report.push_target", "发送目标", "select",
                report.get("push_target", "telegram"),
@@ -469,11 +447,6 @@ def build(
                         )
                         if line
                     ),
-                },
-                {
-                    "key": "alerts", "title": "提醒", "hint": "",
-                    "fields": alert_fields, "note": "",
-                    "detail": "只看阈值有没有踩线，不进分、也不淘汰。",
                 },
                 {
                     # The read-only banner below is a `sub` row inside push_fields, so this

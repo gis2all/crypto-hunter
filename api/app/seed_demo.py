@@ -331,7 +331,7 @@ def _write_chains(conn: sqlite3.Connection, chains: dict, now: str) -> None:
         )
 
 
-SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts")
+SETTINGS_SECTIONS = ("schedule", "pipeline", "report")
 
 
 def _write_settings(conn: sqlite3.Connection, cfg: dict, now: str) -> int:

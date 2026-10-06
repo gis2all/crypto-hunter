@@ -289,7 +289,7 @@ def _config_entry(cfg: dict | None) -> dict:
 def chain(chain_id: str, config_id: str | None = None) -> dict:
     """One chain read through one of its sets of settings.
 
-    The five settings sections come from the named config; everything else is the chain's
+    The four settings sections come from the named config; everything else is the chain's
     own. `id` stays the chain's id even under a second set of settings - both sets screen
     the same tokens on the same node, and that id is what says so.
     """
@@ -585,7 +585,7 @@ def create_config(chain_id: str, mode: str = "new", from_config_id: str | None =
                   label: Any = None) -> dict:
     """Add a set of settings: a fresh one seeded from `default`, or a copy of a named one.
 
-    The new entry gets the base's five sections and nothing else. A report library is what
+    The new entry gets the base's four sections and nothing else. A report library is what
     a set of settings has earned, so a new one starts empty - handing it somebody else's
     rounds would point "上一轮" at a round it never ran. It also starts switched off: only
     one set per chain runs (`set_active_config`), and a set nobody has saved yet is not the
@@ -733,9 +733,9 @@ def forget_library(chain_id: str, config_id: str) -> dict[str, int]:
         shutil.rmtree(RAW_DIR / run_id, ignore_errors=True)
     return sizes
 
-#: The five sections that make up "a chain's settings". Everything a round does is
+#: The four sections that make up "a chain's settings". Everything a round does is
 #: decided inside these, which is why a settings version can be replayed later.
-SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts", "sources")
+SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "sources")
 
 
 def settings_payload(chain_id: str, version_id: int | None = None,

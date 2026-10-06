@@ -16,7 +16,7 @@ from ..api.v1 import forms
 from ..store import db
 from . import cards as card_builder
 
-SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts")
+SETTINGS_SECTIONS = ("schedule", "pipeline", "report")
 
 # Rounds that predate the round-level facts table have no push state at all. That is a
 # reason for the reader of the API, not a delivery status, so it travels in its own

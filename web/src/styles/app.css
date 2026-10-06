@@ -322,8 +322,8 @@ html{scrollbar-gutter:stable}
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all
    (`.pgroup:not(:has(.drop-n)):not(:has(.drop-x)) .prow .field`), so 硬过滤 / 安全门槛 /
-   两个评分口径 already read label-left, value-right - while 产出与节奏 / 提醒 /
-   推送与依赖, three groups whose rows carry a drop hint (先发后研, 直接复用), left their
+   两个评分口径 already read label-left, value-right - while 产出与节奏 / 推送与依赖, the two
+   groups whose rows carry a drop hint (先发后研, 直接复用), left their
    readings against the label and the rest of the row empty. Measured at 1726: a reading at
    x=797 in a column running to 1129, 每轮报告数's at 449 in a row running to 869, 数据源凭据's
    at 1486 in a row running to 1682. The hint is a note about the value, not a second value,
@@ -361,12 +361,12 @@ html{scrollbar-gutter:stable}
    `.drop:empty{display:none}` (proto.css) was written for the rows that have nothing to put
    in it - but that selector never matches the `<em class="drop">` cell those groups render: the
    cell has a child, and the child is `display:none` until the row is dirty. So every clean row
-   in 产出与节奏 / 提醒 / 推送与依赖 held 54px for a hint that was not on screen,
+   in 产出与节奏 / 推送与依赖 held 54px for a hint that was not on screen,
    and the readings stopped 62px short of the edge the rule above right-aligns them to.
    Measured at 1726 before: one reading ended at 1129 in a column running to 1191,
    每轮报告数's at 869 in a row running to 931.
 
-   It is not only air. 提醒's `X 改名次数` row is 389px of content in a 342px row (label 120
+   It is not only air. A dense checkbox row is 389px of content in a 342px row (label 120
    + gap 8 + field 175 + gap 8 + drop 54 + padding 24), and the 54px is the whole difference:
    with the cell gone the field gets 182 for 175 of content and 开启 stays on one line instead
    of breaking between its two characters.
@@ -376,8 +376,8 @@ html{scrollbar-gutter:stable}
 .prow:not(.dirty)>.drop:not(:has(>.drop-n)){display:none}
 
 /* A checkbox never breaks its own label (2026-09-26). `.chk` is a flex item of `.field`
-   like the number box beside it, so a row that is over budget shrinks it - 提醒's
-   `X 改名次数` while it is dirty and the 54px cell is back squeezes the box to 30px and
+   like the number box beside it, so a row that is over budget shrinks it - a dense checkbox
+   row while it is dirty and the 54px cell is back squeezes the box to 30px and
    paints 开启 on two lines. `flex:0 0 auto` holds the box at its own width and lets the
    row overflow into the label's empty tail instead, which is the one place in the row with
    slack: measured, the box stays 40px and the `≥` lands at 1051 against a label whose
@@ -603,9 +603,9 @@ html{scrollbar-gutter:stable}
       in reading order. Below the gate the `.pcol` divs stack back into one column in that
       same order and the frozen `auto-fit` widths come back.
 
-   1620px is measured, not picked: 运行's ratios give 提醒 (the 1fr column) 1/4.05 of the
-   content, and 提醒 needs 330px before `X 改名次数` runs out of room. At 1620 the content
-   area is 1376px, which is 334px. Everything below that is the frozen layout.
+   1620px is measured, not picked: the run block's ratios give its 1fr column 1/4.05 of the
+   content, and that column needs 330px before its widest row runs out of room. At 1620 the
+   content area is 1376px, which is 334px. Everything below that is the frozen layout.
 
    The rail went 212 -> 260 the same day, which takes those 48px off the content area at
    every viewport, so the gate moves with it: 1668 is the same measurement as 1620 was. */

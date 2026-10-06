@@ -36,7 +36,6 @@ configs:
     schedule: {interval_hours: 24, start_hour: 3, timezone: Asia/Shanghai}
     pipeline: {gate_limit: 20}
     report: {per_round: 5}
-    alerts: {rename_count: true}
   - id: wide
     label: Wide
     enabled: true
@@ -44,7 +43,6 @@ configs:
     schedule: {interval_hours: 24, start_hour: 3, timezone: Asia/Shanghai}
     pipeline: {gate_limit: 40}
     report: {per_round: 8}
-    alerts: {rename_count: false}
 """
 
 CA = "0xaa"
