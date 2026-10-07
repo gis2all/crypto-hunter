@@ -42,7 +42,7 @@
 | --- | --- |
 | **一次读给全页**：`GET /opportunity` 返回条目（含步骤与来源清单）、计数、最近一次扫描与页面文案。 | 拆成四五个请求，页面就要自己拼一个「这一屏」出来，而拼装是判定 —— 分数与文案都只在后端。 |
 | 扫描的 `trace` 计数里多三项：`traced`（A/B/C 各几条）、`skipped`（超上限或被去重）、`added`（A 级自动进 watchlist 的账号）。 | 溯源是这一轮最贵的一步，"这次溯了几条、跳了几条"必须看得见，否则积压会变成沉默。 |
-| 四条新端点：`GET/PUT /opportunity/settings`（九个旋钮，`fields` + 分块 `blocks` + `dirty_hint` 都由后端给；保存只写 override）、`GET /opportunity/scans`（历史轮次，日期条读它）、`GET /opportunity/queues`（未分组 / 未抽取 / 溯源失败，三堆都带 `count` 与 `top`；`limit=0` 表示整堆，默认 6；`scan=<id>` 只看那一轮抓到的）、`PATCH /opportunity/items/{slug}`（归档 / 删除 / 恢复）。 | 设定是旋钮不是事实，所以存 `config/` 不进数据库；排队视图回答"我见过的东西去哪了"，队列不可见就等于丢失。 |
+| 四条新端点：`GET/PUT /opportunity/settings`（十个旋钮，`fields` + 分块 `blocks` + `dirty_hint` 都由后端给；保存只写 override）、`GET /opportunity/scans`（历史轮次，日期条读它）、`GET /opportunity/queues`（未分组 / 未抽取 / 溯源失败，三堆都带 `count` 与 `top`；`limit=0` 表示整堆，默认 6；`scan=<id>` 只看那一轮抓到的）、`PATCH /opportunity/items/{slug}`（归档 / 删除 / 恢复）。 | 设定是旋钮不是事实，所以存 `config/` 不进数据库；排队视图回答"我见过的东西去哪了"，队列不可见就等于丢失。 |
 | 阶段行带**阶段内进度**（`done` / `total`）：一个六分钟的 collect 只报「running」，页面就等于卡住。 | 只报状态的进度条在长阶段上和死机没有区别。 |
 | 扫描是**可轮询的 job**，不是一轮：`POST /opportunity/scan` 返回 202 与扫描行，`GET /opportunity/scans/{id}` 轮询它，七个阶段与计数都写在那一行上（计数里的 `queries` 是 X **调用**次数，因为一条查询会切成好几片）。 | 扫描不属于任何链，写进 `runs` 就会出现在那条链的轮次列表里，读起来像那条链又跑了一轮（与 CA 搜索同一条理由）。 |
 | **可以中止**：`POST /opportunity/scans/{id}/cancel`，幂等、对已结束的扫描返回 `cancelled: false` 而不是 404；扫描停在下一次 X 调用上。 | 扫描通常卡在限流上，"跑完这一段再停"等于让读者再等四十秒。 |

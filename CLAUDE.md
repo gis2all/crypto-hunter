@@ -66,7 +66,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
 - `web/src/features/`：一个页面一个目录；`web/src/components/` 存放通用件；`web/src/styles/` 是视觉的唯一出处。见两份 `README.md`。
-- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）；`opportunity.example.yaml` 是新机会那条流水线九个旋钮的模板，本机那份 `opportunity.yaml` 由设定页保存时创建，只写被改过的键，删掉即回默认。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
+- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）；`opportunity.example.yaml` 是新机会那条流水线十个旋钮的模板，本机那份 `opportunity.yaml` 由设定页保存时创建，只写被改过的键，删掉即回默认。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
 - `data/`：`crypto-hunter.db` 与 `raw/`（每轮原始响应与 HTTP 缓存），不入库。
 
 # 6. 术语
