@@ -27,6 +27,7 @@ import json
 import logging
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlsplit
 
 from ..search.base import normalize_url
@@ -40,8 +41,12 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: Bumped when the rules below change, so a material can say which rules wrote it.
 SITE_VERSION = "site@1"
 
-#: Default rotation width; the settings page overrides it (`sites_per_scan`).
-MAX_SITES = 10
+#: Default rotation width; the settings page overrides it (`sites_per_scan`). The default is
+#: "everything registered" - one site is 1.4-2.8s, and four workers keep 51 of them under a
+#: minute, which is noise beside the X lane's six.
+MAX_SITES = 100
+#: Pages on different hosts, so this is politeness rather than a per-site limit.
+SITE_WORKERS = 4
 #: Homepage plus at most this many blog / news pages. Three pages is enough to see a release
 #: note without turning one site into a crawl.
 MAX_EXTRA = 2
@@ -225,34 +230,44 @@ def run(scan_id: str, tell=None, cancel: threading.Event | None = None, fetch=No
     pending = db.opportunity_sites_due(1000)
     due = pending[:budget]
     counters["deferred"] = max(0, len(pending) - len(due))
-    total = len(due) or 1
-    for index, row in enumerate(due, start=1):
-        if cancel is not None and cancel.is_set():
-            raise RuntimeError("scan cancelled")
-        counters["sites"] += 1
-        try:
-            moved, snapshot = refresh(row, fetch)
-        except Exception as exc:  # noqa: BLE001 - one dead site is a count, not a crash
-            counters["failed"] += 1
-            if db.opportunity_site_failed(row["host"], MAX_FAILURES):
-                counters["disabled"] += 1
-            reason = " ".join(str(exc or "").split())[:200]
-            if reason and reason not in counters["errors"] and len(counters["errors"]) < 3:
-                counters["errors"].append(reason)
-            log.info("opportunity: site %s did not answer: %r", row["host"], exc)
+    if not due:
+        return counters
+    total = len(due)
+    with ThreadPoolExecutor(max_workers=min(SITE_WORKERS, total)) as pool:
+        futures = {}
+        for row in due:
+            if cancel is not None and cancel.is_set():
+                raise RuntimeError("scan cancelled")
+            futures[pool.submit(refresh, row, fetch)] = row
+        done = 0
+        for future in as_completed(futures):
+            if cancel is not None and cancel.is_set():
+                for queued in futures:
+                    queued.cancel()
+                raise RuntimeError("scan cancelled")
+            row = futures[future]
+            counters["sites"] += 1
+            try:
+                moved, snapshot = future.result()
+            except Exception as exc:  # noqa: BLE001 - one dead site is a count, not a crash
+                counters["failed"] += 1
+                if db.opportunity_site_failed(row["host"], MAX_FAILURES):
+                    counters["disabled"] += 1
+                reason = " ".join(str(exc or "").split())[:200]
+                if reason and reason not in counters["errors"] and len(counters["errors"]) < 3:
+                    counters["errors"].append(reason)
+                log.info("opportunity: site %s did not answer: %r", row["host"], exc)
+            else:
+                counters["read"] += 1
+                if not moved:
+                    db.opportunity_site_saved(row["host"], snapshot, False)
+                    counters["unchanged"] += 1
+                else:
+                    posts = sum(1 for page in moved if _write(scan_id, row, page))
+                    db.opportunity_site_saved(row["host"], snapshot, True)
+                    counters["changed"] += 1
+                    counters["posts"] += posts
+            done += 1
             if tell:
-                tell(index, total)
-            continue
-        counters["read"] += 1
-        if not moved:
-            db.opportunity_site_saved(row["host"], snapshot, False)
-            counters["unchanged"] += 1
-        else:
-            # One material per changed page; the homepage is the fallback when it is the one.
-            posts = sum(1 for page in moved if _write(scan_id, row, page))
-            db.opportunity_site_saved(row["host"], snapshot, True)
-            counters["changed"] += 1
-            counters["posts"] += posts
-        if tell:
-            tell(index, total)
+                tell(done, total)
     return counters
