@@ -2534,6 +2534,23 @@ def test_the_site_lane_rotates_by_last_refresh(isolated_db, monkeypatch):
     assert all(row["last_refresh_at"] for row in rows.values()), "第二轮读另一条"
 
 
+def test_every_registered_site_is_read_by_default(isolated_db, monkeypatch):
+    """默认不是抽样：51 个站并发 4 个，一轮读完（实测 30 秒）。"""
+    from app.opportunity import settings as opp_settings
+    from app.opportunity import site
+
+    declared = {field["key"]: field["default"] for field in opp_settings.FIELDS}
+    monkeypatch.setattr(opp_settings, "value",
+                        lambda key, default=None: declared.get(key, default))
+    for index in range(5):
+        _an_entry("opp-site-%d" % index, official_url="https://s%d.xyz/" % index)
+    site.bootstrap()
+    pages = {"https://s%d.xyz/" % index: _html("page %d" % index) for index in range(5)}
+
+    out = site.run("scan-all", fetch=_fetch(pages))
+    assert (out["sites"], out["read"], out["deferred"]) == (5, 5, 0)
+
+
 def test_the_site_lane_stops_on_cancel(isolated_db):
     from app.opportunity import site
 
