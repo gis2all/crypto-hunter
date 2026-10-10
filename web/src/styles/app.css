@@ -654,16 +654,22 @@ div.pgroup>.pset{margin-top:auto}
      which is the widest field on the screen. Without a floor the label column folds back
      into its text.
 
-     The last floor is 安全门槛's checkbox row: 无危险权限 plus its four boxes need 382 to
-     sit on the title's line (2026-09-26), and on the frs alone the column came out 358.
-     416 gives that row 10px of air and still leaves 评分口径 - whose widest row needs
-     238 - 309 at 1726 and 256 at the 1668 gate.
+     安全门槛's checkbox row is the third track's other claim, and since 2026-10-11 it is
+     one no floor can cover: Solana added 可增发（铸造权未放弃） and 可冻结（冻结权未放弃）,
+     twelve characters each, to a row that was 无危险权限 plus three boxes. It needs about
+     650 now against the 382 the 416 floor was written for, and a floor that size would
+     starve 评分口径 at the 1668 gate. So the third track carries weight instead of a floor:
+     1.18 beside 硬过滤's 1.15 puts the row on one line from about 2250 (measured
+     2026-10-11: 671 wide against a 649 need at 2250, 698 at 2300) - there 硬过滤 is on its
+     own 680 floor and 评分口径 reads 568, twice its widest row's 264. Below that the row
+     stacks, title on its own line and boxes packed right beneath it, which is the fallback
+     8.1.6 already describes; nothing overflows at 2048 or 1668.
 
      The tracks follow the order the API hands the groups over (2026-09-28): 评分口径
      moved to the left edge, so the floors travelled with the groups rather than the
      positions - the first track is the panel that needs the least, and both floors stay
      on the two groups that need them. */
-  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.3fr) minmax(416px,1fr)}
+  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.15fr) minmax(416px,1.18fr)}
   /* 运行 carries two groups since 369b703 took 提醒 out (8.2.11), but this template still spelled
      three tracks: 提醒 was the 1fr middle, so 推送与依赖 moved up into it and the third
      track - 1.11fr, the ratio 推送与依赖 held while 提醒 stood between them - was left with
