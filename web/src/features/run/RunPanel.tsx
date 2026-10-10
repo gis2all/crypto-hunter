@@ -130,7 +130,7 @@ export function RunPanel({
   running: boolean;
   open: boolean;
   batch: Batch | undefined;
-  onCancel: () => void;
+  onCancel: () => Promise<unknown>;
   cancelling: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
@@ -139,14 +139,23 @@ export function RunPanel({
   // belongs. Armed is a question, not a mode - it expires on its own, so a stray press can
   // never leave a button that stops a *later* round on its second click.
   const [armed, setArmed] = useState(false);
+  // 已请求中止. The press outlives the request that carries it. The POST is back in
+  // milliseconds, while the round works on until it reaches its own next checkpoint -
+  // seconds, or one token's network wait - and reading the request's state instead answered
+  // "has it stopped" with yes a moment after the click: an 中止 button came back on a
+  // round already on its way out, where a second press looked like it did something.
+  const [asked, setAsked] = useState(false);
   useEffect(() => {
     setArmed(false);
+    setAsked(false);
   }, [run?.id, running]);
   useEffect(() => {
     if (!armed) {
       return;
     }
-    const timer = window.setTimeout(() => setArmed(false), 4000);
+    // Long enough to read the question and answer it: this press is a decision about a round
+    // that is minutes long, and four seconds is not a decision.
+    const timer = window.setTimeout(() => setArmed(false), 10000);
     return () => window.clearTimeout(timer);
   }, [armed]);
   useEffect(() => {
@@ -168,6 +177,15 @@ export function RunPanel({
   // fetching would otherwise still read 待运行 with the bar pinned at zero.
   const queued = run.status === "pending" && !run.started_at;
   const live = running && !failed && !queued;
+  // Either the request is still in flight or the round has been asked for it. Both read the
+  // same on the button, and both end in the same place: the row leaving the live states.
+  const stopping = cancelling || asked;
+  const stop = () => {
+    setAsked(true);
+    // The request itself can still fail - the API can be down - and a button stuck on
+    // 正在中止 is a stop nobody can press again.
+    onCancel().catch(() => setAsked(false));
+  };
   const active = ACTIVE_STAGE[run.status] ?? 0;
   const reached = failed || queued ? 0 : running ? active : STAGES.length;
   // The pipeline's own percent, and the stage it belongs to. A status is a boundary, not a
@@ -284,7 +302,7 @@ export function RunPanel({
         ) : null}
         <span className="spacer" />
         {queued || live ? (
-          cancelling ? (
+          stopping ? (
             <span className="btn sec demo" id="rp-abort">
               <Icon as={LoaderCircle} className="spin" size={14} />
               正在中止
@@ -293,7 +311,7 @@ export function RunPanel({
             <button
               className={armed ? "btn sec arm" : "btn sec"}
               id="rp-abort"
-              onClick={armed ? onCancel : () => setArmed(true)}
+              onClick={armed ? stop : () => setArmed(true)}
               title={
                 armed
                   ? "再点一次：本轮立刻停在当前阶段，本轮不产出报告"

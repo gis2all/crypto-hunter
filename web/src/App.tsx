@@ -334,7 +334,7 @@ export default function App() {
               running={live}
               open={runPanelOpen}
               batch={batch.data}
-              onCancel={() => run && cancel.mutate(run.id)}
+              onCancel={() => (run ? cancel.mutateAsync(run.id) : Promise.resolve())}
               cancelling={cancel.isPending}
             />
           ) : null}
