@@ -380,6 +380,9 @@ class Engine:
         # The pull is told the same floor the prefilter is about to enforce, so a scanner
         # that can stop early is never told to stop above the line the round draws.
         collector.set_scan_floor(self.sources, prefilter_cfg.get("market_cap_min_usd"))
+        # A source that filters its own board server-side takes the whole box, not just the
+        # line under it: the same three numbers the prefilter is about to enforce.
+        collector.set_scan_band(self.sources, prefilter_cfg)
         universe = collector.collect(
             self.chain, run_id, self.sources,
             on_source=told("pull"),

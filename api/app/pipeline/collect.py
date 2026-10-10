@@ -322,6 +322,32 @@ def set_scan_floor(sources: list, floor: float | int | str | None) -> None:
         if hasattr(source, "market_cap_floor"):
             source.market_cap_floor = value
 
+
+def set_scan_band(sources: list, prefilter: dict) -> None:
+    """Tell a source that filters its own board where this round's box is.
+
+    `set_scan_floor` hands over the one line a scanner stops below. A source that filters
+    server-side - `dexscreener_rank` reads the site's own board, which takes market cap and
+    liquidity as query parameters - can be told the whole box instead: the same three
+    numbers this round's prefilter is about to enforce, so the hundred rows a page holds are
+    rows this round could keep. Zero means no line, and a value that will not read as a
+    number becomes zero: an unusable knob reads everything, never nothing. A source without
+    the knob ignores this.
+    """
+    band: dict[str, float] = {}
+    for attribute, key in (("market_cap_floor", "market_cap_min_usd"),
+                           ("market_cap_ceiling", "market_cap_max_usd"),
+                           ("liquidity_floor", "liquidity_min_usd")):
+        try:
+            band[attribute] = max(0.0, float(prefilter.get(key) or 0))
+        except (TypeError, ValueError):
+            band[attribute] = 0.0
+    for source in sources:
+        for attribute, value in band.items():
+            if hasattr(source, attribute):
+                setattr(source, attribute, value)
+
+
 def collect(chain: dict, run_id: str, sources: list,
             on_source: Callable[[int, int], None] | None = None,
             on_pulled: Callable[[], None] | None = None) -> Universe:
