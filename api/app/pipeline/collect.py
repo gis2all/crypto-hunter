@@ -31,6 +31,13 @@ from ..sources.http import archive
 #: 24-hour figure, where GMGN's rank row answers in the window it happened to rank in. It
 #: has no bulk sweep (`fetch_universe` returns nothing), so it can only ever win the
 #: enrich merge - the pull never has an opinion for it to override.
+#:
+#: `dexscreener_rank` is the same host's bulk half - the board that page renders, unioned
+#: over a few orders - so it sits immediately behind `dexscreener` on every market number:
+#: same caliber, same units, one reading per pair. Like `dexscreener` it sits *behind* the
+#: launchpad feeds for `symbol`, so a launch remembered by the place that launched it keeps
+#: its own spelling. On the two chains that list it, it is not a fallback for a thin sweep;
+#: it is usually the source that produced the row in the first place.
 FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # The name the card is titled with. DexScreener sits last rather than with the other
     # feed-wide sources at the top of this table: it answers for every token on the chain
@@ -38,11 +45,11 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # ordinary Uniswap pool, not a launchpad launch), while the launchpad the token did
     # come from keeps its own spelling when it has one.
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-               "coinbarrel", "pez", "peeps", "dexscreener"),
+               "coinbarrel", "pez", "peeps", "dexscreener", "dexscreener_rank"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
-    "market_cap_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                       "blockscout", "coinbarrel", "pez", "peeps"),
+    "market_cap_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
     # The token own high. Three sources report one and they are the same kind of reading - a
     # record of the token own high-water mark: GMGN ships `history_highest_market_cap`,
     # CoinBarrel `peak_fdv_usd`, Peeps `athMarketCap`. None of them is interchangeable with
@@ -50,19 +57,20 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # merge can convert one into the other. Listed explicitly so a future source cannot
     # quietly outrank the ones that measured it.
     "high_market_cap_usd": ("gmgn", "coinbarrel", "peeps"),
-    "liquidity_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                      "blockscout", "coinbarrel", "pez", "peeps"),
-    "volume_24h_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                       "blockscout", "coinbarrel", "pez", "peeps"),
-    "price_usd": ("dexscreener", "gmgn", "radardex", "tolly", "geckoterminal",
-                  "blockscout", "coinbarrel", "pez", "peeps"),
+    "liquidity_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                      "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
+    "volume_24h_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
+    "price_usd": ("dexscreener", "dexscreener_rank", "gmgn", "radardex", "tolly",
+                  "geckoterminal", "blockscout", "coinbarrel", "pez", "peeps"),
     # GMGN answers this with the *ranking window's* change, not the 24-hour one:
     # `price_change_percent` read -0.22% on the 5m board and +0.35% on the 24h board for
     # the same token (measured 2026-09-29). The adapter gates it on the window, and the
-    # two sources that ship a real `change24h` sit behind it. Listed explicitly so the
-    # default order cannot let a wrong-window reading win by accident.
-    "price_change_24h_pct": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-                            "coinbarrel", "pez", "peeps"),
+    # sources that ship a real `h24` - `dexscreener_rank`'s board row, then the launchpad
+    # feeds - sit behind it. Listed explicitly so the default order cannot let a
+    # wrong-window reading win by accident.
+    "price_change_24h_pct": ("gmgn", "dexscreener_rank", "radardex", "tolly", "geckoterminal",
+                            "blockscout", "coinbarrel", "pez", "peeps"),
     "holders": ("gmgn", "radardex", "blockscout", "goplus", "coinbarrel", "pez", "peeps"),
     "top10_pct": ("gmgn", "radardex", "goplus"),
     "bundling_pct": ("gmgn", "radardex"),
@@ -104,7 +112,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # (CASINO on Robinhood, 2026-10-02: not one of its eleven pairs carried an info.imageUrl).
     # GMGN publishes one too, but its CDN refuses the request a page makes - measured in a
     # browser: that image loads from nowhere but gmgn.ai, so it is not a field we can print.
-    "logo_url": ("dexscreener", "geckoterminal"),
+    "logo_url": ("dexscreener", "dexscreener_rank", "geckoterminal"),
     "dex_pair": ("geckoterminal",),
     # Only the pool history answers these two, and it is the only reading that can fail to -
     # see `filters.check_drawdown`.
@@ -124,7 +132,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
 #: not list them, so the tail is a fallback on the one chain that has them and never an
 #: override on the others. `sources/arc/` and `sources/robinhood/` are where they live.
 DEFAULT_PRIORITY = ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout", "goplus", "sourcify",
-                    "dexscreener", "coinbarrel", "pez", "peeps")
+                    "dexscreener", "dexscreener_rank", "coinbarrel", "pez", "peeps")
 
 #: Per-token pages on the trackers a card links to. One place, so a URL shape cannot drift
 #: between the sources that write it. DexScreener answers a token at the same path shape it

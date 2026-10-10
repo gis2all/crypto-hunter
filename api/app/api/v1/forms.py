@@ -21,7 +21,7 @@ from ...core import funnel
 # scanner that is not in a chain's config simply never appears on that chain's page.
 SOURCE_ORDER = [
     "gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
-    "geckoterminal", "blockscout", "goplus", "sourcify",
+    "geckoterminal", "dexscreener_rank", "blockscout", "goplus", "sourcify",
 ]
 
 SOURCE_SHORT = {
@@ -32,6 +32,7 @@ SOURCE_SHORT = {
     "pez": "PEZ",
     "peeps": "Peeps",
     "geckoterminal": "GT",
+    "dexscreener_rank": "DexScreener",
     "blockscout": "Blockscout",
     "goplus": "GoPlus",
     "sourcify": "Sourcify",
@@ -44,6 +45,7 @@ SOURCE_LABELS = {
     "pez": "PEZ 发射台",
     "peeps": "Peeps 发射台",
     "geckoterminal": "GeckoTerminal 池",
+    "dexscreener_rank": "DexScreener 榜单",
     "blockscout": "Blockscout 全链底表",
     "goplus": "GoPlus",
     "sourcify": "Sourcify",
