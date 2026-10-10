@@ -6,6 +6,8 @@ pools where the CA is either side. A mark read without checking the address is a
 token's picture on this card - so the address check is what the first two tests are about.
 """
 
+import pytest
+
 from app.sources import geckoterminal
 
 
@@ -60,3 +62,26 @@ def test_fetch_token_stamps_the_mark_and_where_it_came_from(monkeypatch):
 
     assert metrics.logo_url == "https://assets.geckoterminal.com/ours"
     assert metrics.provenance["logo_url"] == "geckoterminal"
+
+
+def test_a_pool_page_that_never_answered_is_not_an_empty_chain(monkeypatch):
+    """This is the enumerator for Solana, so a page that failed answered as `[]` would file
+    throttling as a quiet market - the report reads `ok=True, n=0`, exactly like a chain with
+    no pools - and the round would carry on with an empty universe.
+
+    Nothing readable at all raises. One page read, even an empty one, is what tells the two
+    apart, which is why the second half is not an error.
+    """
+    from app.sources.http import SourceError
+
+    source = geckoterminal.GeckoTerminal()
+
+    def dead(*_args, **_kwargs):
+        raise SourceError("HTTP 429")
+
+    monkeypatch.setattr(geckoterminal, "json_get", dead)
+    with pytest.raises(SourceError):
+        source._pages("solana", [1], ["new_pools"])
+
+    monkeypatch.setattr(geckoterminal, "json_get", lambda *_args, **_kwargs: {"data": []})
+    assert source._pages("solana", [1], ["new_pools"]) == []

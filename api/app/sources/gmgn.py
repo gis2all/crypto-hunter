@@ -151,13 +151,18 @@ class GmGn:
     # ---------------------------------------------------------------- universe
 
     def _rank_page(self, chain_id: str, period: str, page: int) -> list[dict]:
+        """One board. A page that could not be read raises; an empty board returns `[]`.
+
+        The two used to look the same, and keeping them apart is the whole point of this
+        signature: the rank is the only place a token no launchpad adapter knows is found
+        at all, so a rate limit answered as `[]` left the source reporting `ok=True, n=0`
+        - indistinguishable from a chain that genuinely has nothing - and the round ran on
+        to the end with an empty universe. `rank_rows` reads the two apart.
+        """
         url = "%s/defi/quotation/v1/rank/%s/swaps/%s?orderby=swaps&direction=desc&limit=%d&page=%d" % (
             BASE, slug(chain_id), period, PAGE_SIZE, page,
         )
-        try:
-            payload = json_get(url, UA_GMGN, transport=TRANSPORT, tries=2, sleep=4.0, timeout=30.0)
-        except SourceError:
-            return []
+        payload = json_get(url, UA_GMGN, transport=TRANSPORT, tries=2, sleep=4.0, timeout=30.0)
         data = payload.get("data") if isinstance(payload, dict) else None
         return (data or {}).get("rank") or []
 
@@ -184,8 +189,16 @@ class GmGn:
         def produce():
             tasks = [(period, page) for period in PERIODS for page in PAGES]
             pages = pmap(lambda task: (task[0], self._rank_page(chain_id, task[0], task[1])), tasks, workers=3)
+            # `pmap` hands back a page that raised as None, so the filter below is the whole
+            # of the difference between the source failing and the chain being empty. Every
+            # board unreadable is the former and is raised to `collect`, which files it as
+            # `ok=False`; no board at all is not a verdict either way - `cached` keeps
+            # neither an exception nor an empty answer, so the next round asks again.
+            readable = [page for page in pages if page is not None]
+            if not readable:
+                raise SourceError("gmgn: no rank page readable for %s" % chain_id)
             merged: dict[str, dict] = {}
-            for period, rows in pages:
+            for period, rows in readable:
                 for row in rows or []:
                     ca = ca_key(row.get("address"))
                     if not ca:

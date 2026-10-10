@@ -131,6 +131,7 @@ class GeckoTerminal:
         urls += ["%s/networks/%s/%s?page=1" % (BASE, chain_id, kind) for kind in extra]
         rows: list[dict] = []
         empty = 0
+        read = 0
         for url in urls:
             try:
                 payload = json_get(url, UA_JSON, tries=3, sleep=10.0, timeout=30.0)
@@ -139,6 +140,7 @@ class GeckoTerminal:
                 if empty >= 2:
                     break
                 continue
+            read += 1
             data = payload.get("data") if isinstance(payload, dict) else None
             if not data:
                 empty += 1
@@ -146,6 +148,12 @@ class GeckoTerminal:
                     break
                 continue
             rows.extend(pool_row(item, chain_id) for item in data)
+        # A URL that never answered is not a chain with no pools. With nothing read at all,
+        # saying `[]` files a rate limit as an empty chain - this is the enumerator for
+        # Solana, so the round would then report `ok=True, n=0` and look like a quiet market.
+        # One page read, even an empty one, is what tells the two apart.
+        if urls and not read:
+            raise SourceError("geckoterminal: no pool page readable for %s" % chain_id)
         return rows
 
     def universe_pools(self, chain_id: str) -> list[dict]:
