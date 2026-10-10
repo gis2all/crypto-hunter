@@ -116,7 +116,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 
 | 我要做… | 读 | 动 |
 | --- | --- | --- |
-| 加 / 改一个数据源 | 6.2 ＋ 该链的 `SOURCES.md` | 通用源 `api/app/sources/`，链专属源 `api/app/sources/<chain>/`；**新源必须同时进 `registry.ALL` 和 `FIELD_PRIORITY` + `DEFAULT_PRIORITY`**（三个静默的坑见 6.2） |
+| 加 / 改一个数据源 | 6.2 ＋ 该链的 `SOURCES.md` | 通用源 `api/app/sources/`，链专属源 `api/app/sources/<chain>/`；**新源必须同时进 `registry.ALL` 和 `FIELD_PRIORITY` + `DEFAULT_PRIORITY`**（四个静默的坑见 6.2） |
 | 调硬过滤默认值 | 6.1 | 出厂默认 `config/chains/*.example.yaml`，本机那份是同名 `*.yaml`（首读从模板播种；改模板不覆盖它）。保存后以 `settings_versions` 表为准 |
 | 改评分权重 / 因子 | 6.3 | `core/scoring.py` ＋ 出厂默认 `config/chains/*.example.yaml`（本机那份同名 `*.yaml`） |
 | 改卡片印什么 | 8.1 | `api/app/report/cards.py` |
@@ -171,7 +171,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
 | `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
 | `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
-| `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `Logo` / `chainMark` / `Pick` |
+| `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `SolanaMark` / `Logo` / `chainMark` / `Pick` |
 | `config/` | `chains/*.example.yaml`（出厂设定模板，一条链一个文件，跟仓库）/ 同名的 `chains/*.yaml`（本机那份：首次读时从模板播种，页面的增删改都写它，**不入库**）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
 | `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
 
@@ -201,23 +201,24 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 
 | 用途 | 源 |
 | --- | --- |
-| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps |
+| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank（非 EVM，没有发射台专用源，所以榜单是唯一的全链枚举口） |
 | 安全与源码 | goplus（貔貅、税、危险权限、`dex[]` / `holders[]` / `lp_holders[]`）/ sourcify（源码验证） |
-| 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `symbol` / `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`** |
+| 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `symbol` / `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`**；同一个站点的批量那一半是 `dexscreener_rank`（榜单，见上一行），它**进 `sources:` 当扫描源**，不是 ENRICH_ONLY |
 | 挖链找页面（在 `app/search/`，不在 `sources/`） | X 高级搜索（cookie 子进程，不吃 token）＋ `identify` 读页面互证；只交出候选链接，tier 由 `identify` 挣 |
-| 链上直读 | `sources/onchain.py` 走链自己的 RPC（LP 位置、dev 余额） |
+| 链上直读 | `sources/onchain.py` 走链自己的 RPC（LP 位置、dev 余额）；Solana 另有 `sources/solana/mint.py` 读 mint 账户的铸造权 / 冻结权（即「危险权限」在这条链上的全部来源，见 `sources/solana/SOURCES.md`） |
 
-**新增一个源时的三个坑**（都是静默的，编译器不报）：
+**新增一个源时的四个坑**（都是静默的，编译器不报）：
 
 1. **`FIELD_PRIORITY` 决定一个字段能不能输出**。合并逐字段走那张表，表里没列的源对该字段**永远赢不了**，哪怕它答了 —— 行会以「未判定」通过硬过滤、以「空壳」被淘汰。新源要么进已有字段的表项，要么落进 `DEFAULT_PRIORITY`（链专属源排最后）。
 2. **只服务一条链的源不要留在根目录**。RadarDEX / Tolly 在 Robinhood 上返回的是 Arc 的整份数据（`?chain=robinhood` 的 CA 集合与默认调用逐字节相同），放进 `robinhood.yaml` 等于把另一条链的币灌进池子。
-3. **链自己的 id 就是通用源要的 slug**。`gmgn` / `geckoterminal` / `dexscreener` 都把 `chain_id` 直接当路径段或 `chainId` 用，所以 `config/chains/<id>.yaml` 的 `id` 必须是那条链在外部站点上的名字；只有 `goplus` / `sourcify` 要另给 EVM chain id。
+3. **链自己的 id 未必是源要的 slug**。`geckoterminal` / `dexscreener` 把 `chain_id` 直接当路径段或 `chainId` 用，所以 `config/chains/<id>.yaml` 的 `id` 要用那条链在外部站点上的名字（Solana 就叫 `solana`）；`gmgn` 是例外 —— 它自己的榜单把 Solana 拼成 `sol`，所以有 `gmgn.CHAIN_SLUGS` 这张表；`goplus` / `sourcify` 则要另给 EVM chain id。**拼错的代价是静默的**：GMGN 对不认识的链名回 200 ＋ 空榜，报表上就是「这条链没有币」。
+4. **yaml 里加源不等于生效**。一轮的拉取清单读 yaml，但设定页的「扫描源」行与凭证行走**存档版本**（`settings_versions`，四个 section 含 `sources`）：一套设定保存过之后，新加的源**会被拉、页面上却不显示**。加完源记得在设定页点一次保存（等价 `PUT /api/v1/chains/<chain>/settings?config_id=<id>`）；从没保存过的链（如 Solana）以 yaml 为准。
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 6.2.1 | 扫描源与富集源分开：`registry.ENRICH_ONLY` 的源（当前只有 dexscreener）**不进扫描**，只在逐币那一遍被问 —— 它没有全链列表，`fetch_universe` 返回空，所以只可能赢下逐币那一遍。 | 反例一：把 dexscreener 加进 `scan_sources`，只会在凭证行里挂一个 0；真正的代价在别处 —— 只有被逐币补齐的那批行带市场口径，池子里其余行还是粗筛口径，分位分母因此是混的（10.9）。反例二：`symbol` 是唯一一个它排在**表尾**的字段 —— 得排在发射台后面，否则自报的写法被覆盖；但表里不能没有它，否则 Robinhood 上一只普通 Uniswap 池的名字当场变成「—」。 |
+| 6.2.1 | 扫描源与富集源分开：`registry.ENRICH_ONLY` 的源（当前只有 dexscreener）**不进扫描**，只在逐币那一遍被问 —— 它没有全链列表，`fetch_universe` 返回空，所以只可能赢下逐币那一遍。**同一个站点的批量那一半是 `dexscreener_rank`（榜单）：它有全链列表，进 `sources:` 与 `scan_sources:`，不是 ENRICH_ONLY，两者别当一回事。** | 反例一：把 dexscreener 加进 `scan_sources`，只会在凭证行里挂一个 0；真正的代价在别处 —— 只有被逐币补齐的那批行带市场口径，池子里其余行还是粗筛口径，分位分母因此是混的（10.9）。反例二：`symbol` 是唯一一个它排在**表尾**的字段 —— 得排在发射台后面，否则自报的写法被覆盖；但表里不能没有它，否则 Robinhood 上一只普通 Uniswap 池的名字当场变成「—」。 |
 | 6.2.2 · 6.2.3 | 逐字段归属写在 `pipeline/collect.py` 的 `FIELD_PRIORITY`，改前先读那张表。两处不显然：GoPlus 独占 `pool_list` / `top_holders` / 几个筹码与税字段；**blockscout 不在 `scan_sources`**（列表接口只有持有人数、市值与流动性全空，会把候选池灌成四千个），它只在合并链里做兜底，且 `blockscout_checked` 不走 `http.cached`。 | 让 gmgn 抢 `pool_list`，它的空列表会把 goplus 的答案挡在外面（6.6.3）。「浏览器不认识这个地址」每轮都会重问，这是已知的重复代价。 |
-| 6.2.4 | 税率只认 GMGN 安全表（`token_security_evm`，缓存 6h）；同表带 `is_honeypot`，是貔貅判定的第二声。 | GMGN 排行行的税率是**占位 0**、goplus 在 Arc 上也全是 0，而 **0 是「有值」、会赢走字段** —— 把 goplus 兜底进来，报告里全部税率的 0 都是假的。 |
+| 6.2.4 | 税率只认 GMGN 安全表（路径按链取：EVM 是 `token_security_evm`、Solana 是 `token_security_sol`，见 `SECURITY_PATHS`；缓存 6h）；同表带 `is_honeypot`，是貔貅判定的第二声。**Solana 的表只有正面算数**：十个实测样本里它一律没有 `lock_percent`、没有 `lock_tags`，对 BONK 与 WIF 都回 `false` —— 那是「GMGN 没有锁仓记录」，不是「未锁」，所以 `LP_LOCK_ONLY_WHEN_TRUE` 只认 `true`，`false` 落成未判定。 | GMGN 排行行的税率是**占位 0**、goplus 在 Arc 上也全是 0，而 **0 是「有值」、会赢走字段** —— 把 goplus 兜底进来，报告里全部税率的 0 都是假的。`false` 是硬淘汰（`core/filters.py`），照抄一个「没有记录」会把整条链按沉默砍掉。 |
 | 6.2.5 | LP 判定先链上、答不出才用 GoPlus：读 `lp_holders[]`（每条带 `percent` / `is_contract` / `is_locked`）—— **多数 LP 在合约里（锁仓合约 / 金库 / 发射台持仓）＝已锁，多数在钱包里＝未锁**；表覆盖不到 50% 的 LP 时不给答案。判定有两条路径（`_recorded_lp` / `_lp_from`），**改口径时两条都要动**；「未判定」的原因取 `LAUNCH_*` 字面值。 | v4 池没有池合约（头寸是头寸管理器里的 NFT），这就是链上读答不出的原因 —— 要补最后一段只能问头寸 NFT 的 `ownerOf`。卡片只分三态（8.1.8）。 |
 | 6.2.6 · 6.6.4 | 源码验证是双源取或：语义是**任一源确认即算已验证**（`dual` 取 `or`）。 | 写成 `and` 会在 Sourcify 收录很差的 Arc 上一票否决。 |
 | 6.2.7 | 链上直读走链自己的 RPC：`sources/onchain.py` 读 LP 位置与 dev 余额，走该链 `yaml` 里的 RPC；一条链只有一个端点、没有备份，记账走同一套 `tally`（7.1）。 | **别再加默认端点**：曾经兜底到 Arc 的节点，链配置漏写 `rpc` 就会拿另一条链的数据、还标着本链的名字。缺 `rpc` / `explorer` 键现在**直接报错**。 |
@@ -332,7 +333,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
 | 8.2.1 | 保存走 `settings_versions`（不可变，之后以表为准），出厂默认在 `config/chains/*.example.yaml`（本机那份从它播种，8.2.2）。**链与链不共享设定，同一条链的多套设定之间也不共享**。一次 PUT 是一张 dotted-path 的 patch，落到两层以上的组里要**深合并**。 | 同一组里改两个键，浅合并的 `{**a, **b}` 会把先改的那个整组覆盖掉。被拒的保存要写成操作者能照着做的一句话（中文、带当前值、把 key 翻成页面上的行名）—— 前端不翻译，只把 `detail` 印出来。 |
-| 8.2.2 | 一条链一个 yaml 文件：文件里 `configs` 是这条链的一套套设定，链自己的事实（`explorer` / `rpc`）写在文件顶层、不进 `configs`。内部名字是 `arc:wide` 这种复合 id，落库是 `chain_id` ＋ `config_id` 两列。`default` 带 `locked`、任何链都留着、删不掉。**每条链同一时刻只跑一套**。跟仓库的只有 `<id>.example.yaml` 模板，运行时那份 `<id>.yaml` 首次读时从它播种、不入库 —— 页面的所有写入都落在后者，所以切配置不会脏 git。 | 隔离的边界：`settings_versions` / `runs` / `reports` / `lexicon` / `previous_picks` 都按设定分开；**不隔离**的是 `tokens` 与 `peak_market_cap_usd` —— 那是链级事实，与哪套在看它无关。几套设定并排跑只会抢同一批源与限流，让第一套更慢。 |
+| 8.2.2 | 一条链一个 yaml 文件：文件里 `configs` 是这条链的一套套设定，链自己的事实（`explorer` / `rpc`）写在文件顶层、不进 `configs`。内部名字是 `arc:wide` 这种复合 id，落库是 `chain_id` ＋ `config_id` 两列。`default` 带 `locked`、任何链都留着、删不掉。**每条链同一时刻只跑一套**。跟仓库的只有 `<id>.example.yaml` 模板，运行时那份 `<id>.yaml` 首次读时从它播种、不入库 —— 页面的所有写入都落在后者，所以切配置不会脏 git。**加一条链就是放一个文件进去**：`_chains_signature` 按目录里每个 yaml 的名字 / 大小 / 时间戳给解析结果做缓存键，所以手写的新链文件当场可见，不用重启（页面的增删改另有 `reload()`）。 | 隔离的边界：`settings_versions` / `runs` / `reports` / `lexicon` / `previous_picks` 都按设定分开；**不隔离**的是 `tokens` 与 `peak_market_cap_usd` —— 那是链级事实，与哪套在看它无关。几套设定并排跑只会抢同一批源与限流，让第一套更慢。 |
 | 8.2.3 | 名字与 id 分开：`config_id` 是随机生成、**永不改、永不复用、不上页面**；页面上写的一律是 `label`（链内唯一）。新建的一律 `enabled: false` —— 加一套设定不该悄悄把正在跑的那套换掉；`PUT /settings` 除了存 patch 还调 `set_active_config()`（按钮就叫**保存并生效**）。**每条链最多一个 `enabled: true`**：多过一个是数据坏了，只留一个并把话写进 `ChainOut.warning`，链照常能读。 | 反例：把 `config_id` 当 label 用，改名就要动五个主键和每条 run 的 key。报错会让整条链打不开，而操作者才是能决定留哪个的人。拒绝分三个码（400 名字问题 / 404 没有这套 / 409 现在不能动），删除前要把 label **原样打一遍** —— 点一下就能过的「二次确认」不是确认。删除连带清空这套的全部痕迹（`runs` / `reports` / `snapshots` / `lexicon` / `settings_versions` 与 `data/raw/<run_id>/`）；**`tokens` 与 `llm_calls` 不动**。文件是**往返改写**不是重写（`ruamel.yaml` 保注释、保引号、保 CRLF），改完 `arc.yaml` 往返应当逐字节相同。 |
 | 8.2.4 | **参数设置页头整个撤掉**（链名与「正在编辑哪一套」都在顶栏）。解释折进「说明」icon，判据是「这句是这一轮的**读数**，还是关于字段本身的规定」：读数留屏幕，规定进 icon；**文案仍只在 `forms.py`**（2.3.3）。 | 标题下面挂一行解释，一屏里就全是灰字、读者找不到真正的读数。反过来把规定性的口径搬到屏幕上，就是在重复「这是规则」。 |
 | 8.2.8 · 8.2.9 | `市值` 与 `持有人` 都是**区间**，持有人上限与下限共用同一条规则，所以淘汰计数、漏斗行、设定页那一行都不用跟着改；设定页只多一条 —— **空格子必须能存回去**（空 -> `None`，数字 -> `int`，已存过再清空要原样活过类型转换）。链下五项各 0–5、按 `offchain_factor_weights` 合成，与链上那半边**同形**：改一个就要把合计调回 100，否则 422。 | 把上限写成 `0` 就是「一个都不留」；缺键当 0 权重会把没这个键的老快照的币全砍掉；把五项做成只读说明，权重这类口径就只能靠改代码（10.8）。 |
@@ -424,10 +425,11 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | --- | --- | --- |
 | 9.2.1 | 口径是**只在进程内存里立一面旗**（`api/app/cancel.py`）：`POST /runs/{id}/cancel` 立刻返回 —— 一轮跑在 `schedule.py` 的单线程 worker 上，HTTP 处理器够不到那个线程；轮次自己在下一个检查点读旗、抛 `RoundCancelled`。 | 旗按 run id 存、轮次结束就清 —— 写进数据库的话，重启后上一轮的停止请求还在，下一轮会继承。 |
 | 9.2.2 | 一轮没有回滚可做：落库只有最后一笔事务（`store_round` ＋ `store_reports`），停在哪就是停在哪，**报告一张也不写**。 | 搞一套「回滚」，复杂度全花在不需要的地方。 |
-| 9.2.3 | 检查点只用轮次本来就有的边界，**没为中止新增计时器或线程**：源之间、阶段边界、`_gate` 的每个标的、每个币的词条之间、一次调用的前 / 后与读响应体的每一块之间。 | 加一个每秒轮询的计时器只会多一个线程、还让每轮变慢。响应时间是秒到二十秒的量级，**不要承诺「点一下立刻停」**。 |
+| 9.2.3 | 检查点只用轮次本来就有的边界，**没为中止新增计时器或线程**：源之间、阶段边界、补齐与富集池里**每个币开跑之前**（`http.pmap` 的 `stop`）、`_gate` 的每个标的、每个币的词条之间、一次调用的前 / 后与读响应体的每一块之间。 | 加一个每秒轮询的计时器只会多一个线程、还让每轮变慢。`pmap` 在「下一个任务开跑前」问，**在途的那几个必须跑完才算停**（为什么见 9.2.6），所以响应时间是一个币的一次网络等待：秒级，X 搜索那一趟照它自己的 120s 子进程超时算。**不要承诺「点一下立刻停」**。 |
 | 9.2.4 | 在途的模型答案可以放弃，但**不能退化成 `LLMUnavailable`**：`client.stream` 按块查旗，命中就关连接抛 `RoundCancelled`；关键是 `complete()` 里单开 `except cancel.RoundCancelled: raise`。 | 退化的话，一轮会用「没写词条」的样子把报告发出去。 |
+| 9.2.6 | 旗只从 `cancel.check(run_id)` 进线程池，**不在任务函数里抛**。两个原因各占一半：在途的任务请求**已经发出去了**，线程从外面杀不掉，只能等它自己返回 —— 这就是 9.2.3 说的「在途必须跑完」；而任务里抛会被 `pmap` 读成「这个源什么都没答」（`None`），一轮就会带着半池数据继续跑。行里没有 run id 的调用（CA 搜索）拿到的是**空检查**，永远不停。 | 反过来写，一次中止会伪装成一次网络失败；给不是轮次的搜索也配一个能停的旗，界面就得给它一颗停不下来的「中止」。 |
 | 9.2.5 · 9.2.7 | 两个例外：排队中的那一轮没人开始跑就读不到旗，由路由直接落库（`run.stop_run`）；写库之后不再有检查点，停止请求晚到就照常发布。 | 只立旗的话队里那一轮永远不会停；在事务里插检查点，报告就会半写半不写 —— 已发布的报告不该被改写成「已中止」。 |
-| 9.2.8 · 9.2.9 | 前端把中止当跑完处理：`已中止 · 本轮`，步骤列表照常显示（已结束的有耗时，没走到的画 `—`）；**新状态 `cancelled`** 进 `states.TERMINAL`。顶栏开关的**收起那一半**退回**最近一轮有卡的批次**，**展开那一半永不挪动读者**，刷新同理。 | 记成 `failed` 会让「失败率」虚高；刷新后跳回那个没有结果的批次就是这么来的。 |
+| 9.2.8 · 9.2.9 | 前端把中止当跑完处理：`已中止 · 本轮`，步骤列表照常显示（已结束的有耗时，没走到的画 `—`）；**新状态 `cancelled`** 进 `states.TERMINAL`。按下确认后按钮**留在「正在中止」**直到这一行离开 live，**不跟着那次 POST 的 pending 走**（POST 毫秒级，轮次是秒级）；双击窗口 10 秒。顶栏开关的**收起那一半**退回**最近一轮有卡的批次**，**展开那一半永不挪动读者**，刷新同理。 | 记成 `failed` 会让「失败率」虚高；刷新后跳回那个没有结果的批次就是这么来的。POST 回来就把「中止」递回去，操作者会以为没生效而重复点，或以为停不下来。 |
 
 ## 9.3 状态机
 
@@ -515,3 +517,5 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 | 卡片曾一边显示「LP 已锁」一边在词条里写「三项全部未判定」；词条看不到安全块 → 永远写「安全块三项全部未判定」 | 6.5.2 ｜ 6.5.8 |
 | 设定页挂着一组四个「提醒」开关（改名次数 / 建币数量 / 同名合约 / 官网漏收录），没有任何代码读它，勾不勾一轮跑出来完全相同 | 8.2.10 |
 | 「空壳淘汰」与「零数据淘汰」共用一个 `missing_data` → 面板每轮把 85 条（Robinhood）/ 399 条（Arc）空壳行印成「零数据淘汰」，而真·零数据淘汰近 8 轮一条都没有（Robinhood 实测 0，Arc 未逐条复核） → 两者已拆开，且三个注册表适配器在拉取侧就跳过空行 | 6.1.4 |
+| 中止只在阶段边界读旗 → 补齐那一段（逐币补全池，Solana 实测是整段里最长的一段）一个检查点都没有，点中止看起来没反应，最坏要等它跑完 | 9.2.3 ｜ 9.2.6 |
+| 「正在中止」曾跟着那次 POST 的 pending 走 → POST 毫秒级就回来了，按钮立刻变回「中止」而轮次还在跑，操作者以为没生效而重复点 | 9.2.8 · 9.2.9 |
