@@ -21,7 +21,11 @@ from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
 BASE = "https://api.geckoterminal.com/api/v2"
 ROUTINE_PAGES = 3
-FULL_PAGES = 12
+#: Page 10 is the last one GeckoTerminal answers - 11 and up come back 401 on both
+#: chains (probed 2026-10-06). The two pages this used to ask for were dead on
+#: arrival, and a dead request burns its own retry cycle, so the fix drops two
+#: doomed fetches from every sweep and adds no row.
+FULL_PAGES = 10
 #: Pool list changes slowly; a new pool still shows up on page 1 of `new_pools` first.
 FULL_SWEEP_TTL = 6 * 3600
 POOLS_TTL = 12 * 3600
@@ -147,7 +151,7 @@ class GeckoTerminal:
             cold = self._pages(
                 chain_id,
                 list(range(ROUTINE_PAGES + 1, FULL_PAGES + 1)),
-                ["new_pools", "trending_pools"],
+                [],
             )
             return cold or None
 
