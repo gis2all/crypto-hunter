@@ -162,7 +162,7 @@ LP → `挖矿`、铸造 → `Mint`、提案 → `治理`、`project` 类型错�
   标记 `trace_level = A`（材料即官网，不需要再搜一次），后面的分组、抽取、落库照旧。
 
 抓不到记一次失败并把 `last_refresh_at` 推后，连续 3 次停读该站（`enabled = 0`）。每轮读几个由
-设定页的「官网刷新数」控制（默认 10，0 表示关闭）。
+设定页的「官网刷新数」控制：默认 100 = 全部，并发 4 个（51 个站约 40–60 秒），0 表示关闭。
 
 查询行统一带一组排除词：交易大赛、AMA、抽奖、博彩、体育、娱乐、游戏、开户、演唱会，以及
 giveaway / lottery / casino / betting / sports / entertainment / gaming / concert 等英文
