@@ -69,6 +69,13 @@ MIN_INTERVAL: dict[str, float] = {
     "api.gopluslabs.io": 0.3,
     "sourcify.dev": 0.3,
     "api.dexscreener.com": 0.25,
+    # The board pages `dexscreener_rank` reads, not the API: a sweep asks for six of them
+    # back to back, and they are the site's own HTML rather than a published feed.
+    "dexscreener.com": 0.5,
+    # The public Solana node, one call per token in the enrich pass. Its limit is not
+    # published, so this is deliberately slower than the default: a hundred-token pass that
+    # gets 429ed leaves every row "unread", which is worse than the seconds it saves.
+    "api.mainnet-beta.solana.com": 0.5,
     "rpc.arc-scan.org": 0.15,
     "explorer.arc.io": 1.0,
     # Robinhood: its own node and explorer first, then the three launchpad feeds. The feeds

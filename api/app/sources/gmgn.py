@@ -27,6 +27,40 @@ TRANSPORT = "browser"
 PERIODS = ("1m", "5m", "1h", "6h", "24h")
 PAGES = (1, 2)
 PAGE_SIZE = 100
+
+#: GMGN spells one chain its own way: its Solana board is `sol`, where this app calls the
+#: chain `solana` - that is the spelling DexScreener and GeckoTerminal use, so one chain id
+#: cannot be both. A wrong slug here is not a visible failure, which is why it needs a
+#: table rather than a guess: GMGN answers an unknown chain with a 200 and an empty rank,
+#: so it reads as "this chain has no tokens". Measured 2026-10-11: `rank/sol/swaps/24h`
+#: returns 100 rows, `rank/solana/swaps/24h` returns 0. The `chains` tuple above is the
+#: same fact from the other side, and this is the shape `goplus.CHAIN_IDS` and
+#: `sourcify.CHAIN_IDS` already have.
+CHAIN_SLUGS: dict[str, str] = {"solana": "sol"}
+
+#: The security sheet path per chain: GMGN spelled the same panel `_evm` for EVM chains and
+#: `_sol` for Solana, and a chain answers under no other name. Measured 2026-10-11:
+#: `token_security_sol/sol/<ca>` answers 13 keys where the `_evm` path answers nothing. The
+#: two families carry different fields, which is what the table below is about.
+SECURITY_PATHS: dict[str, str] = {"solana": "token_security_sol"}
+SECURITY_PATH = "token_security_evm"
+
+#: Chains whose sheet reports no lock percentage and only ever a bare flag. Solana is one:
+#: its LP is a pool position rather than a lockable pair, and the sheet says so - for all ten
+#: tokens measured here (2026-10-11) `lock_percent` was "0" and `lock_tags` null, while
+#: `is_locked` tracked `burn_status`. It also said `false` for BONK and WIF, which nobody
+#: would call unlocked, so on this chain a `false` reads as "GMGN has no locker record"
+#: rather than as 未锁. A `false` is a hard drop (`core/filters.py`), so writing one down
+#: from a record that does not exist would reject the chain on a silence. The positive is
+#: kept: it is real evidence, and 7 of the 8 Solana rank rows measured answered `true`.
+LP_LOCK_ONLY_WHEN_TRUE: tuple[str, ...] = ("solana",)
+
+
+def slug(chain_id: str) -> str:
+    """This chain as GMGN spells it. A chain with no entry is already spelled right."""
+    return CHAIN_SLUGS.get(str(chain_id), str(chain_id))
+
+
 #: The rank moves every few seconds; this cache only exists to stop two stages in the
 #: same round from paying for the same page twice.
 RANK_TTL = 240
@@ -112,13 +146,13 @@ def _symbol(raw: Any) -> str | None:
 
 class GmGn:
     name = "gmgn"
-    chains = ("arc", "robinhood")
+    chains = ("arc", "robinhood", "solana")
 
     # ---------------------------------------------------------------- universe
 
     def _rank_page(self, chain_id: str, period: str, page: int) -> list[dict]:
         url = "%s/defi/quotation/v1/rank/%s/swaps/%s?orderby=swaps&direction=desc&limit=%d&page=%d" % (
-            BASE, chain_id, period, PAGE_SIZE, page,
+            BASE, slug(chain_id), period, PAGE_SIZE, page,
         )
         try:
             payload = json_get(url, UA_GMGN, transport=TRANSPORT, tries=2, sleep=4.0, timeout=30.0)
@@ -222,7 +256,7 @@ class GmGn:
     def _stat(self, chain_id: str, ca: str) -> dict:
         def produce():
             try:
-                payload = json_get("%s/api/v1/token_stat/%s/%s" % (BASE, chain_id, ca),
+                payload = json_get("%s/api/v1/token_stat/%s/%s" % (BASE, slug(chain_id), ca),
                                    UA_GMGN, transport=TRANSPORT, tries=2, sleep=2.0, timeout=25.0)
             except SourceError:
                 return None
@@ -240,7 +274,7 @@ class GmGn:
 
         def produce():
             try:
-                payload = json_get("%s/api/v1/token_info/%s/%s" % (BASE, chain_id, ca),
+                payload = json_get("%s/api/v1/token_info/%s/%s" % (BASE, slug(chain_id), ca),
                                    UA_GMGN, transport=TRANSPORT, tries=2, sleep=2.0, timeout=25.0)
             except SourceError:
                 return None
@@ -255,11 +289,17 @@ class GmGn:
         Arc, so this is the only GMGN endpoint that answers the 税 row. Its own
         `buy_tax`/`sell_tax` are "0" as well - what GMGN prints is the `total_*` pair,
         the base tax plus the transfer tax a global-tax token adds.
+
+        The path is per chain (`SECURITY_PATHS`), and on Solana the fields it answers are a
+        different set, which `LP_LOCK_ONLY_WHEN_TRUE` and the LP block in `fetch_token`
+        handle. There is no tax on that chain, so the `buy_tax`/`sell_tax` it reports are
+        its own literal zeros rather than a reading.
         """
 
         def produce():
+            path = SECURITY_PATHS.get(str(chain_id), SECURITY_PATH)
             try:
-                payload = json_get("%s/api/v1/token_security_evm/%s/%s" % (BASE, chain_id, ca),
+                payload = json_get("%s/api/v1/%s/%s/%s" % (BASE, path, slug(chain_id), ca),
                                    UA_GMGN, transport=TRANSPORT, tries=2, sleep=2.0, timeout=25.0)
             except SourceError:
                 return None
@@ -272,7 +312,7 @@ class GmGn:
 
         def produce():
             try:
-                payload = json_get("%s/api/v1/token_dev_info/%s/%s" % (BASE, chain_id, ca),
+                payload = json_get("%s/api/v1/token_dev_info/%s/%s" % (BASE, slug(chain_id), ca),
                                    UA_GMGN, transport=TRANSPORT, tries=2, sleep=2.0, timeout=25.0)
             except SourceError:
                 return None
@@ -369,7 +409,11 @@ class GmGn:
         # covers the v4 shape, where there is no LP token for the chain read to look at.
         lock = security.get("lock_summary") if isinstance(security, dict) else None
         locked = _bool(lock.get("is_locked")) if isinstance(lock, dict) else None
-        if locked is not None:
+        if locked is False and chain_id in LP_LOCK_ONLY_WHEN_TRUE:
+            # Not a verdict on this chain; see that table. Left as 未判定 rather than
+            # dropped, and the card says which reading it was.
+            facts.lp_note = "GMGN：未见锁仓记录"
+        elif locked is not None:
             facts.lp_locked = locked
             facts.lp_source = "gmgn"
             percent = _num(lock.get("lock_percent")) if isinstance(lock, dict) else None
