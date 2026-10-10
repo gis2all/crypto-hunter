@@ -22,7 +22,7 @@ import re
 from typing import Any
 from urllib.parse import urlencode
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .http import SourceError, cached, explorer_headers, json_get
 from .onchain import BLOCKSCOUT_TRANSPORT, explorer_url
 
@@ -128,7 +128,7 @@ class Blockscout:
                     # row after it is under it too.
                     under = True
                     break
-                ca = str(row.get("address_hash") or "").lower()
+                ca = ca_key(row.get("address_hash"))
                 if not ca or ca in seen:
                     continue
                 seen.add(ca)
@@ -156,6 +156,6 @@ class Blockscout:
             return TokenMetrics(ca=ca), SafetyFacts()
         if not isinstance(body, dict):
             return TokenMetrics(ca=ca), SafetyFacts()
-        row = _metrics(str(ca).lower(), body)
+        row = _metrics(ca_key(ca), body)
         row.pop("ca", None)
         return TokenMetrics(ca=ca, **row), SafetyFacts()

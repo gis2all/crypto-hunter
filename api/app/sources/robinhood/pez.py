@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ...core.models import SafetyFacts, TokenMetrics
+from ...core.models import SafetyFacts, TokenMetrics, ca_key
 from ..base import social_url, web_url
 from ..http import SourceError, UA_JSON, cached, json_get
 
@@ -69,7 +69,7 @@ class Pez:
                 if not items:
                     break
                 for row in items:
-                    ca = str(row.get("token") or "").lower()
+                    ca = ca_key(row.get("token"))
                     if ca and ca not in merged:
                         merged[ca] = row
                 if len(items) < PAGE_SIZE:
@@ -83,10 +83,10 @@ class Pez:
         return out[:limit] if limit else out
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
-        row = self.rows(chain_id).get(ca.lower())
+        row = self.rows(chain_id).get(ca_key(ca))
         if not row:
             return TokenMetrics(ca=ca), SafetyFacts()
-        return self._metrics(ca.lower(), row), SafetyFacts()
+        return self._metrics(ca_key(ca), row), SafetyFacts()
 
     def _metrics(self, ca: str, row: dict) -> TokenMetrics:
         metrics = TokenMetrics(

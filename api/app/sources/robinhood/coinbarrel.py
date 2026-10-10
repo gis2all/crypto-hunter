@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ...core.filters import is_empty_shell
-from ...core.models import SafetyFacts, TokenMetrics
+from ...core.models import SafetyFacts, TokenMetrics, ca_key
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://coinbarrel.com/market/api/v1"
@@ -95,7 +95,7 @@ class CoinBarrel:
                 if not items:
                     break
                 for row in items:
-                    ca = str(row.get("mint") or "").lower()
+                    ca = ca_key(row.get("mint"))
                     if ca and ca not in merged:
                         merged[ca] = row
                 if not (isinstance(payload, dict) and payload.get("has_more")):
@@ -125,10 +125,10 @@ class CoinBarrel:
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
         """The bulk row, which is already cached, re-read as a per-token answer: it carries
         the deployer, and that is what the LP question is asked about."""
-        row = self.rows(chain_id).get(ca.lower())
+        row = self.rows(chain_id).get(ca_key(ca))
         if not row:
             return TokenMetrics(ca=ca), SafetyFacts()
-        return self._metrics(ca.lower(), row), SafetyFacts()
+        return self._metrics(ca_key(ca), row), SafetyFacts()
 
     def _metrics(self, ca: str, row: dict) -> TokenMetrics:
         rate = _rate(row)

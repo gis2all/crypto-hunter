@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .. import cancel
-from ..core.models import TokenMetrics
+from ..core.models import TokenMetrics, ca_key
 from ..sources.base import SourceReport
 from ..sources.http import archive
 
@@ -329,7 +329,7 @@ def collect(chain: dict, run_id: str, sources: list,
             error = None
         except Exception as exc:
             rows, error = [], repr(exc)[:200]
-        collected[source.name] = {row.ca.lower(): row for row in (rows or [])}
+        collected[source.name] = {ca_key(row.ca): row for row in (rows or [])}
         per_source[source.name] = len(collected[source.name])
         reports.append(
             SourceReport(source=source.name, ok=error is None, records=len(collected[source.name]), error=error)
@@ -352,7 +352,7 @@ def collect(chain: dict, run_id: str, sources: list,
         "universe",
         {
             name: [
-                {"ca": row.ca, "symbol": row.symbol, "market_cap_usd": row.market_cap_usd,
+                {"ca": ca_key(row.ca), "symbol": row.symbol, "market_cap_usd": row.market_cap_usd,
                  "liquidity_usd": row.liquidity_usd, "volume_24h_usd": row.volume_24h_usd}
                 for row in sorted(collected[name].values(), key=lambda r: -(r.volume_24h_usd or 0))[:400]
             ]

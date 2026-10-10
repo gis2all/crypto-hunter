@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .http import SourceError, UA_JSON, json_get
 
 BASE = "https://api.gopluslabs.io/api/v1"
@@ -168,7 +168,7 @@ class GoPlus:
         except SourceError:
             return {}
         result = (payload or {}).get("result") or {}
-        return result.get(ca.lower()) or {}
+        return result.get(ca_key(ca)) or {}
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
         row = self.security(chain_id, ca)

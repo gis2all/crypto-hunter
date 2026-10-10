@@ -50,6 +50,21 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 
+def ca_key(ca: object) -> str:
+    """One token identity, spelled the one way that makes two references the same token.
+
+    An EVM address is hex, and hex is case-insensitive: folding it to lower case gives the
+    same address, and that happens to be the spelling every EVM source answers with and the
+    one every key, table and lexicon in this app has always held. Everything else is 32 bytes
+    of base58 - Solana, and anything else shaped like it - and base58 is case-*sensitive*:
+    folding it does not produce a sloppier spelling of the same address, it produces a
+    different address, which the feed answers with "unknown" instead of with a correction.
+    Left unfolded on purpose, so the two chains need one rule rather than two.
+    """
+    text = str(ca or "").strip()
+    return text.lower() if text[:2].lower() == "0x" else text
+
+
 class TokenMetrics(BaseModel):
     """Pool/market level facts for one token in one round.
 

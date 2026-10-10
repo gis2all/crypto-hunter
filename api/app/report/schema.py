@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from ..core.models import ca_key
+
 log = logging.getLogger(__name__)
 
 
@@ -92,9 +94,9 @@ def validate_lexicon(raw: dict, expected_cas: list[str], min_chars: int = 160) -
         return _schema_issues(exc)
 
     issues: list[str] = []
-    lowered = {key.lower(): entry for key, entry in draft.entries.items()}
+    entries = {ca_key(key): entry for key, entry in draft.entries.items()}
     for ca in expected_cas:
-        entry = lowered.get(ca.lower())
+        entry = entries.get(ca_key(ca))
         if entry is None:
             issues.append("missing entry: %s" % ca)
             continue

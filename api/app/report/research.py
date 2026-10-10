@@ -48,6 +48,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .. import llm
 from ..config import chain_name, chain_thesis
+from ..core.models import ca_key
 from ..pipeline import collect
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
@@ -503,7 +504,7 @@ def gather(row: Mapping[str, Any], *,
     page to read - it is the one address a card prints, and this pass is the only one that
     knows which candidate earned it, so it is handed on rather than looked up again.
     """
-    ca = str(row["ca"]).lower()
+    ca = ca_key(row["ca"])
     try:
         # The numbers are still the newest snapshot's when the caller handed in none of its
         # own; only the links are replaced. A search passes both, so this read answers nothing
@@ -562,7 +563,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     has no row in.
     """
     started = time.monotonic()
-    ca = str(row["ca"]).lower()
+    ca = ca_key(row["ca"])
     symbol = row.get("symbol")
     if gathered is None:
         gathered = gather(row, known=known)
@@ -598,7 +599,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     if issues:
         raise ValueError("research draft rejected: %s" % "; ".join(issues[:3]))
     draft = LexiconDraft.model_validate(raw)
-    entry = {key.lower(): value for key, value in draft.entries.items()}[ca]
+    entry = {ca_key(key): value for key, value in draft.entries.items()}[ca_key(ca)]
     payload = lexicon.entry_payload(entry, symbol)
     # The pages are stored before the text: evidence is worth keeping even when the write
     # that follows it is refused, and the card can then show what was read either way.
@@ -634,7 +635,7 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     if not targets or not llm.configured():
         return {}
     config_id = str(chain.get("config_id") or "default")
-    rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
+    rows = [{"ca": ca_key(target["ca"]), "chain_id": str(chain["id"]),
              "chain_name": chain_name(chain),
              "chain_thesis": chain_thesis(chain),
              "config_id": config_id, "symbol": target.get("symbol"),
@@ -656,7 +657,7 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     failed: list[str] = []
     # The round's own rows, by CA, and this is where the two halves of one token meet: the
     # pool decide is holding, and the site a search just proved for it.
-    targets_by_ca = {str(target.get("ca") or "").lower(): target for target in targets}
+    targets_by_ca = {ca_key(target.get("ca")): target for target in targets}
 
     def entry_for(row: dict) -> tuple[str, dict] | None:
         """One token, and every way it can fail kept to itself. Raises nothing."""

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .base import social_url, web_url
 from .http import SourceError, UA_JSON, json_get
 
@@ -112,7 +112,7 @@ def _name(metrics: TokenMetrics, best: dict, ca: str) -> None:
     """
     for side in ("baseToken", "quoteToken"):
         token = best.get(side) or {}
-        if str(token.get("address") or "").lower() != ca.lower():
+        if ca_key(token.get("address")) != ca_key(ca):
             continue
         symbol = str(token.get("symbol") or "").strip()
         if symbol:
@@ -138,7 +138,7 @@ class DexScreener:
         pairs = [row for row in ((payload or {}).get("pairs") or []) if isinstance(row, dict)]
         ours = [
             row for row in pairs
-            if str((row.get("baseToken") or {}).get("address") or "").lower() == ca.lower()
+            if ca_key((row.get("baseToken") or {}).get("address")) == ca_key(ca)
         ]
         if not ours:
             # A CA this host knows on exactly one chain is unambiguous even when the token

@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .base import social_url, web_url
 from .http import SourceError, UA_GMGN, cached, json_get, pmap
 
@@ -153,7 +153,7 @@ class GmGn:
             merged: dict[str, dict] = {}
             for period, rows in pages:
                 for row in rows or []:
-                    ca = str(row.get("address") or "").lower()
+                    ca = ca_key(row.get("address"))
                     if not ca:
                         continue
                     if ca not in merged or period == "24h":

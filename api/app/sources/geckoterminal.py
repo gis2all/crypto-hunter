@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .base import web_url
 from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
@@ -69,10 +69,15 @@ def _split_id(identifier: str | None, chain_id: str) -> str:
     The network is the same slug the endpoint is addressed by, so the prefix is the chain
     rather than a constant: a hardcoded `arc_` answered "" for every other chain's ids,
     which reads downstream as "this pool has no address" instead of "wrong prefix".
+
+    Returned in whatever case the feed spelled it, not folded to lower: on an EVM chain
+    that is the same address either way, and on Solana it is the only address there is.
+    Folding belongs in `models.ca_key`, where it is decided from the shape of the address,
+    rather than here, where it would be every source guessing on its own.
     """
     text = str(identifier or "")
     prefix = "%s_" % chain_id
-    return text[len(prefix):].lower() if text.startswith(prefix) else ""
+    return text[len(prefix):] if text.startswith(prefix) else ""
 
 
 def base_symbol(name: str | None) -> str | None:
@@ -268,7 +273,7 @@ class GeckoTerminal:
             mark = None
             for item in payload.get("included") or []:
                 attributes = item.get("attributes") or {}
-                if str(attributes.get("address") or "").lower() != ca.lower():
+                if ca_key(attributes.get("address")) != ca_key(ca):
                     continue
                 mark = web_url(attributes.get("image_url"))
                 break

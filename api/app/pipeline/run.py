@@ -19,7 +19,7 @@ import sqlite3
 from uuid import uuid4
 
 from .. import cancel, config
-from ..core.models import RunStatus
+from ..core.models import RunStatus, ca_key
 from ..sources import http
 from ..report import assemble as report_assemble, lexicon, research
 from ..store import db
@@ -241,7 +241,7 @@ def _roster_symbols(conn, cas: list[str]) -> dict[str, str]:
         "SELECT ca, symbol FROM tokens WHERE ca IN (%s) AND symbol IS NOT NULL" % marks,
         cas,
     ).fetchall()
-    return {str(row["ca"]).lower(): row["symbol"] for row in rows}
+    return {ca_key(row["ca"]): row["symbol"] for row in rows}
 
 
 def peak_market_caps(chain_id: str) -> dict[str, float]:
@@ -261,7 +261,7 @@ def peak_market_caps(chain_id: str) -> dict[str, float]:
         ).fetchall()
     finally:
         conn.close()
-    return {str(row["ca"]).lower(): float(row["peak_market_cap_usd"]) for row in rows}
+    return {ca_key(row["ca"]): float(row["peak_market_cap_usd"]) for row in rows}
 
 
 def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> list[dict]:
@@ -285,7 +285,7 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
         rows = conn.execute(
             "SELECT ca FROM reports WHERE run_id = ? ORDER BY rank", (last["id"],)
         ).fetchall()
-        names = _roster_symbols(conn, [str(row["ca"]).lower() for row in rows])
+        names = _roster_symbols(conn, [ca_key(row["ca"]) for row in rows])
         for item in rows:
             snap = conn.execute(
                 "SELECT metrics_json FROM snapshots WHERE run_id = ? AND ca = ?",
@@ -294,8 +294,8 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
             metrics = json.loads(snap["metrics_json"]) if snap is not None else {}
             out.append(
                 {
-                    "ca": str(item["ca"]).lower(),
-                    "symbol": metrics.get("symbol") or names.get(str(item["ca"]).lower()),
+                    "ca": ca_key(item["ca"]),
+                    "symbol": metrics.get("symbol") or names.get(ca_key(item["ca"])),
                     **{key: metrics.get(key) for key in PREVIOUS_FIELDS},
                 }
             )

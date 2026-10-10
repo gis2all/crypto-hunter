@@ -38,7 +38,7 @@ from typing import Callable
 
 from .. import cancel
 from ..core import filters, funnel, scoring
-from ..core.models import SafetyFacts, ScoreBreakdown, TokenMetrics
+from ..core.models import SafetyFacts, ScoreBreakdown, TokenMetrics, ca_key
 from ..sources import onchain, registry
 from ..sources.base import SourceReport
 from ..sources.http import pmap
@@ -311,7 +311,7 @@ class Engine:
         #: 距高回撤 reads its high from here: the highest market cap this project has seen
         #: for a CA. The pipeline hands it over, because a store read belongs to the caller
         #: and the engine stays offline for every test that does not want one.
-        self.peaks = {str(ca).lower(): float(value) for ca, value in (peaks or {}).items()}
+        self.peaks = {ca_key(ca): float(value) for ca, value in (peaks or {}).items()}
 
     # ------------------------------------------------------------------ the round
 
@@ -849,7 +849,7 @@ class Engine:
 
     def _deltas(self, item: Candidate) -> list[dict]:
         """This token against its own last appearance: four numbers, in the card's units."""
-        before = next((row for row in self.previous if str(row.get("ca") or "").lower() == item.ca), None)
+        before = next((row for row in self.previous if ca_key(row.get("ca")) == ca_key(item.ca)), None)
         if not before:
             return []
         out: list[dict] = []
@@ -885,7 +885,7 @@ class Engine:
         """
         if not self.previous:
             return [{"kind": "首次运行", "direction": "in", "sym": "—", "detail": "首次运行，无对比基线"}]
-        before = {str(row.get("ca") or "").lower(): row for row in self.previous}
+        before = {ca_key(row.get("ca")): row for row in self.previous}
         now = {item.ca: item for item in picked}
         changes: list[dict] = []
         for item in picked:
