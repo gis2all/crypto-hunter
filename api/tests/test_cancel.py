@@ -8,10 +8,12 @@ of the pull is not asked, no report is written, and the row says the operator st
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from app import cancel
-from app.core.models import RunStatus, TokenMetrics
+from app.core.models import RunStatus, SafetyFacts, TokenMetrics
 from app.pipeline import run as pipeline_run
 from app.pipeline.decide import Engine
 from app.store import db
@@ -65,6 +67,43 @@ class StoppingSource:
         self.reads += 1
         cancel.request(self.run_id)
         return list(self.rows)
+
+
+class FillingSource:
+    """A token-level source that asks for the stop while the pool is being filled.
+
+    The bulk row a launchpad reports arrives with market numbers and no chip numbers, so the
+    round buys those by name before the rules that read them run (`_top_up`). On Solana that
+    fill is minutes long, and it was the one pass a stop had nowhere to land in: the flag was
+    read only once the whole pool had been asked about.
+    """
+
+    chains = (ARC,)
+
+    def __init__(self, name: str, rows: list, run_id: str) -> None:
+        self.name = name
+        self.rows = list(rows)
+        self.run_id = run_id
+        self.chips = 0
+        self.safety = 0
+
+    def fetch_universe(self, chain_id: str, limit: int) -> list:
+        return list(self.rows)
+
+    def fetch_chips(self, chain_id: str, ca: str):
+        self.chips += 1
+        # The press lands while these rows are already in flight. The sleep stands in for the
+        # network, and it is what makes the window this test is about: the pool submits its
+        # eight, the operator asks for a stop, and the other twenty-two are never asked.
+        time.sleep(0.05)
+        cancel.request(self.run_id)
+        return (TokenMetrics(ca=ca, holders=500, top10_pct=10.0, bundling_pct=1.0),
+                SafetyFacts())
+
+    def fetch_token(self, chain_id: str, ca: str):
+        """The gate's read. A stopped round must never pay for it."""
+        self.safety += 1
+        return TokenMetrics(ca=ca), SafetyFacts()
 
 
 class QuietSource:
@@ -132,6 +171,59 @@ def test_a_round_stopped_before_it_starts_is_never_driven(isolated_db):
     row = RUN_CHAIN(ARC, created["id"])
     assert row["status"] == RunStatus.CANCELLED.value
     assert not cancel.requested(created["id"])
+
+
+def test_a_stop_during_the_fill_costs_only_the_rows_in_flight():
+    """The fill is the half of a round that spends minutes buying chip numbers for a whole
+    pool, and a stop asked for inside it has to end the round there rather than after the
+    rest of the pool: the gate would otherwise buy the same tokens' safety picture on its
+    way to publishing nothing."""
+    from app.pipeline import decide
+
+    run_id = "run-fill"
+    rows = [_row("0x%03x" % n, holders=None, top10_pct=None, bundling_pct=None)
+            for n in range(30)]
+    source = FillingSource("gmgn", rows, run_id)
+    engine = Engine(CHAIN, sources=[source])
+    try:
+        with pytest.raises(cancel.RoundCancelled):
+            engine.run(_settings(), run_id)
+    finally:
+        cancel.clear(run_id)
+    # The rows the pool already had running are left to finish - that is what a stop costs -
+    # and the other twenty-two are never asked.
+    assert source.chips == decide.ENRICH_WORKERS
+    assert source.safety == 0
+
+
+def test_a_stopped_round_does_not_read_the_token_as_unreadable():
+    """`gather` carries a failure as the row's own error, and a stop is not a failure: read
+    as one, a stopped round puts "no readable links" on a card for a token it never asked
+    about."""
+    from app.report import research
+
+    cancel.request("run-gather")
+    try:
+        row = {"ca": "0xaaa", "chain_id": ARC, "symbol": "AAA", "run_id": "run-gather"}
+        with pytest.raises(cancel.RoundCancelled):
+            research.gather(row)
+    finally:
+        cancel.clear("run-gather")
+
+
+def test_a_ca_search_has_no_round_to_stop(monkeypatch):
+    """A search is not a round and the row it drives carries no run id, so the same check is
+    a no-op there rather than a stop nobody asked for."""
+    from app.report import research
+
+    monkeypatch.setattr(research, "_latest_metrics", lambda ca: ({}, {}))
+    monkeypatch.setattr(research, "search_links", lambda *args, **kwargs: None)
+    cancel.request("run-somewhere-else")
+    try:
+        found = research.gather({"ca": "0xaaa", "chain_id": ARC, "symbol": "AAA"})
+    finally:
+        cancel.clear("run-somewhere-else")
+    assert found["links"] == []
 
 
 def test_the_route_stops_a_round_nobody_has_started(client):
