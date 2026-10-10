@@ -245,11 +245,10 @@ html{scrollbar-gutter:stable}
    dot is the only one left. The box still clips its own picture (overflow) so a mark cannot
    paint outside the ring.
 
-   The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the
-   two lines it stands beside, and 19px in a 最近搜索 row - inside the 19.4px that row's own
-   text line already stands at, so the mark rides in the row instead of setting its height and
-   the list keeps its 33.4px. Everything else about the box is this one rule, so the two sizes
-   cannot drift apart. */
+   The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the two
+   lines it stands beside. 19px left with the 搜索 page's row list (2026-10-11) - 19 was the
+   largest whole number under that row's own 19.4px text line, so the mark rode in the row
+   instead of setting its height. Everything else about the box is this one rule. */
 .logo{flex:0 0 auto;align-self:center;background:var(--logo-empty);
   border:2px solid var(--accent);overflow:hidden}
 .logo img{display:block;width:100%;height:100%;object-fit:cover}
@@ -836,10 +835,13 @@ div.pgroup>.pset{margin-top:auto}
    delete-confirm field in the settings drawer - must not look like a value already in it. */
 .fav-search::placeholder{color:var(--muted)}
 .fav-search:focus{outline:none;border-color:var(--accent)}
-/* The shelf's two controls, in the panel beside its cards (features/favorites/FavoritesView
-   .tsx). It is the 搜索 page's shape: the body is the radar's own grid, the panel stands in
-   its first track and the cards take the rest - which is what keeps a card here the width the
-   same number of columns gives a card on a radar (see .look-body below).
+/* The shelf's and the wall's two controls, in the panel beside their cards (features/favorites
+   /FavoritesView.tsx and features/lookup/LookupView.tsx, 8.8.19 / 8.8.20). It is one rule for
+   both pages on purpose (2026-10-11, user): 收藏 and 搜索 are the two places that are not a
+   radar, so a reader who has learned one must not have to learn a second set of widths. The
+   搜索 page briefly rode the radar's own track rule instead - its cards came out exactly a
+   radar card's width, but its panel stood in a card-wide track and left a 168px dead gutter in
+   front of the wall (1280), and the two panels were different widths. Back to one rule.
 
    The cost is one column of cards at every width, measured at 1440: three tracks of 370 become
    two of 395, because the panel takes 320px of the 1133px this grid has in hand and three
@@ -849,20 +851,20 @@ div.pgroup>.pset{margin-top:auto}
    The first track is the panel's own width rather than an auto-fill track: those are floored at
    345 and grow, so the panel would stand in a track wider than itself and leave a dead gutter
    before the cards start - measured 62px at a 1440 window and 173 at 1280, against the 12px
-   the grid gap draws. Fixing the track hands that width to the cards.
+   the grid gap draws. Fixing the track hands that width to the cards, and it is what keeps the
+   two panels the same width at every window.
 
    Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
    and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
    row rather than a chip that has to fit inside the one above it. */
-#view-favorites .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+#view-favorites .fav-body,#view-lookup .look-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
 .fav-side{display:flex;flex-direction:column;width:320px}
 .fav-side .look-h{margin:10px 0 6px}
 .fav-cards{grid-column:2/-1;min-width:0}
 .fav-cards .grid{padding:0}
 .fav-opts{display:flex;flex-direction:column;gap:2px}
-/* An option row borrows the shape of a 最近搜索 row (.look-row): a box that appears on hover
-   and stays on the one in force, so the panel says what the shelf is ordered by without a
-   word of its own.
+/* An option row is a box that appears on hover and stays on the one in force, so the panel
+   says what the shelf - or the search wall - is ordered by without a word of its own.
 
    It is a row rather than a block now that each one opens with its glyph (2026-10-02, user):
    the glyph comes first, the word hangs off it at the 7px the rail opens an icon and a label
@@ -894,55 +896,29 @@ div.pgroup>.pset{margin-top:auto}
 
 /* ---------- CA search (features/lookup/LookupView.tsx) ----------
 
-   One address, one card, and the addresses already looked up beside it. The strip on top is
-   the shelf's own (above), so the two places that are not a radar read as one page with a
-   different list under it.
+   One address, one card, and every address already looked up walled beside it the way the
+   shelf walls its own. The strip on top is the shelf's own (above), so the two places that
+   are not a radar read as one page with a different set under it.
 
-   Two columns, and the left one is fixed: the list is what the page is for - a card is one
-   click away and costs nothing, because the row already carries it - so the list keeps its
-   width and the card takes what is left. */
+   Two columns, and the left one is the shelf's own: the same 320px panel and the same card
+   tracks, from the rule declared with `#view-favorites .fav-body` above (8.8.13). */
 
-/* The body IS the radar's grid (\`.grid\`) - the recent list stands in the first track and the
-   card section spans the rest.
-
-   That is what keeps the two cards the same width. An auto-fill track is (content - gutters)
-   / tracks wide, and a section spanning n-1 of those tracks, filled by the same rule,
-   re-derives exactly that width. A plain "320px + the rest" split did not: it had one track
-   where the radar had two, so the searched card came out a third wider than a round card -
-   measured at a 1280px window, 635 against 481. */
-.look-body{align-items:start}
-.look-list{display:flex;flex-direction:column;gap:2px;width:320px}
 .look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted)}
-/* A row is one line: the mark, the name, and the chain it is on. The address and the moment it
-   was read used to stand under it and came out again (2026-10-02, user) - the card beside the
-   list prints both, and a reader picks a row by name rather than by the address it is about.
-   The mark is the card's own box at 19px (2026-10-02, user): it rides inside the row's own
-   text line rather than setting the height, so the 33.4px row is unchanged. It is the one part
-   of a card a one-line row can carry, and it is what tells two rows with the same symbol
-   apart. */
-.look-row{display:flex;align-items:center;width:100%;padding:6px 9px;border:1px solid transparent;
-  background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
-.look-row:hover{background:var(--surface-warm)}
-.look-row.on{border-color:var(--border);background:var(--surface)}
-.look-top{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0}
-.look-top b{font-size:12.5px;font-weight:600;color:var(--fg)}
-.look-top i{margin-left:auto;font-style:normal;font-size:10.5px;color:var(--muted)}
 /* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
    the columns under it rather than flush against the window. */
 #view-lookup>.note-bar{margin:12px 16px}
-/* The card the reader opened. It used to stand under a thin head of its own - the chain's
-   name and a worded 重新搜索 - and that head had no ground, no frame and no padding, so
-   8px over the card it read as a strip someone stopped drawing: every other thing on this
-   page is a framed box. Both halves were said twice anyway - the chain's name is in the
-   card's own foot, and the action belongs to the card - so the head is gone and 重新搜索
-   moved inside the card (Card.tsx). */
+/* The wall: one card per address this page has read, standing where a radar's own card
+   section stands. There is no head over the cards - it used to be a thin strip carrying the
+   chain's name and a worded 重新搜索, with no ground, no frame and no padding, so 8px over
+   the card it read as a strip someone stopped drawing. Both halves were said twice anyway
+   (the chain's name is in the card's own foot, and the action belongs to the card), so
+   重新搜索 moved inside the card (Card.tsx). */
 .look-card{grid-column:2/-1;min-width:0}
-/* The searched card rides the radar's own grid (proto.css .grid, floored at 345 on the line
-   above), so a searched card and a round card are the same width whatever stands beside
-   them - the complaint this answers was one card stretched to fill its column. The grid
-   brings the page's own padding and this column is already inset by .look-body, so the
-   padding is dropped here rather than doubled. */
+/* The wall rides the page's own `.grid`, so a searched card and a kept card are the same width
+   whatever stands beside them - the complaint this answers was one card stretched to fill its
+   column. The grid brings the page's own padding and this column is already inset by
+   .look-body, so the padding is dropped here rather than doubled. */
 .look-card .grid{padding:0}
 /* The cell the card fills: a column, so the card stacks under whatever ever stands over it
    again, and min-width:0 so a long address cannot blow the grid track open. */

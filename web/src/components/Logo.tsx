@@ -21,10 +21,9 @@ import { useState } from "react";
  *  glyph in the middle of a card: the box already says "no picture", and a failed fetch has
  *  nothing to add to it.
  *
- *  The size is the caller's (2026-10-02, user): a card head keeps a 40px box and the 最近搜索
- *  row draws the same box at 19px. 19 is the largest whole number under the 19.4px the row's
- *  own text line stands at, so the mark rides inside the row rather than setting its height -
- *  the list keeps its 33.4px - which is what the card head does with its two lines. */
+ *  The size is the caller's (2026-10-02, user): a card head keeps a 40px box, the height of the
+ *  two lines it stands beside. 19px left with the 搜索 page's row list (2026-10-11): the wall
+ *  draws whole cards, so a mark only ever stands at a card head now. */
 export function Logo({ url, size = 40 }: { url: string; size?: number }) {
   const [broken, setBroken] = useState(false);
   return (

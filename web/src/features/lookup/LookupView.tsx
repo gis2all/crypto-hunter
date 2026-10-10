@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronRight, ChevronUp, FoldVertical, ListChecks, LoaderCircle, Search,
-  Settings2, TriangleAlert, UnfoldVertical,
+  ArrowDownAZ, ArrowDownWideNarrow, ArrowUpAZ, ArrowUpNarrowWide, ChevronDown, ChevronRight,
+  ChevronUp, Clock, FoldVertical, Globe, Layers, ListChecks, LoaderCircle, Search, Settings2,
+  TriangleAlert, UnfoldVertical,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { errorText } from "../../api/client";
@@ -10,7 +12,7 @@ import type { Chain, Favorite, Job, JobStage } from "../../api/client";
 import { useCollectFavorite, useFavorites, useForgetFavorite, useLatestLookupJob,
   useLookupJob, useLookupRecent, useSearchCa } from "../../api/hooks";
 import { Icon } from "../../components/Icon";
-import { Logo } from "../../components/Logo";
+import { chainIdMark } from "../../components/chainMark";
 import { readPref, savePref } from "../../prefs";
 import { Card } from "../report/Card";
 import { chainName, field, stamp } from "../report/foot";
@@ -31,10 +33,9 @@ import { rowKey, shortCa } from "./rows";
  *  the page queues it and watches it, and 运行结果 folds the five stages it went through -
  *  the same panel a round gets, because "what took the time" is the same question.
  *
- *  Two things make the second look at a token free. The search writes the card it just read
- *  as a record of looking the address up, so the list on the left is cards, not names; and
- *  clicking one **reads that stored card** rather than searching again. 重新搜索 is the
- *  explicit way to pay for a fresh one, which is why it is a button and not the default.
+ *  Every search keeps its card. The wall on the right is every address this page has read,
+ *  one card each, and 重新搜索 on a card is the explicit way to pay for a fresh reading
+ *  rather than the default - the card in hand is the one that was stored.
  *
  *  Nothing here is ranked. 综合分 is a percentile inside a round pool and a pool of one has
  *  no percentiles, so a searched card carries the facts and no score - handed to the same
@@ -49,11 +50,41 @@ import { rowKey, shortCa } from "./rows";
  *  itself is on the server, so an id is all that has to survive. */
 const JOB_KEY = "ch.lookjob";
 
-/** Which card this page was last showing. The job id above is not enough on its own: a card
- *  opened off 最近搜索 belongs to no job. What has to survive is the row own (chain, CA), not a
- *  position in a list that refetches - a card held here would be the one copy on this page that
- *  never moves. */
-const CARD_KEY = "ch.lookcard";
+/** 链 / 排序, and the direction under the sort: the panel the shelf wears on the 收藏 page,
+ *  standing in the column the wall stands beside (2026-10-11, user). The two groups are the same
+ *  two lists for the same reason (8.8.19) - a sort is two decisions, a key and a direction,
+ *  and eight combinations read better as two short lists than as one dropdown nobody opens.
+ *
+ *  The chains are the ones the rail lists, always, whether or not the list holds one of them
+ *  today: a control that comes and goes with the contents is one the reader has to go looking
+ *  for, and "never searched this chain" is a real answer rather than a reason to hide the row.
+ *  其他 is the one row that is not a chain: a CA settles its own chain (8.8.1), so the list can
+ *  hold a token from a chain this app has no radar for, and no chain row can find it. */
+type SortKey = "origin" | "name";
+type SortDir = "asc" | "desc";
+
+/** The first direction is the one a key opens on, so a key is never shown with its second
+ *  choice highlighted: 生成时间 opens on 从新到旧, 名称 on A–Z.
+ *
+ *  生成时间 is the stamp a row's own card prints (origin_label) and the order the backend
+ *  hands the list over in, so it is the default this page asks for nothing with. There is no
+ *  分数 key: a searched card carries no 综合分 (8.8.2), and a column of blanks is not a sort. */
+const SORTS: {
+  value: SortKey;
+  label: string;
+  icon: LucideIcon;
+  dirs: [SortDir, string, LucideIcon][];
+}[] = [
+  { value: "origin", label: "生成时间", icon: Clock,
+    dirs: [["desc", "从新到旧", ArrowDownWideNarrow], ["asc", "从旧到新", ArrowUpNarrowWide]] },
+  { value: "name", label: "名称", icon: ArrowDownAZ,
+    dirs: [["asc", "A–Z", ArrowDownAZ], ["desc", "Z–A", ArrowUpAZ]] },
+];
+
+/** The one row that is not a chain: every chain this app has no radar for. A sentinel rather
+ *  than a chain id, so it cannot collide with a chain the backend would ever write - the same
+ *  reason 收藏's own 搜索 row is one. */
+const ELSEWHERE = "other";
 
 /** The band under a searched card: which chain it is on and when this reading was taken.
  *
@@ -63,7 +94,7 @@ const CARD_KEY = "ch.lookcard";
  *  And a card nobody collected has no 收藏时间 either - the row saved_at is when the address
  *  was first looked up, and printing it as a collection would be a date the reader never
  *  made. What this band prints instead is origin_label, the search's own clock, which is also
- *  what 最近搜索 is ordered by. */
+ *  the order this wall opens on. */
 function provenance(row: Favorite, labels: Map<string, string>) {
   return (
     <>
@@ -119,8 +150,8 @@ function SearchPanel({ job, open, labels, queued }: {
     : failed
       ? shortCa(job.ca) + " · 搜索失败：" + (job.error ?? "未记录原因")
       : running
-        ? shortCa(job.ca) + " · 跑完自动落库到「最近搜索」"
-        : (job.row?.symbol ?? shortCa(job.ca)) + " · 已落库到「最近搜索」";
+        ? shortCa(job.ca) + " · 跑完自动落库到搜索列表"
+        : (job.row?.symbol ?? shortCa(job.ca)) + " · 已落库到搜索列表";
 
   return (
     <div className="runpanel" id="lookpanel" hidden={!open}>
@@ -176,13 +207,6 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   const search = useSearchCa();
 
   const [ca, setCa] = useState("");
-  /** The row the reader clicked in this sitting, and only that. Which card is on screen is
-   *  derived below, because the other two things that decide it - the last search, and the row
-   *  this page was left on - are not clicks. Opening one is a state change and not a request,
-   *  which is what makes it instant. */
-  const [picked, setPicked] = useState<Favorite | null>(null);
-  /** The card this page was showing when the reader last left it, as a (chain, CA) key. */
-  const [held, setHeld] = useState<string | null>(() => readPref(CARD_KEY) || null);
   const [error, setError] = useState("");
   /** The last search this page queued. 运行结果 folds that job step list, which is why a
    *  page that has never queued one of its own still folds the last search on record. */
@@ -194,6 +218,11 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   /** 搜索管理, a drawer over the page - the same shape 配置管理 opens in. It edits the list
    *  the column below reads, which is why it is a drawer and not a row of controls. */
   const [mgrOpen, setMgrOpen] = useState(false);
+  /** 链 / 排序 are view state, not kept anywhere (8.8.19): the list arrives newest first, which
+   *  is exactly 生成时间 / 从新到旧, so the defaults below are the page asking for nothing. */
+  const [chain, setChain] = useState("");
+  const [key, setKey] = useState<SortKey>("origin");
+  const [dir, setDir] = useState<SortDir>("desc");
 
   const job = useLookupJob(jobId);
   // The fallback reading. A reloaded page still holds its job id in ch.lookjob, so this is for
@@ -209,29 +238,43 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   // Which searched cards the reader has collected. The star is drawn off the shelf rather than
   // off this list, so one star and one shelf can never disagree.
   const kept = useMemo(() => new Set((shelf.data ?? []).map((row) => rowKey(row))), [shelf.data]);
-
-  // A search is over when the job says so, and the page answers both ways at once: the card
-  // the search wrote is now missing from the list it belongs to, and the reader is owed the
-  // card itself. One write per job, guarded by id, because the poll keeps answering the same
-  // terminal reading until the page stops asking.
-  const settled = job.data && job.data.status !== "running" ? job.data : null;
-  const landed = settled?.row ?? null;
-  /** Which card the column is showing, in the order the reader would name them: the row clicked
-   *  just now, else the row this page was left on, else the card the last search wrote. Derived
-   *  rather than held, because neither of the last two is a click - this view unmounts with its
-   *  Place, and a page that remembers the search while dropping the card hands back an empty
-   *  column and a hint. */
-  const restored = useMemo(
-    () => (held ? rows.find((row) => rowKey(row) === held) ?? null : null),
-    [held, rows],
+  // The chains the rail lists, in that order, always. 其他 stands in for the ones this app has
+  // no radar for, and appears only once the list actually holds one: until then it is a row
+  // whose only possible answer is empty.
+  const known = useMemo(() => chains.filter((c) => c.enabled).map((c) => c.id), [chains]);
+  const elsewhere = useMemo(
+    () => rows.some((row) => !known.includes(row.chain_id)),
+    [rows, known],
   );
-  const shown = picked ?? restored ?? landed ?? null;
-  /** Put a row on screen and write it down, so the next visit starts where this one ended. */
-  const remember = (row: Favorite) => {
-    setPicked(row);
-    setHeld(rowKey(row));
-    savePref(CARD_KEY, rowKey(row));
-  };
+  const sortNow = SORTS.find((sort) => sort.value === key) ?? SORTS[0];
+  /** What the wall draws: every search, filtered by chain and read in the chosen order. The
+   *  records 搜索管理 edits stay on `rows`, because hiding a card here is not forgetting it
+   *  (8.8.18). */
+  const listed = useMemo(() => {
+    const list = rows.filter((row) => {
+      if (chain === ELSEWHERE) {
+        return !known.includes(row.chain_id);
+      }
+      return !chain || row.chain_id === chain;
+    });
+    const flip = dir === "asc" ? 1 : -1;
+    // Two rows that compare equal keep one fixed order (CA), so the two directions are two
+    // readings of the same list rather than two different shuffles of the equal ones.
+    const tie = (a: Favorite, b: Favorite) =>
+      a.ca.localeCompare(b.ca) || a.chain_id.localeCompare(b.chain_id);
+    const name = (row: Favorite) => row.symbol ?? row.card.sym;
+    return [...list].sort((a, b) => {
+      if (key === "name") {
+        return flip * name(a).localeCompare(name(b)) || tie(a, b);
+      }
+      return flip * a.origin_label.localeCompare(b.origin_label) || tie(a, b);
+    });
+  }, [rows, chain, key, dir, known]);
+
+  // A search is over when the job says so: the card it wrote is now in the wall, and the panel
+  // that was counting the stages has nothing left to say. One write per job, guarded by id,
+  // because the poll keeps answering the same terminal reading until the page stops asking.
+  const settled = job.data && job.data.status !== "running" ? job.data : null;
   // Seeded with the job this page was already holding, so a restored one counts as read:
   // the reader left that panel folded (or never opened it), and a reload that unfolds it is
   // the page moving under them - the same reason a round own panel starts folded (8.3.7).
@@ -242,11 +285,14 @@ export function LookupView({ chains }: { chains: Chain[] }) {
     }
     answered.current = settled.id;
     void queryClient.invalidateQueries({ queryKey: ["lookup-recent"] });
-    setPanelOpen(true);
-    if (landed) {
-      remember(landed);
-    }
-  }, [settled, landed, queryClient]);
+    // The panel was opened to watch this search run, so a run that came back folds it away -
+    // left open it would cover the card it was waiting for. One that failed keeps it open,
+    // because the reason is written in there. The chain filter goes back to 全部 for the same
+    // reason as the fold: a card settles its own chain (8.8.1), and a filter left on the last
+    // one would hide the card that just landed.
+    setPanelOpen(settled.status === "failed");
+    setChain("");
+  }, [settled, queryClient]);
 
   const live = Boolean(jobId) && !settled;
   const busy = search.isPending || live;
@@ -277,16 +323,15 @@ export function LookupView({ chains }: { chains: Chain[] }) {
     });
   };
 
-  const starred = shown ? kept.has(rowKey(shown)) : false;
-  const onStar = () => {
-    if (!shown) {
+  /** The star a card in the wall wears, drawn and written per row: it reads 书架 for whether to
+   *  draw solid and writes the same (chain, CA) back, so one star and one shelf cannot disagree
+   *  (8.8.4). This used to be the selected card's star; the wall has no selection. */
+  const toggle = (row: Favorite) => {
+    if (kept.has(rowKey(row))) {
+      forget.mutate({ chainId: row.chain_id, ca: row.ca });
       return;
     }
-    if (starred) {
-      forget.mutate({ chainId: shown.chain_id, ca: shown.ca });
-      return;
-    }
-    keep.mutate({ chainId: shown.chain_id, ca: shown.ca });
+    keep.mutate({ chainId: row.chain_id, ca: row.ca });
   };
 
   return (
@@ -320,7 +365,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
             <Icon as={bulk.open ? FoldVertical : UnfoldVertical} size={14} />
             {bulk.open ? "收起卡片" : "展开卡片"}
           </button>
-          {/* 搜索管理: the records 最近搜索 is holding. It stands between 展开卡片 and the box
+          {/* 搜索管理: the records the wall is drawing. It stands between 展开卡片 and the box
               the way 配置管理 stands beside 保存并生效 on a radar (8.3.7) - the same kind of
               control, so it wears the same box and the same trailing chevron. */}
           <button className="btn sec" onClick={() => setMgrOpen(true)}>
@@ -351,75 +396,109 @@ export function LookupView({ chains }: { chains: Chain[] }) {
       <LookupManager rows={rows} kept={kept} labels={labels}
         open={mgrOpen} onClose={() => setMgrOpen(false)} />
 
-      <>
-          {error ? (
+      {error ? (
+        <div className="note-bar bad">
+          <Icon as={TriangleAlert} size={14} />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <div className="grid look-body">
+        <aside className="fav-side">
+          {/* 链 and 排序: the panel the 收藏 page's shelf wears (8.8.19), one group fewer -
+              what they act on is the wall in the column beside them. */}
+          <h4 className="look-h">链</h4>
+          <div className="fav-opts">
+            <button type="button" className={"fav-opt" + (chain === "" ? " on" : "")}
+              onClick={() => setChain("")}>
+              <Icon as={Layers} size={14} />
+              全部
+            </button>
+            {known.map((id) => (
+              <button type="button" key={id} className={"fav-opt" + (chain === id ? " on" : "")}
+                onClick={() => setChain(id)}>
+                {chainIdMark(id)}
+                {chainName(labels, id)}
+              </button>
+            ))}
+            {elsewhere ? (
+              <button type="button" className={"fav-opt" + (chain === ELSEWHERE ? " on" : "")}
+                onClick={() => setChain(ELSEWHERE)}>
+                <Icon as={Globe} size={14} />
+                其他
+              </button>
+            ) : null}
+          </div>
+          <h4 className="look-h">排序</h4>
+          <div className="fav-opts">
+            {SORTS.map((sort) => (
+              <button type="button" key={sort.value}
+                className={"fav-opt" + (key === sort.value ? " on" : "")}
+                onClick={() => { setKey(sort.value); setDir(sort.dirs[0][0]); }}>
+                <Icon as={sort.icon} size={14} />
+                {sort.label}
+              </button>
+            ))}
+          </div>
+          {/* The direction reads as the sort's own second half rather than as a third key:
+              it is fenced off and it says what the key above it means. */}
+          <div className="fav-opts fav-dirs">
+            {sortNow.dirs.map(([value, label, icon]) => (
+              <button type="button" key={value}
+                className={"fav-opt" + (dir === value ? " on" : "")}
+                onClick={() => setDir(value)}>
+                <Icon as={icon} size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="look-card">
+          {/* Every address this page has read, one card each: the wall the left panel
+              filters and orders (8.8.20). It rides the radar's own grid, so a searched card
+              and a round card are the same width whatever stands beside them (8.8.13).
+              重新搜索 is the card's own control, drawn in its head rather than on a strip
+              above it (Card.tsx). */}
+          {recent.isError ? (
             <div className="note-bar bad">
               <Icon as={TriangleAlert} size={14} />
-              <span>{error}</span>
+              <span>读取失败：{errorText(recent.error)}</span>
             </div>
-          ) : null}
-
-          <div className="grid look-body">
-            <aside className="look-list">
-              <h4 className="look-h">最近搜索</h4>
-              {recent.isError ? (
-                <div className="note-bar bad">
-                  <Icon as={TriangleAlert} size={14} />
-                  <span>读取失败：{errorText(recent.error)}</span>
+          ) : listed.length ? (
+            <div className="grid">
+              {listed.map((row) => (
+                <div className="look-cell" key={rowKey(row)}>
+                  <Card
+                    card={row.card}
+                    openAll={bulk.open}
+                    bulkTick={bulk.tick}
+                    listed={false}
+                    favorited={kept.has(rowKey(row))}
+                    onFavorite={() => toggle(row)}
+                    onRescan={() => run(row.ca)}
+                    rescanBusy={busy}
+                    foot={provenance(row, labels)}
+                  />
                 </div>
-              ) : rows.length ? rows.map((row) => (
-                <button
-                  type="button"
-                  key={rowKey(row)}
-                  className={"look-row" + (shown && rowKey(shown) === rowKey(row) ? " on" : "")}
-                  onClick={() => remember(row)}
-                >
-                  <span className="look-top">
-                    <Logo url={row.card.logo} size={19} />
-                    <b>{row.symbol ?? "—"}</b>
-                    <i>{chainName(labels, row.chain_id)}</i>
-                  </span>
-                </button>
-              )) : (
-                <div className="note-bar">还没有搜索过任何 CA。</div>
-              )}
-            </aside>
-
-            <section className="look-card">
-              {shown ? (
-                // The card rides the radar own grid, so a searched card and a round card are
-                // the same width whatever stands beside them. 重新搜索 is the card's own
-                // control now, drawn in its head instead of on a strip above it (Card.tsx).
-                <div className="grid">
-                  <div className="look-cell">
-                    <Card
-                      card={shown.card}
-                      openAll={bulk.open}
-                      bulkTick={bulk.tick}
-                      listed={false}
-                      favorited={starred}
-                      onFavorite={onStar}
-                      onRescan={() => run(shown.ca)}
-                      rescanBusy={busy}
-                      foot={provenance(shown, labels)}
-                    />
-                  </div>
-                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="note-bar">
+              {busy ? (
+                <>
+                  <Icon as={LoaderCircle} size={14} className="spin" />
+                  <span>正在搜索，运行结果面板里有每一步的进度。</span>
+                </>
+              ) : rows.length ? (
+                "没有符合条件的搜索记录。"
               ) : (
-                <div className="note-bar">
-                  {busy ? (
-                    <>
-                      <Icon as={LoaderCircle} size={14} className="spin" />
-                      <span>正在搜索，运行结果面板里有每一步的进度。</span>
-                    </>
-                  ) : (
-                    "输入一个合约地址，或者从左边的最近搜索里点一个 —— 点开的是当初存下的那张卡，不用再等一次搜索。"
-                  )}
-                </div>
+                "还没有搜索过任何 CA。输入一个合约地址，它会留下一张卡。"
               )}
-            </section>
-          </div>
-      </>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
