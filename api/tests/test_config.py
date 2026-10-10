@@ -86,10 +86,12 @@ def test_robinhood_scans_its_own_sources():
 
     """The three launchpad feeds only exist for Robinhood, and the two Arc-only sources must
     not be in the list: RadarDEX and Tolly answer about Robinhood with the Arc rollout, so a
-    config that named them would fill the pool with another chain's tokens."""
+    config that named them would fill the pool with another chain's tokens. The DexScreener
+    board is the one scanner here that nobody had to be told about: it enumerates the chain
+    as the site lists it."""
     chain = config.chain("robinhood")
     assert set(chain["pipeline"]["scan_sources"]) == {
-        "gmgn", "geckoterminal", "coinbarrel", "pez", "peeps",
+        "gmgn", "geckoterminal", "coinbarrel", "pez", "peeps", "dexscreener_rank",
     }
     for arc_only in ("radardex", "tolly"):
         assert arc_only not in chain["sources"]

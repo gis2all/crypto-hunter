@@ -361,7 +361,8 @@ def test_scan_rows_list_scanners_only(client):
     """GoPlus and Sourcify verify safety; offering them as scan sources would be a lie.
 
     The row is also the chain's own list rather than a constant: Arc scans RadarDEX and
-    Tolly, Robinhood scans its launchpads, and neither page may offer the other's.
+    Tolly, Robinhood scans its launchpads and the DexScreener board, and neither page may
+    offer the other's.
     """
     arc = _fields(client.get(f"/api/v1/chains/{ARC}/settings/form").json())
     assert [c["value"] for c in arc["pipeline.scan_sources"]["checks"]] == [
@@ -370,7 +371,7 @@ def test_scan_rows_list_scanners_only(client):
 
     robinhood = _fields(client.get(f"/api/v1/chains/{ROBINHOOD}/settings/form").json())
     assert [c["value"] for c in robinhood["pipeline.scan_sources"]["checks"]] == [
-        "gmgn", "coinbarrel", "pez", "peeps", "geckoterminal",
+        "gmgn", "coinbarrel", "pez", "peeps", "geckoterminal", "dexscreener_rank",
     ]
 
 

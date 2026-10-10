@@ -82,17 +82,17 @@ def test_the_tax_comes_from_the_source_that_measures_it():
 
 
 def test_the_name_has_a_source_on_a_chain_no_launchpad_adapter_knows():
-    """Symbol is listed field by field, and DexScreener now sits at its end.
+    """Symbol is listed field by field, and the two DexScreener halves now sit at its end.
 
     The list named only launchpad adapters, so a token that never came from one - TIDE on
     Robinhood is an ordinary Uniswap pool - had no source that could answer and its card
-    went out with no name. It goes last rather than next to the other feed-wide readings:
-    the launchpad the token did come from keeps its own spelling, and this fills the gap.
+    went out with no name. They go last rather than next to the other feed-wide readings:
+    the launchpad the token did come from keeps its own spelling, and these fill the gap.
     """
     from app.pipeline.collect import FIELD_PRIORITY
 
     order = FIELD_PRIORITY["symbol"]
-    assert order[-1] == "dexscreener"
+    assert order[-2:] == ("dexscreener", "dexscreener_rank"), "the per-token read, then the board"
     assert "pez" in order and "coinbarrel" in order
 
     gap = merge("0x1", {"dexscreener": TokenMetrics(ca="0x1", symbol="TIDE")}, order)
@@ -109,7 +109,8 @@ def test_the_name_has_a_source_on_a_chain_no_launchpad_adapter_knows():
 
 def test_the_market_caliber_leads_the_numbers_the_rules_read():
     """DexScreener is the round's market caliber, so it has to outrank the bulk feeds on
-    the four numbers the floors and the sort read.
+    the four numbers the floors and the sort read - and the board it renders
+    (`dexscreener_rank`) is the same caliber in bulk, so it sits immediately behind it.
 
     It was missing from all four lists, so a per-token answer was bought, merged in and
     then dropped on the floor: 0 of 17,573 stored snapshots had ever credited it with a
@@ -119,10 +120,10 @@ def test_the_market_caliber_leads_the_numbers_the_rules_read():
     from app.pipeline.collect import FIELD_PRIORITY
 
     for field in ("market_cap_usd", "liquidity_usd", "volume_24h_usd", "price_usd"):
-        assert FIELD_PRIORITY[field][0] == "dexscreener", field
-    # GMGN answers 24h change in the ranking window's units, so it is listed - and the
-    # two feeds that ship a real change24h sit right behind it.
-    assert FIELD_PRIORITY["price_change_24h_pct"][:3] == ("gmgn", "radardex", "tolly")
+        assert FIELD_PRIORITY[field][:2] == ("dexscreener", "dexscreener_rank"), field
+    # GMGN answers 24h change in the ranking window's units, so it leads there - and the
+    # sources that ship a real h24 sit right behind it.
+    assert FIELD_PRIORITY["price_change_24h_pct"][:3] == ("gmgn", "dexscreener_rank", "radardex")
 
 
 def test_the_site_a_search_proved_leads_the_list_and_names_itself():
