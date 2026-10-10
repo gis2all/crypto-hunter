@@ -603,9 +603,12 @@ html{scrollbar-gutter:stable}
       in reading order. Below the gate the `.pcol` divs stack back into one column in that
       same order and the frozen `auto-fit` widths come back.
 
-   1620px is measured, not picked: the run block's ratios give its 1fr column 1/4.05 of the
-   content, and that column needs 330px before its widest row runs out of room. At 1620 the
-   content area is 1376px, which is 334px. Everything below that is the frozen layout.
+   1668px is measured, not picked. While 提醒 was in the block it was the run block's 1fr
+   column that set it (that column needed 330px to keep its widest row on one line); 运行
+   is down to two groups now, and the column the fr layout squeezes hardest is 评分口径 -
+   硬过滤 and 安全门槛's floors (680 / 416) are absolute, so everything over them lands on
+   it. At 1668 that column holds 241px with every row still on one line (measured
+   2026-10-11). Everything below that is the frozen layout.
 
    The rail went 212 -> 260 the same day, which takes those 48px off the content area at
    every viewport, so the gate moves with it: 1668 is the same measurement as 1620 was. */
@@ -661,8 +664,19 @@ div.pgroup>.pset{margin-top:auto}
      positions - the first track is the panel that needs the least, and both floors stay
      on the two groups that need them. */
   .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.3fr) minmax(416px,1fr)}
-  .blk-cols[data-blk="product"]{grid-template-columns:minmax(0,1fr) minmax(0,2.36fr)}
-  .blk-cols[data-blk="run"]{grid-template-columns:minmax(0,1.94fr) minmax(0,1fr) minmax(0,1.11fr)}
+  /* 运行 carries two groups since 369b703 took 提醒 out (8.2.11), but this template still spelled
+     three tracks: 提醒 was the 1fr middle, so 推送与依赖 moved up into it and the third
+     track - 1.11fr, the ratio 推送与依赖 held while 提醒 stood between them - was left with
+     nothing in it. That empty track is the 382px of air right of 推送与依赖 (measured at
+     1724 on 2026-10-11: tracks 667 / 344 / 382 in a 1417px block).
+
+     An even split is what the two groups ask for: their widest rows need 481px (产出与节奏's
+     扫描源 row) against 470px (推送与依赖's 数据源凭据, seven sources) - measured at 1724 on
+     2026-10-11, where 1fr apiece lands on 702px. The orphan's 27% is shared evenly.
+
+     offchain has no template of its own and does not want one: cols2's auto-fit already
+     hands its single group the whole row, and a fr pair would cut it back to a third. */
+  .blk-cols[data-blk="run"]{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .pgroup.split .prows{display:grid;grid-template-columns:1fr 1fr;column-gap:24px}
   .pgroup.split .prow>label{min-width:0}
   .pgroup.split .prow input.num{width:56px}
