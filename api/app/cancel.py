@@ -16,6 +16,7 @@ thread pool.
 from __future__ import annotations
 
 import threading
+from typing import Callable
 
 
 class RoundCancelled(RuntimeError):
@@ -50,3 +51,14 @@ def raise_if(run_id: str | None) -> None:
     """The checkpoint itself: one call per boundary a round can lose minutes in."""
     if requested(run_id):
         raise RoundCancelled("round %s was stopped by the operator" % run_id)
+
+
+def check(run_id: str | None) -> Callable[[], None]:
+    """`raise_if(run_id)` as a callable, for the passes that hand it to a thread pool.
+
+    A pool cannot be asked to stop once it holds its whole queue, so the passes that fill one
+    hand it this instead: the check runs on the pool's own thread, before the next task
+    starts, and what it raises is what ends the pass. A caller with no round in hand - a CA
+    search, a test - passes `None`, which is not a round and never stops.
+    """
+    return lambda: raise_if(run_id)

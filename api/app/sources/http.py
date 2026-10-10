@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any, Callable, Iterable, TypeVar
 from urllib.parse import urlsplit
 
@@ -338,22 +338,49 @@ def archive(run_id: str, name: str, payload: Any) -> None:
         pass
 
 
-def pmap(fn: Callable[[T], Any], items: Iterable[T], workers: int = 4) -> list[Any]:
+def pmap(fn: Callable[[T], Any], items: Iterable[T], workers: int = 4,
+         stop: Callable[[], None] | None = None) -> list[Any]:
     """Run `fn` over `items`, keeping order. A failure becomes None, never an exception.
 
     Pacing already serialises each host, so concurrency here buys latency across hosts
     without multiplying load on any one of them.
+
+    `stop` is a round's own stop check (`cancel.check(run_id)`), asked on this thread before
+    every task starts: a round that has been asked to stop starts no further work, and what
+    the check raises is what ends the pass (CLAUDE.md 9.2.6). It is asked out here rather than inside `fn`
+    because a task that raised it would be read as a source that answered nothing - the one
+    reading a stop must never be mistaken for. The tasks already in flight are left to
+    finish, which is why a stop costs seconds and not a fraction of one, and the slots never
+    started keep their None.
+
+    The pool is topped up as tasks finish instead of being handed its whole queue at once,
+    for the same reason: a queue submitted in one go has no "next task" left to stop at.
+    Concurrency is unchanged - `workers` tasks run at a time either way.
     """
     queue = list(items)
-    if len(queue) <= 1:
-        return [fn(item) for item in queue]
     out: list[Any] = [None] * len(queue)
+    if len(queue) <= 1:
+        if stop is not None:
+            stop()
+        for index, item in enumerate(queue):
+            out[index] = fn(item)
+        return out
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(fn, item): index for index, item in enumerate(queue)}
-        for future in as_completed(futures):
-            index = futures[future]
-            try:
-                out[index] = future.result()
-            except Exception:
-                out[index] = None
+        pending: dict[Any, int] = {}
+        cursor = 0
+        while cursor < len(queue) or pending:
+            while cursor < len(queue) and len(pending) < workers:
+                if stop is not None:
+                    stop()
+                pending[pool.submit(fn, queue[cursor])] = cursor
+                cursor += 1
+            if not pending:
+                break
+            finished, _ = wait(list(pending), return_when=FIRST_COMPLETED)
+            for future in finished:
+                position = pending.pop(future)
+                try:
+                    out[position] = future.result()
+                except Exception:
+                    out[position] = None
     return out
