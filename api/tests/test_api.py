@@ -23,14 +23,14 @@ def test_health_reports_environment(client):
 
 def test_chains_come_from_config(client):
     chains = client.get("/api/v1/chains").json()
-    assert {c["id"] for c in chains} == {"arc", "bsc", "robinhood"}
+    assert {c["id"] for c in chains} == {"arc", "bsc", "robinhood", "solana"}
     arc = next(c for c in chains if c["id"] == ARC)
     assert arc["enabled"] is True
     assert arc["report"]["per_round"] == 5
 
 
 def test_unknown_chain_is_404(client):
-    assert client.get("/api/v1/chains/solana").status_code == 404
+    assert client.get("/api/v1/chains/dogecoin").status_code == 404
 
 
 def test_run_lifecycle(client, no_live_rounds):

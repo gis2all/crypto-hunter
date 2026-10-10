@@ -146,8 +146,18 @@ TOKEN_URLS = {
 }
 
 
+#: The trackers that spell a chain differently from this app. Only GMGN does so far: its
+#: namespace for Solana is `sol`, while the chain id is `solana` - the spelling DexScreener
+#: and GeckoTerminal answer to, so one id cannot be both. A wrong segment here does not 404,
+#: it opens a live page about nothing, which is worse; so it gets a table rather than a
+#: guess. The measurement behind it, and the request half of the same fact, are in
+#: `sources/gmgn.py` (`CHAIN_SLUGS`). A pair that is absent means the chain id is already
+#: the name that tracker uses.
+TRACKER_CHAINS: dict[tuple[str, str], str] = {("gmgn", "solana"): "sol"}
+
+
 def token_url(tracker: str, chain_id: str, ca: str) -> str:
-    return TOKEN_URLS[tracker] % (chain_id, ca)
+    return TOKEN_URLS[tracker] % (TRACKER_CHAINS.get((tracker, chain_id), chain_id), ca)
 
 
 def stamp_trackers(row: TokenMetrics, chain_id: str, ca: str) -> None:

@@ -68,7 +68,7 @@ def test_a_real_environment_variable_is_never_touched(tmp_path, monkeypatch):
 
 def test_every_chain_declared():
     chains = config.load_chains()
-    assert set(chains) == {"arc", "bsc", "robinhood"}
+    assert set(chains) == {"arc", "bsc", "robinhood", "solana"}
     assert chains["arc"]["enabled"] is True
     assert chains["bsc"]["enabled"] is False
     assert chains["robinhood"]["enabled"] is True
@@ -78,7 +78,7 @@ def test_robinhood_scans_its_own_sources():
     """`f_narrative` is judged against the chain's own line, so a chain that ships none
     ships a prompt with no target. Every shipped chain carries one, and a file that leaves
     it out reads as empty rather than as some other chain's line."""
-    for chain_id in ("arc", "bsc", "robinhood"):
+    for chain_id in ("arc", "bsc", "robinhood", "solana"):
         assert config.chain_thesis(config.chain(chain_id)), chain_id
     assert config.chain_thesis({"thesis": "  x  "}) == "x", "the line is trimmed"
     assert config.chain_thesis({}) == ""

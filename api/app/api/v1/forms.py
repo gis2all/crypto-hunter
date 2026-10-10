@@ -157,6 +157,14 @@ def build(
     prefilter = pipeline.get("prefilter") or {}
     safety = pipeline.get("safety") or {}
     scoring = pipeline.get("scoring") or {}
+    # 可增发 / 可冻结 are answerable only where the mint read is configured
+    # (`sources/solana/mint.py`), so the two checkboxes are offered exactly there: a
+    # permission the chain cannot answer is a checkbox that can never fire. The EVM three
+    # stay on every chain, because GoPlus - the source that answers them - is on every chain.
+    solana_perms = (
+        ["mint_authority", "freeze_authority"]
+        if "solana_mint" in (chain.get("sources") or []) else []
+    )
     schedule = chain.get("schedule") or {}
     report = chain.get("report") or {}
     factor_weights = scoring.get("onchain_factor_weights") or {}
@@ -242,10 +250,15 @@ def build(
             "pipeline.safety.forbid_dangerous_perms", "无危险权限", "checks",
             list(safety.get("forbid_dangerous_perms") or []),
             checks=_checks(
-                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"],
+                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"] + solana_perms,
                 {"hidden_owner": "隐藏所有者",
                  "owner_change_balance": "可改持有人余额",
-                 "can_take_back_ownership": "可夺回所有权"},
+                 "can_take_back_ownership": "可夺回所有权",
+                 # Solana 的两条读的是 mint 账户里的两个权限（sources/solana/mint.py），EVM 的
+                 # 三条读的是合约字节码。同一条规则、同一行，因为它们回答的是同一个问题：
+                 # 持有人之外，还有谁能动这个币。
+                 "mint_authority": "可增发（铸造权未放弃）",
+                 "freeze_authority": "可冻结（冻结权未放弃）"},
             ),
             # 提示项照常读、卡片上照常显示，只是不淘汰 —— 门槛只留真能卷走资产的三条。
             drop_count=drops("dangerous_perm"),
