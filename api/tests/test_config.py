@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+import yaml
 
 from app import config
 from app.store import db
@@ -219,6 +220,33 @@ def test_a_machine_that_has_never_run_gets_the_file_from_the_template(chains_dir
     live = chains_dir / "demo.yaml"
     assert live.exists()
     assert live.read_bytes() == (chains_dir / "demo.example.yaml").read_bytes()
+
+
+def test_a_chain_file_added_by_hand_is_read_without_a_restart(chains_dir):
+    """Adding a chain is dropping a file in, and nothing calls `reload()` for that.
+
+    The parse was remembered for the life of the process, so a chain added this way only
+    appeared after a restart - the one way in that the page never takes. The cache is keyed
+    on the directory now (name, size, stamp), so the read after the write sees it, and a file
+    edited or deleted by hand lands the same way.
+    """
+    def write(name: str, label: str):
+        (chains_dir / name).write_text(yaml.safe_dump(
+            {"id": name[:-5], "enabled": True,
+             "configs": [{"id": "default", "label": label}]},
+            allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    write("one.yaml", "一号")
+    assert set(config.load_chains()) == {"one"}
+
+    write("two.yaml", "二号")
+    assert set(config.load_chains()) == {"one", "two"}
+
+    write("two.yaml", "二号改")
+    assert config.configs_of("two")[0]["label"] == "二号改"
+
+    (chains_dir / "two.yaml").unlink()
+    assert set(config.load_chains()) == {"one"}
 
 
 def test_the_ticker_obeys_the_schedule_the_page_saved_not_the_files(chains_dir, isolated_db):

@@ -177,7 +177,26 @@ def load_env_file(path: Path | None = None) -> int:
 load_env_file()
 
 
-@functools.lru_cache(maxsize=1)
+def _chains_signature() -> tuple:
+    """What the chain directory looks like right now: each yaml name, size and stamp.
+
+    Hand-editing a file, or dropping a new one in, is a change the page never makes, so
+    nothing calls `reload()` for it - and while the parse was remembered for the life of
+    the process, a chain added that way only appeared after a restart. This is what the
+    cache is keyed on instead, at one `stat` per file per read.
+    """
+    entries = []
+    for path in _all_files():
+        try:
+            stat = path.stat()
+        except OSError:
+            # Gone between the glob and the stat: a change like any other.
+            entries.append((path.name, -1, -1))
+            continue
+        entries.append((path.name, stat.st_mtime_ns, stat.st_size))
+    return tuple(entries)
+
+
 def load_chains() -> dict[str, dict]:
     """Every chain on disk, keyed by its id.
 
@@ -185,8 +204,17 @@ def load_chains() -> dict[str, dict]:
     for it - and a `configs` list: one entry per set of settings. Each entry screens the
     same chain under its own口径 and keeps its own report library, so two entries on one
     chain never blend into each other.
+
+    Re-read whenever the directory changes, templates written or a file hand-edited;
+    `_chains_signature` is what that costs.
     """
     seed_chain_files()
+    return _load_chains(_chains_signature())
+
+
+@functools.lru_cache(maxsize=8)
+def _load_chains(signature: tuple) -> dict[str, dict]:
+    """The parse itself, remembered per directory state. `signature` is only the key."""
     chains: dict[str, dict] = {}
     for path in _chain_files():
         with open(path, encoding="utf-8") as fh:
@@ -390,7 +418,7 @@ def enabled_configs() -> list[dict]:
 
 
 def reload() -> None:
-    load_chains.cache_clear()
+    _load_chains.cache_clear()
 
 #: One writer at a time. Four requests edit the very files the ticker reads a round out
 #: of, and the read half of a write that has not finished is a chain that is briefly not
