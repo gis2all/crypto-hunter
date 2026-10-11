@@ -81,6 +81,7 @@ const SOURCE_SHORT: Record<string, string> = {
   pons: "PONS",
   launchlab: "LaunchLab",
   pumpfun: "pump.fun",
+  fourmeme: "four.meme",
   geckoterminal: "GeckoTerminal",
 };
 
