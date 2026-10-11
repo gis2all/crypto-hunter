@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from . import blockscout, dexscreener, dexscreener_rank, geckoterminal, gmgn, goplus, sourcify
 from .arc import radardex, tolly
+from .bsc import fourmeme
 from .robinhood import coinbarrel, peeps, pez, pons
 from .solana import launchlab, mint, pumpfun
 
@@ -28,6 +29,7 @@ ALL = {
         pez.Pez(),
         peeps.Peeps(),
         pons.Pons(),
+        fourmeme.FourMeme(),
         launchlab.LaunchLab(),
         pumpfun.PumpFun(),
         mint.SolanaMint(),
