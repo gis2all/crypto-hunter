@@ -7,7 +7,7 @@ stack:
   deploy: 同域单进程 —— FastAPI 托管 web/dist，只有一个端口 8787；dev 用 Vite 5173，/api 代理到 8787
   schedule: 服务内 ticker + runs 表唯一约束做幂等（run_key），不用 APScheduler
   icon: lucide-react，统一走 web/src/components/Icon.tsx
-run: uv run --project api python -m app
+run: cd api; uv run python -m app
 build: cd web; npm run build
 verify: cd api; uv run python -m pytest -q
 truth:                                           # 每个领域的唯一出处，本文件只写规矩、不抄内容
@@ -83,7 +83,7 @@ truth:                                           # 每个领域的唯一出处�
 ## 2.5 怎么跑
 
 ```powershell
-uv run --project api python -m app          # 后端 127.0.0.1:8787，生产也只有一个进程，它同时托管 web/dist
+cd api; uv run python -m app          # 后端 127.0.0.1:8787，生产也只有一个进程，它同时托管 web/dist
 cd web; npm install; npm run dev            # 前端开发 5173，/api 代理到 8787
 cd web; npm run build                       # 生产：tsc -b + vite build，然后强刷浏览器
 ```

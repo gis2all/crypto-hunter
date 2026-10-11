@@ -12,7 +12,7 @@
 
 ```powershell
 # 后端：127.0.0.1:8787。生产也只有一个进程 —— 它同时托管 web/dist。
-uv run --project api python -m app
+cd api; uv run python -m app
 
 # 前端（开发）：5173，/api 代理到 8787
 cd web; npm install; npm run dev
