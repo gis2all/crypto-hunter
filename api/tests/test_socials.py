@@ -6,8 +6,10 @@ Printed as they arrive they are text shaped like a link - the reference implemen
 the same line.
 """
 
+from app.sources import gmgn
 from app.sources.arc import radardex, tolly
 from app.sources.base import social_url, web_url
+from app.sources.robinhood import pez
 
 
 def test_a_handle_becomes_the_host_that_serves_it():
@@ -38,3 +40,17 @@ def test_both_registries_publish_links_through_the_same_reader():
     assert radardex._socials(row)["twitter"] == "https://x.com/Solonlabs1"
     assert radardex._websites(row) == ["https://solonpad.fun"]
     assert tolly._socials(row)["telegram"] == "https://t.me/solonpad"
+
+
+def test_the_nested_column_is_unwrapped_by_the_caller():
+    row = {"socials": {"twitter": "pezpad", "discord": "abc123", "website": "pezpad.fun"}}
+    assert pez._socials(row)["discord"] == "https://discord.gg/abc123"
+    assert pez._websites(row) == ["https://pezpad.fun"]
+    assert pez._socials({}) == {}
+
+
+def test_a_twitter_column_named_differently_still_feeds_the_same_kind():
+    assert gmgn._socials({"twitter_username": "somedev", "telegram": "t.me/somedev"}) == {
+        "twitter": "https://x.com/somedev",
+        "telegram": "https://t.me/somedev",
+    }
