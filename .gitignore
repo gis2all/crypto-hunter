@@ -39,6 +39,7 @@ config/chains/*.yaml
 !config/chains/*.example.yaml
 
 # logs and coverage
+log/
 *.log
 .coverage
 htmlcov/
