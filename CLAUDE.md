@@ -29,7 +29,7 @@ truth:                                           # 每个领域的唯一出处�
 | 1 | 起步一律 `get_minimal_context_tool`（带 `task`），由它决定下一步用哪个工具。 |
 | 2 | 架构用 `get_architecture_overview_tool`；评审改动用 `detect_changes_tool` ＋ `get_review_context_tool`；调用 / 依赖关系用 `query_graph_tool` / `semantic_search_nodes_tool`。 |
 | 3 | 影响面用 `get_impact_radius_tool` / `get_affected_flows_tool`，别靠猜文件名。 |
-| 4 | 图缺失或过期先 `build_or_update_graph_tool`。**`head_matches_build` 只比 commit**：改了代码没提交时它仍是 `true` —— 改完代码就 update，别拿它当新鲜度。 |
+| 4 | 图缺失或过期先 `build_or_update_graph_tool`。**`head_matches_build` 只比 commit**：改了代码没提交时它仍是 `true` —— 改完代码就 update，别拿它当新鲜度。**新增文件在进 git 之前图谱看不见**（它按 `git ls-files` 枚举，全量 `build` 也不兜底）—— 查新模块查不到，不等于它不存在。 |
 
 ## 1.2 维护这份文档
 
@@ -57,7 +57,7 @@ truth:                                           # 每个领域的唯一出处�
 | --- | --- |
 | 2.3.1 | 分层不成环：前端不碰数据源与数据库；后端不内嵌 HTML（只托管 `web/dist`）；`api/app/core/` 里**不许有 IO**。 |
 | 2.3.2 | 一个源一个适配器，源与源互不感知：同名指标取谁的值由 `pipeline/collect.py` 的 `DEFAULT_PRIORITY` / `FIELD_PRIORITY` 决定，不由调用顺序决定。 |
-| 2.3.3 | 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 给，前端不认识任何一条文案。 |
+| 2.3.3 | 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 给，前端不认识任何一条文案。**例外**：一轮的「口径」三行在 `core/caliber.py` —— 落库（`pipeline/write`）与页面（`report/assemble`）都要印同一句，两边各写一份就是漂移 |
 | 2.3.4 | 分数只在后端算：前端不算分、不补数，页面上每个数字都来自 `/api/v1`。 |
 | 2.3.5 | 一轮只写一次：卡片文字在落库那一刻就是终稿，没有任何阶段回头改写已发布的报告。 |
 | 2.3.6 | 缺值语义 ＝ 未知：没有的数是 `None` / 空，不许用 0 或空字符串替代。 |
@@ -161,12 +161,14 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health` |
 | `api/app/system_settings.py` | 系统设置页的那张表：读写 `config/system.yaml`（行级往返，没改的行逐字节不变）、把值灌进 `os.environ`；键表 `config.SYSTEM_KEYS` 同时喂 loader 与页面，页面因此提不出一个没人读的旋钮（8.9） |
 | `api/app/lookup.py` | CA 搜索的全部工作，一个地址一条链：认链 -> 逐源读这一个币 -> 链上 LP 判定 -> 链下调研 -> 出卡并落成一行搜索记录；`STAGES` / `start` / `drive` / `submit` 把它包成一个可轮询的 job（表 `search_jobs`）。**不在一轮的编排里**，也不碰 `runs` |
-| `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models`（**不许有 IO**） |
+| `api/app/config.py` | 链文件的读与写，一个文件里六段：路径常量（import 时读一次，`CH_*` 可移）/ `system.yaml` → 环境 / 读链文件 / 写链文件（增删改一套设定）/ 存档版本（一轮照它跑）/ patch 变形。路径常量是模块全局、只有一份，测试靠改 `config.CHAINS_DIR` 把应用指向自己的目录 |
+| `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models` / `parse` / `caliber`（**不许有 IO**） |
 | `api/app/llm/` | 写手客户端：对 OpenAI 兼容端点的一次调用（`settings()` 每次现读、key 轮换与冷却、两种请求形状自动选、记账 `llm_calls`）。另外两个入口不记账、不吃冷却，只服务系统设置页那两个按钮：`list_models()`（拉 `/models`）与 `probe_keys()`（每把 key 各一次真的最小调用，8.9.7） |
 | `api/app/pipeline/` | 一轮的编排：`collect` / `decide` / `states` / `progress` / `run` / `schedule` / `write` |
 | `api/app/report/` | 报告：`facts`（唯一事实表）/ `cards` / `assemble` / `lexicon` / `research` / `segments` / `prompts`（CA 搜索复用 `cards` ＋ `lexicon.report_payload`，形状不许分家） |
 | `api/app/search/` | 挖链：`base`（命中与 URL 归一）/ `identify`（读页面定 tier）/ `discover`（搜索 ＋ 互证）/ `harvest` / `engines/xsearch` |
 | `api/app/sources/` | 一个源一个适配器：**跨链的放根目录，只服务一条链的放 `<chain>/`**；都从 `registry.ALL` 取 ＋ `http`（缓存与节流）＋ 各自 `SOURCES.md` |
+| `core/parse.py` ＋ `sources/base.py` | 每个适配器都要读的三种列：数字与时间戳在 `core/parse.py`（`positive_float` 把 0 当缺口，`as_float` 把 0 当答案），链接列在 `sources/base.py`（`socials_from` / `website_list`）。**改「0 算不算读数」只改这两处** |
 | `api/app/store/` | SQLite：`schema.sql` ＋ `db.py` |
 | `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
 | `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
@@ -175,7 +177,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `config/` | `chains/*.example.yaml`（出厂设定模板，一条链一个文件，跟仓库）/ 同名的 `chains/*.yaml`（本机那份：首次读时从模板播种，页面的增删改都写它，**不入库**）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
 | `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
 
-**分层是硬约束**（2.3.1）：`api/app/core/` 不许有 IO；`api/app/api/v1/` 是唯一 HTTP 层，页面文案只在 `forms.py`；前端不碰数据源与数据库、不自己算分。动一个模块前先在图里确认它的调用方（1.1）。
+**分层是硬约束**（2.3.1）：`api/app/core/` 不许有 IO；`api/app/api/v1/` 是唯一 HTTP 层，页面文案只在 `forms.py`（口径三行在 `core/caliber.py`，见 2.3.3）；前端不碰数据源与数据库、不自己算分。动一个模块前先在图里确认它的调用方（1.1）。
 
 # 6. 流水线
 
