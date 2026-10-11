@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics, ca_key
+from ..core.models import SafetyFacts, TokenMetrics, ca_key, is_placeholder_ca
 from .base import web_url
 from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
@@ -172,7 +172,11 @@ class GeckoTerminal:
         best: dict[str, dict] = {}
         for row in list(cold) + hot:
             base = row.get("base")
-            if not base:
+            # The zero address is a chain's own coin, not a token: GeckoTerminal spells the base
+            # of every native pool with it, and one such row carries the chain's whole native
+            # liquidity into the ranking with no market cap to be judged against. The cold half
+            # arrives as rows the cache already built, so the check cannot live in the builder.
+            if not base or is_placeholder_ca(base):
                 continue
             if base not in best or (_num(row.get("liq")) or 0) > (_num(best[base].get("liq")) or 0):
                 best[base] = row

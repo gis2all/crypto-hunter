@@ -65,6 +65,22 @@ def ca_key(ca: object) -> str:
     return text.lower() if text[:2].lower() == "0x" else text
 
 
+#: The address GeckoTerminal and DexScreener both spell a chain's own coin with - no token is
+#: behind it. GeckoTerminal answers it as the base token of a native pool it cannot resolve,
+#: and DexScreener answers it with the native pairs of every chain at once.
+ZERO_ADDRESS = "0x" + "0" * 40
+
+
+def is_placeholder_ca(ca: object) -> bool:
+    """True for a chain's own coin written as an address, which is not a token.
+
+    Read as one it is the worst row a round can carry: its market cap is a blank, so every
+    market-cap floor waves it through unjudged, and its liquidity is the whole chain's, so it
+    heads any ranking it enters.
+    """
+    return ca_key(ca) == ZERO_ADDRESS
+
+
 class TokenMetrics(BaseModel):
     """Pool/market level facts for one token in one round.
 

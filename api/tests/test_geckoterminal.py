@@ -85,3 +85,28 @@ def test_a_pool_page_that_never_answered_is_not_an_empty_chain(monkeypatch):
 
     monkeypatch.setattr(geckoterminal, "json_get", lambda *_args, **_kwargs: {"data": []})
     assert source._pages("solana", [1], ["new_pools"]) == []
+
+
+def test_the_chains_own_coin_is_not_a_token(monkeypatch):
+    """GeckoTerminal spells the base of a native pool with the zero address, and every native
+    pool on a chain lands on that one key. Left in, the best-pool-per-token fold hands a single
+    row the chain's whole native liquidity - and that row carries no market cap, so no floor
+    ever judged it. On BSC (2026-10-11) it came first in liquidity and was carded as a token.
+    """
+    source = geckoterminal.GeckoTerminal()
+    zero = "0x" + "0" * 40
+    hot = [{"base": zero, "sym": "BNB", "mcap": None, "liq": 531953.57, "pool": "0xpool"},
+           {"base": "0xabc", "sym": "ZKK", "mcap": 47800.0, "liq": 53200.0, "pool": "0xpool2"}]
+    cold = [{"base": zero, "sym": "BNB", "mcap": None, "liq": 999999.0, "pool": "0xpool"}]
+    calls = []
+
+    def pages(*_args, **_kwargs):
+        calls.append(1)
+        return list(hot) if len(calls) == 1 else list(cold)
+
+    monkeypatch.setattr(source, "_pages", pages)
+    monkeypatch.setattr(geckoterminal, "cached", lambda _key, _ttl, produce: produce())
+
+    rows = source.universe_pools("bsc")
+
+    assert [row["base"] for row in rows] == ["0xabc"]
