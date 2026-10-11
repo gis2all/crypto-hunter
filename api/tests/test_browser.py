@@ -8,10 +8,11 @@ starts without costing every later token the same wait.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
-from app.sources.browser import Renderer
+from app.sources.browser import Renderer, _record, _same_site
 
 
 class FakeChromium:
@@ -110,6 +111,37 @@ def test_the_open_tabs_stay_capped_under_more_callers_than_the_cap():
         assert live["peak"] <= 2, "the cap is the cap: %s tabs were open at once" % live["peak"]
     finally:
         renderer.close()
+
+
+def test_a_render_that_lands_on_another_host_names_both(caplog):
+    """The address a page walked the browser to is the one fact a blocked request needs.
+
+    Nothing recorded it until 2026-10-12, when a rendered page walked the browser to a domain
+    the machine's own security software blocked, and no log line could name a single candidate
+    site or say that the render had left the host it asked for. One line carries both
+    addresses, and the request the machine refused is named by host beside them.
+    """
+    with caplog.at_level(logging.INFO, logger="app.sources.browser"):
+        _record("https://zikeke.app/", "http://alerttrade.us/",
+                [("http://alerttrade.us/x.js", "net::ERR_BLOCKED_BY_CLIENT")])
+    assert "https://zikeke.app/" in caplog.text, "the site that was asked for"
+    assert "http://alerttrade.us/" in caplog.text, "the site it ended on"
+    assert "net::ERR_BLOCKED_BY_CLIENT" in caplog.text, "why the request never arrived"
+    assert "ended on another host" in caplog.text
+
+
+def test_a_site_own_housekeeping_is_not_another_host(caplog):
+    """A bare name against its own www., and one scheme against another, are one site.
+
+    Both are how a site moves a reader to its canonical address, and a warning on each of them
+    would bury the line the test above is about.
+    """
+    with caplog.at_level(logging.INFO, logger="app.sources.browser"):
+        _record("http://example.com/a", "https://www.example.com/a", [])
+    assert "ended on another host" not in caplog.text
+    assert _same_site("example.com", "www.example.com")
+    assert _same_site("a.example.com", "example.com")
+    assert not _same_site("example.com", "alerttrade.us")
 
 
 def test_closing_stops_the_browser_and_the_thread_it_runs_on():
