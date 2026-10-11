@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics, ca_key
+from ..core.parse import as_float as _num
 from .http import SourceError, UA_JSON, json_get
 
 BASE = "https://api.gopluslabs.io/api/v1"
@@ -64,13 +65,6 @@ def _flag(value: Any) -> bool | None:
     if value is None or value == "":
         return None
     return str(value) == "1"
-
-
-def _num(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _pct(value: Any) -> float | None:

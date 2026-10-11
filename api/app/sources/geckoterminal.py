@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics, ca_key, is_placeholder_ca
+from ..core.parse import positive_float as _num
 from .base import web_url
 from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
@@ -53,14 +54,6 @@ ATH_DAYS = 1000
 #: print rather than a price anyone traded at, and is left out.
 POOL_ATH_POOLS = 2
 POOL_ATH_SHARE = 0.10
-
-
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
 
 
 def _split_id(identifier: str | None, chain_id: str) -> str:
