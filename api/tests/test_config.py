@@ -71,7 +71,7 @@ def test_every_chain_declared():
     chains = config.load_chains()
     assert set(chains) == {"arc", "bsc", "robinhood", "solana"}
     assert chains["arc"]["enabled"] is True
-    assert chains["bsc"]["enabled"] is False
+    assert chains["bsc"]["enabled"] is True
     assert chains["robinhood"]["enabled"] is True
 
 
