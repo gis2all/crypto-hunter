@@ -77,6 +77,9 @@ MIN_INTERVAL: dict[str, float] = {
     # gets 429ed leaves every row "unread", which is worse than the seconds it saves.
     "api.mainnet-beta.solana.com": 0.5,
     "rpc.arc-scan.org": 0.15,
+    # Four.meme's public list, read over POST. No published limit; this is a cadence its
+    # own site runs at, and a sweep is a handful of requests.
+    "four.meme": 0.5,
     "explorer.arc.io": 1.0,
     # Robinhood: its own node and explorer first, then the three launchpad feeds. The feeds
     # answer the whole chain in one or two pages, so the cadence only has to keep a second
@@ -256,6 +259,61 @@ def json_get(
 ) -> Any:
     """Fetch a URL and parse it. A body that is not JSON is a failure, not a result."""
     text = get(url, headers, transport=transport, timeout=timeout, tries=tries, sleep=sleep)
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        raise SourceError("%s -> not JSON: %s" % (url, repr(exc)[:80])) from exc
+
+
+def post(
+    url: str,
+    body: Any,
+    headers: dict | None = None,
+    *,
+    timeout: float = 30.0,
+    tries: int = 3,
+    sleep: float = 0.8,
+) -> str:
+    """POST a JSON body and return the text, retrying transient failures.
+
+    The same pacing, tallying and retry policy as `get`, because a POST is the same
+    request as far as the site is concerned: `four.meme` answers its token list over POST
+    and nothing about that makes a throttle, a timeout or a 5xx more final than it is on a
+    GET. There is no browser lane here - every endpoint this sends to has answered the
+    plain client.
+    """
+    last = "no attempt"
+    host = urlsplit(url).netloc or "?"
+    started = time.monotonic()
+    for attempt in range(max(1, tries)):
+        try:
+            pacer(url).wait()
+            response = _httpx_client().post(url, headers=headers or UA_JSON, json=body,
+                                            timeout=timeout)
+            if response.status_code == 200:
+                _tally(host, "ok", time.monotonic() - started)
+                return response.text
+            last = "HTTP %s" % response.status_code
+        except Exception as exc:  # network, TLS, timeout: all retryable
+            last = repr(exc)[:120]
+        _tally(host, "retry")
+        if attempt + 1 < tries:
+            time.sleep(sleep)
+    _tally(host, "fail", time.monotonic() - started)
+    raise SourceError("%s -> %s" % (url, last))
+
+
+def json_post(
+    url: str,
+    body: Any,
+    headers: dict | None = None,
+    *,
+    timeout: float = 30.0,
+    tries: int = 3,
+    sleep: float = 0.8,
+) -> Any:
+    """POST a JSON body and parse the answer. A body that is not JSON is a failure."""
+    text = post(url, body, headers, timeout=timeout, tries=tries, sleep=sleep)
     try:
         return json.loads(text)
     except ValueError as exc:
