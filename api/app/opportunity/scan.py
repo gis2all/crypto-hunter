@@ -56,6 +56,11 @@ MAX_TRACES = 200
 #: batch stops when it is spent and the rest of the rotation waits for the next scan.
 MAX_CALLS = 40
 
+#: What `calls_per_scan = -1` means: as many calls as this batch needs, but never more than
+#: this. "Unlimited" is not a number this account can afford - 300 calls is already 55 minutes
+#: of throttle, and it exists as the ceiling rather than a target.
+HARD_CALLS = 300
+
 _LOCK = threading.Lock()
 
 
@@ -168,6 +173,11 @@ def collect(scan_id: str, sources: list[dict], tell=None,
     # 两个上限都读设定（`settings.py`）：常量只是默认值，而设定文件不存在时它什么都不改。
     budget = settings.value("calls_per_scan", MAX_CALLS)
     room = settings.value("sources_per_scan", MAX_SOURCES)
+    # -1 = 全部 / 按需：读源读满这一份 watchlist，调用上限按本轮真正需要的量给（仍留硬顶）。
+    if room < 0:
+        room = len(sources)
+    if budget < 0:
+        budget = HARD_CALLS
     counters = {"sources": 0, "posts": 0, "queries": 0, "slices": 0, "gated": 0, "skipped": 0,
                 "excluded": 0, "failed": [], "deferred": max(0, len(sources) - room),
                 # A slice that failed used to disappear into `search_sliced`'s own return value:

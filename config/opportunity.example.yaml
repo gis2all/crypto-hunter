@@ -1,10 +1,10 @@
 # 新机会的设定模板。默认值写在 api/app/opportunity/settings.py 的 FIELDS 里；
 # 本机那份叫 opportunity.yaml（同目录，不入库），由设定页保存时创建，只写被改过的键。
 # 删掉本机那份即回到默认。
-sources_per_scan: 40
-calls_per_scan: 40
+sources_per_scan: -1
+calls_per_scan: -1
 x_interval: 5.0
-sites_per_scan: 100
+sites_per_scan: -1
 classify_per_scan: 1000
 extract_per_scan: 40
 traces_per_scan: 200

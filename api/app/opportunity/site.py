@@ -41,10 +41,10 @@ log = logging.getLogger("crypto-hunter.opportunity")
 #: Bumped when the rules below change, so a material can say which rules wrote it.
 SITE_VERSION = "site@1"
 
-#: Default rotation width; the settings page overrides it (`sites_per_scan`). The default is
-#: "everything registered" - one site is 1.4-2.8s, and four workers keep 51 of them under a
-#: minute, which is noise beside the X lane's six.
-MAX_SITES = 100
+#: Default rotation width; the settings page overrides it (`sites_per_scan`). `-1` means every
+#: registered site - one site is 1.4-2.8s, and four workers keep 51 of them under a minute,
+#: which is noise beside the X lane's fifteen.
+MAX_SITES = -1
 #: Pages on different hosts, so this is politeness rather than a per-site limit.
 SITE_WORKERS = 4
 #: Homepage plus at most this many blog / news pages. Three pages is enough to see a release
@@ -225,10 +225,10 @@ def run(scan_id: str, tell=None, cancel: threading.Event | None = None, fetch=No
                 "disabled": 0, "posts": 0, "deferred": 0, "errors": []}
     bootstrap()
     budget = int(settings.value("sites_per_scan", MAX_SITES))
-    if budget <= 0:
+    if budget == 0:
         return counters
     pending = db.opportunity_sites_due(1000)
-    due = pending[:budget]
+    due = pending if budget < 0 else pending[:budget]
     counters["deferred"] = max(0, len(pending) - len(due))
     counters["registered"] = len(pending)
     if not due:

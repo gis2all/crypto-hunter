@@ -32,16 +32,16 @@ LIVE_PATH = Path(str(config.ROOT / "config" / "opportunity.yaml"))
 #: Every knob, with the words the 设定 page prints and the range it accepts. **The defaults here are
 #: the truth**; the yaml only overrides them, which is what keeps a missing file harmless.
 FIELDS = (
-    {"key": "sources_per_scan", "label": "读源数", "default": 40, "min": 1, "max": 200,
-     "hint": "一次扫描读 watchlist 的前 N 个（按最久没读过的先读）。只算查询行；"
-             "17 条查询全读一轮约 22 分钟。"},
-    {"key": "calls_per_scan", "label": "X 调用上限", "default": 40, "min": 1, "max": 300,
-     "hint": "查询行一条会切成好几片，所以预算按调用次数算，不按行数。40 次约 6 分钟。"},
+    {"key": "sources_per_scan", "label": "读源数", "default": -1, "min": -1, "max": 200,
+     "hint": "一次扫描读 watchlist 的前 N 个（最久没读过的先读）。-1 读全部，0 关闭 X 采集；"
+             "只算查询行。"},
+    {"key": "calls_per_scan", "label": "X 调用上限", "default": -1, "min": -1, "max": 300,
+     "hint": "查询行一条会切成好几片，所以预算按调用次数算。-1 按需（硬顶 300），0 不调 X。"},
     {"key": "x_interval", "label": "调用间隔（秒）", "default": 5.0, "min": 1.0, "max": 60.0,
      "hint": "实测 2.5 秒时第 13 个连续请求开始 429，而 CLI 自己的退避把每个失败变成四十秒。"},
-    {"key": "sites_per_scan", "label": "官网刷新数", "default": 100, "min": 0, "max": 100,
-     "hint": "每轮读几个官网（按最久没刷过的先读），并发 4 个；默认 100 = 全部，约 40-60 秒。"
-             "不花 X 调用；只有正文真的变了才写成材料。0 表示不刷新官网。"},
+    {"key": "sites_per_scan", "label": "官网刷新数", "default": -1, "min": -1, "max": 100,
+     "hint": "每轮读几个官网（按最久没刷过的先读），并发 4 个；-1 全部（51 个约 30 秒），"
+             "0 关闭官网刷新。不花 X 调用；只有正文真的变了才写成材料。"},
     {"key": "classify_per_scan", "label": "分组帖子上限", "default": 1000, "min": 1, "max": 2000,
      "hint": "一次分组最多 N 条；完整正文不截断，超过上限直接报错，不拆批、不留下轮。"},
     {"key": "extract_per_scan", "label": "抽取项目上限", "default": 40, "min": 1, "max": 200,
@@ -88,6 +88,10 @@ def _coerce(field: dict, raw: Any) -> Any:
         value = float(raw) if isinstance(default, float) else int(raw)
     except (TypeError, ValueError):
         return default
+    # `-1` is a sentinel, not a range: "everything" for the knobs that opt in (min = -1).
+    # Clamping would turn it into 0, which means the opposite thing.
+    if isinstance(default, int) and field["min"] <= -1 and value == -1:
+        return -1
     if isinstance(default, float):
         value = round(value, 2)
     return max(field["min"], min(field["max"], value))

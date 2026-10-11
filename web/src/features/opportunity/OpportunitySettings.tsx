@@ -65,7 +65,9 @@ export function OpportunitySettings({ state }: { state: OpportunitySettingsState
                           step={field.kind === "float" ? "0.5" : "1"}
                           onChange={(event) => setValue(field.key, event.target.value)}
                         />
-                        <span className="unit">{field.min}{"\u2013"}{field.max}</span>
+                        <span className="unit">
+                          {field.min < 0 ? "−1 全部 · 0 关" : `${field.min}–${field.max}`}
+                        </span>
                       </span>
                     </div>
                   ))}
