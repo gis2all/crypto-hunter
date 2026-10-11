@@ -169,7 +169,7 @@ def test_a_search_hands_the_links_its_sources_named_to_the_writer(isolated_db, m
     """A CA search starts from scratch, so the links it hands the writer are the ones the
     sources just answered - not the ones a round filed in the snapshots table, which a token
     nobody has enriched has none of. Only the starting list differs from a round's; the
-    digging that follows is the same code (6.4.3)."""
+    digging that follows is the same code."""
     calls, found = _stub(monkeypatch)
     live = _metrics(CA, socials={"twitter": "https://x.com/tkn"},
                     websites=["https://tkn.example"])

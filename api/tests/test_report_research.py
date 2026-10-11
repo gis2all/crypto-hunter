@@ -79,7 +79,7 @@ def test_the_links_a_caller_hands_in_are_the_ones_that_are_merged(monkeypatch):
     """`known` is where a caller's own links go in, and they replace the ones the snapshots
     table would have supplied - a CA search just read them off the sources and has no row in
     that table to read them from. Nothing else about the pass changes: the engine is still
-    asked, exactly as a round asks it (6.4.3)."""
+    asked, exactly as a round asks it."""
     monkeypatch.setattr(research, "_latest_metrics",
                         lambda ca: ({"socials": {"twitter": "https://x.com/stale"}}, {}))
     seen = {}

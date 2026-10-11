@@ -3,7 +3,7 @@
 Every adapter used to carry its own copy of the same three readers, and the copies had drifted
 where it mattered: `0` is a gap in a bulk registry's market cap - nothing was measured - and an
 answer in a pair's 24h volume, where nobody traded. Merging them by name would have moved a
-token from one side of the volume floor to the other without touching the floor (6.6.2).
+token from one side of the volume floor to the other without touching the floor.
 """
 
 from app.core.parse import as_float, positive_float, utc_from_iso_text, utc_from_unix
