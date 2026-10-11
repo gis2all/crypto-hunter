@@ -49,7 +49,7 @@ truth:                                           # 每个领域的唯一出处�
 
 ## 2.2 不做什么
 
-交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎。当前接了 **Arc** 与 **Robinhood**（左栏只渲染 `enabled` 的链）。
+交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎。当前接了 **Arc** / **Robinhood** / **Solana** / **BSC**（左栏只渲染 `enabled` 的链）。
 
 ## 2.3 红线
 
@@ -145,7 +145,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | 距高回撤 | 距历史最高点跌了多少，见 6.1.13 |
 | 貔貅 | 能买不能卖；**判定与门槛是两个不同的数**（6.1.8 / 8.1.7） |
 | 陷阱占比 | GMGN 的 `top_entrapment_trader_percentage` —— 与貔貅不是一个数 |
-| 发射台 | launchpad；Arc 上多数新币由它发出来 |
+| 发射台 | launchpad；新币多数由它发出来，每条链各有自己的（见 6.2 分工表） |
 | 主池 | 流动性最大的那个池 |
 | `0` | **是答案，不是缺失**：判空用 `is not None` 而不是 `if value:`，见 6.6.2 |
 | 空列表 | 集合类的 `[]` 算「没答」，不赢走字段，见 6.6.3 |
@@ -171,7 +171,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
 | `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
 | `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
-| `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `RobinhoodMark` / `SolanaMark` / `Logo` / `chainMark` / `Pick` |
+| `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `BscMark` / `RobinhoodMark` / `SolanaMark` / `Logo` / `chainMark` / `Pick` |
 | `config/` | `chains/*.example.yaml`（出厂设定模板，一条链一个文件，跟仓库）/ 同名的 `chains/*.yaml`（本机那份：首次读时从模板播种，页面的增删改都写它，**不入库**）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
 | `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
 
@@ -201,7 +201,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 
 | 用途 | 源 |
 | --- | --- |
-| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / pons / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank / launchlab / pumpfun |
+| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / pons / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank / launchlab / pumpfun；BSC：gmgn / fourmeme / geckoterminal / dexscreener_rank |
 | 安全与源码 | goplus（貔貅、税、危险权限、`dex[]` / `holders[]` / `lp_holders[]`）/ sourcify（源码验证） |
 | 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `symbol` / `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`**；同一个站点的批量那一半是 `dexscreener_rank`（榜单，见上一行），它**进 `sources:` 当扫描源**，不是 ENRICH_ONLY |
 | 挖链找页面（在 `app/search/`，不在 `sources/`） | X 高级搜索（cookie 子进程，不吃 token）＋ `identify` 读页面互证；只交出候选链接，tier 由 `identify` 挣 |
@@ -225,6 +225,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 | 6.2.8 | 安全判定判**整个过关池**（`pipeline.gate_limit`，默认 `0` ＝ 全池）：读不出来的是「未判定」（既不计通过也不计淘汰）。**这里没有「凑够几张卡就走」的预算** —— 按流动性取前 N 再判，就是把名额先给了最深的那批，而链上排最深的行恰恰是筹码 / 安全规则最想淘汰的那批。真正的预算上限在花钱那一步：链下调研的 `research_limit`（6.4.1）。 | 反例：默认取前 20 判定 —— 深而脏的行吃光名额，浅而干净的行无人裁决。 |
 | 6.2.9 | 逐币富集：同币多源并发问、**结果按源顺序合并**，`_absorb` 的结果不随并发顺序变。 | 反例：按「谁先回答」合并，源换了顺序结论就变。 |
 | 6.2.10 | GeckoTerminal 精查延后到入选之后（`DEFERRED_ENRICH`）：它是唯一能回答「几个池、价格走过的路」的源，也是最贵的一个（逐币三端点、同主机 2.2s 节流、429 固定退避、加线程无效），而它填的全是卡片字段（不进安全判定、不进分数）。 | 第二遍**不要**从批量行重建 `views`（第一遍刚拿到的逐币值会被粗筛行盖掉），要并进第一遍的 `views` 再 merge。 |
+| 6.2.11 | **链本币不是代币**：GeckoTerminal 与 DexScreener 都用零地址 `0x000…0000` 表示链自己的币（BSC 上是 BNB、Robinhood 上是 WETH）。冷热页合并时按 `models.is_placeholder_ca` 剔掉 —— 检查点必须在合并处，冷页那一半是缓存里已经拼好的行。 | 这行能穿过**全部**硬过滤：它的市值是空的，每条市值规则都判「未判定」，而「未判定」从不淘汰；它的流动性却是全链本币池的总和，于是每个排名都拿第一。BSC 上三轮都把它当第 1 张卡发出来，链下调研按「BNB」写成了另一家的稿子；Robinhood 同一行是 WETH（市值 61.9 亿）被 20 万上限挡掉，所以那边没露头。 |
 
 ## 6.3 打分
 
@@ -344,7 +345,7 @@ prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随�
 
 | 编号 | 规则 | 说明 / 反例 |
 | --- | --- | --- |
-| 8.3.1 | 左栏只渲染 `enabled` 的链：未接的整行不出现（不是变灰），链名旁不挂计数（入选数在「一轮那一条」里）。链名取 yaml 的 `label`（`Arc 雷达`）；**`label` 是雷达的名字，`name` 才是链自己的名字**（6.5.12）。 | 把没接的链渲染成灰行，就是每次都提醒读者「这里缺东西」。 |
+| 8.3.1 | 左栏只渲染 `enabled` 的链：未接的整行不出现（不是变灰），链名旁不挂计数（入选数在「一轮那一条」里）。链名取 yaml 的 `label`（就是链名本身，不带「雷达」这类后缀）；**`label` 是雷达的名字，`name` 才是链自己的名字**（6.5.12）。 | 把没接的链渲染成灰行，就是每次都提醒读者「这里缺东西」。 |
 | 8.3.4 | 顶栏右端 ＝ **当前页面的动作**，同一时刻只存在一份：报告页 `本轮总览 › ｜ 导出 ｜ 推送 TG`，设定页 `配置切换器 ｜ 配置管理 ｜ 保存并生效 ｜ 立即运行`。不可用的动作**灰显不可点**、`title` 写明原因；点下去会打开抽屉 / 面板的那个末尾带 chevron —— 那是这一排里「会离开本页」的唯一记号。 | 两页的动作同时列出来，读者就分不清哪个属于当前页。 |
 | 8.3.7 | 动作行**最左端**是「运行结果」开关：它折的是整条顶栏**下面**那层面板，属于这一轮，不属于你正站着的那个 tab，所以排在动作行第一个。这是**唯一**的折叠处 —— 面板自己没有关闭按钮，所以「停止的一轮把页面交回去」搭在它的**收起**那一半上（展开不挪人）。 | 塞回 tab 组旁边，读者会以为它换的是右边那片内容 —— 它折的是整页下面那条。 |
 | 8.3.8 · 8.3.9 | 刷新要落在原来那一页：链 / 配置 / tab / 地方四个选择写 `ch.*`，读法就是 `useState` 的初值；**报告轮次下标不存** —— 它由开页那一次列表回答，存下来会和那份回答打架。链列表**里面**、紧跟最后一条链的是 `搜索` 和 `收藏` 两行（`搜索` 在上），**不画分隔线、不留额外内边距**，四行**同墨色**，人在哪里由**亮行**说明。**同一时刻只有一行是亮的**：链行亮 ＝ 在雷达且是当前链，在书架上链行全灭。 | 把轮次下标一起存了，下一轮跑完后刷新会翻开一个旧批次。把这两行调淡，读者会以为它们不可点；两行同时亮，读者会以为书架是那条链底下的东西；同一个地方三个名字（`搜索` 不叫 `CA`），读者要猜它们是不是同一页。 |
