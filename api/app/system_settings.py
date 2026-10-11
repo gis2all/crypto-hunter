@@ -46,7 +46,7 @@ def masked(value: str) -> str:
 
     Head plus tail (`sk-liv…6789`) answers the one question this row has to answer - "is the
     panel using the key I think it is?" - without handing a whole credential to a browser, a
-    screenshot or a bug report. The log keeps its sha256 head (6.4.8); this row is for eyes.
+    screenshot or a bug report. The log keeps its sha256 head; this row is for eyes.
     """
     text = (value or "").strip()
     if not text:

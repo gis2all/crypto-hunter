@@ -331,5 +331,5 @@ def state(job_id: str) -> dict | None:
 
 def latest() -> dict | None:
     """The newest search this app ran - what 运行结果 folds on a page whose own browser has
-    not queued one yet (8.8.11)."""
+    not queued one yet."""
     return db.job_latest()

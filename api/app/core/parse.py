@@ -8,7 +8,7 @@ carry:
 
 - positive_float - the bulk registries write a missing column as 0 instead of omitting it, so 0
   has to read as "no answer". Tolly is the exception: its 24h volume uses zero_ok.
-- as_float - 0 is a reading. A pair that did not move is an answer (6.6.2).
+- as_float - 0 is a reading. A pair that did not move is an answer.
 
 Pure: no IO, no clock, no network.
 """

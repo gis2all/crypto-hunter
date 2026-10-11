@@ -156,7 +156,7 @@ def _body(protocol: str, current: dict, model: str, messages: list[dict],
       not supported ... Supported values: [minimal, low, medium, high, xhigh, max]``. So "do
       not think" travels as the smallest effort the family accepts. Omitting the field is not
       the same thing - left alone the model spent 253 of a 256 token ceiling thinking and
-      returned an empty message, which is the trap 6.4.8 already paid for once.
+      returned an empty message, which is the trap the research prompt already paid for once.
     - The ceiling is ``max_output_tokens``, and the demand for JSON is ``text.format``.
     """
     if protocol == "chat":
@@ -284,7 +284,7 @@ def keys_in(*values: str) -> list[str]:
     appended to `CH_LLM_API_KEY` needs no second variable. Duplicates are dropped - the same key
     twice is one key and one wasted refusal. The environment is not the only place a list of
     keys comes from: the settings page's two rows are read through here as well, or the page
-    would act as if the 备用 Key row did not exist (8.9.7).
+    would act as if the 备用 Key row did not exist.
     """
     keys: list[str] = []
     for value in values:
@@ -398,7 +398,7 @@ def probe(current: dict, key: str | None = None) -> dict:
 
     `/models` proves a door opens; it does not prove the model answers. The trap this repo
     already paid for is an endpoint that answers 200 with an *empty* message because the
-    thinking ate the ceiling (6.4.8) - a form that only checked reachability would call that
+    thinking ate the ceiling - a form that only checked reachability would call that
     configuration healthy. So this asks for one word and reports whether text came back.
 
     Never raises for the gateway's own answers (a refusal is a reading, not a crash) and never

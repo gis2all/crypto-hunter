@@ -412,7 +412,7 @@ def pmap(fn: Callable[[T], Any], items: Iterable[T], workers: int = 4,
 
     `stop` is a round's own stop check (`cancel.check(run_id)`), asked on this thread before
     every task starts: a round that has been asked to stop starts no further work, and what
-    the check raises is what ends the pass (CLAUDE.md 9.2.6). It is asked out here rather than inside `fn`
+    the check raises is what ends the pass. It is asked out here rather than inside `fn`
     because a task that raised it would be read as a source that answered nothing - the one
     reading a stop must never be mistaken for. The tasks already in flight are left to
     finish, which is why a stop costs seconds and not a fraction of one, and the slots never

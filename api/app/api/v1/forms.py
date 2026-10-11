@@ -487,7 +487,7 @@ def field_labels(chain: dict) -> dict[str, str]:
 
     Read when the API refuses a save: a refusal has to name the box the operator can see,
     never a dotted path. Composed from the same `build` the page renders, so the answer and
-    the row above it cannot drift apart (CLAUDE.md 2.3.3). A range is one label over two boxes, so
+    the row above it cannot drift apart (CLAUDE.md · 红线). A range is one label over two boxes, so
     its two ends are told apart as 下限 / 上限 - "「市值」不能留空" would not say which.
     """
     labels: dict[str, str] = {}
@@ -542,8 +542,8 @@ def rule_label(reason: str) -> str:
 
 
 #: 系统设置 - this machine's own wiring (`config/system.yaml`), which is not a chain's口径.
-#: The labels live here with every other sentence a page prints (2.3.3); the values arrive from
-#: `system_settings.state()`, so the page and the loader cannot drift - both walk
+#: The labels live here with every other sentence a page prints (CLAUDE.md · 红线); the values
+#: arrive from `system_settings.state()`, so the page and the loader cannot drift - both walk
 #: `config.SYSTEM_KEYS`. A row's `dim` says where its value came from, and it says it only when
 #: that is not the file: a variable the shell exported beats the file, so that row is a reading
 #: and not a box, and a value nobody set is the code's own default. A row the file itself decides
@@ -648,7 +648,7 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
         {"id": "x", "label": "测试连接"},
     ])
     level = group("log-level", "等级", (
-        "日志是唯一记录阶段耗时的地方（7.1.4），改完当场生效。"
+        "日志是唯一记录阶段耗时的地方，改完当场生效。"
     ), [
         row("log_level", "select", options=_options(list(SYSTEM_LEVELS))),
     ])

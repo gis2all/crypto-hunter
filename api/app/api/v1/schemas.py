@@ -461,9 +461,9 @@ class FieldOut(BaseModel):
 class ActionOut(BaseModel):
     """A button a group carries. What it does is the page's business; what it says is not.
 
-    The label travels with it (2.3.3), and the id is the one word the page does act on - it is
-    the map from a name to a handler, which is behaviour and belongs to the page. A group with
-    no actions draws no strip.
+    The label travels with it (CLAUDE.md · 红线), and the id is the one word the page does act
+    on - it is the map from a name to a handler, which is behaviour and belongs to the page. A
+    group with no actions draws no strip.
     """
 
     id: str                 # models | test
@@ -532,7 +532,7 @@ class SystemModelsOut(BaseModel):
     """What `/models` answered, and which row the answer is for.
 
     `apply_to` travels so the page can offer the list on the right row without learning a key
-    name - the same reason the rows themselves arrive composed (8.9.1).
+    name - the same reason the rows themselves arrive composed.
     """
 
     ok: bool
@@ -554,14 +554,14 @@ class SystemTestLineOut(BaseModel):
 
 
 class SystemTestOut(BaseModel):
-    """One small real call per configured key, in the order a round would try them (8.9.7)."""
+    """One small real call per configured key, in the order a round would try them."""
 
     ok: bool
     lines: list[SystemTestLineOut]
 
 
 class SystemXOut(BaseModel):
-    """Whether the X session still works, in the client's own words (8.9.10).
+    """Whether the X session still works, in the client's own words.
 
     One sentence rather than 测试连接's line per key: there is one session, and it either is
     logged in or says why it is not.
