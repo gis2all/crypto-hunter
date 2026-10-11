@@ -135,7 +135,7 @@ export default function App() {
   };
 
   // A remembered radar that is no longer on the rail - dropped from the list, or turned off -
-  // is not a place the page can be: the rail draws only the enabled chains (8.3.1), so the
+  // is not a place the page can be: the rail draws only the enabled chains, so the
   // page would sit on a chain with no row lit. It falls back to the first enabled chain, which
   // is where a first visit opens anyway, and it takes the same open as the rail so the radar
   // being left keeps what it was reading.
@@ -183,7 +183,7 @@ export default function App() {
   // A round the operator stopped - or one that died - has no cards in it, so the page opens
   // on the newest round that either published cards or has not stopped moving. Stepping back
   // to an older one is the pager's job, and that place lives only in this session: a reload
-  // re-answers and lands on the newest readable round again (8.3.8).
+  // re-answers and lands on the newest readable round again.
   // After this first answer the number belongs to the pager: no poll, and no reload of the
   // list, moves a reader who has stepped off it.
   const opened = useRef<string | null>(null);
@@ -260,7 +260,7 @@ export default function App() {
     }
   };
 
-  // The topbar switch is the only way to fold the panel (8.3.7), so 8.3.7's rule rides its
+  // The topbar switch is the only way to fold the panel, so the fold rule rides its
   // closing half. Opening it must never move the reader: they pressed it to read the round
   // they are already on.
   const toggleRunPanel = () => {
@@ -299,7 +299,7 @@ export default function App() {
       <main className="main">
         {place === "favorites" ? (
           // The whole list, not just the names: the shelf's chain switcher is a fixed row
-          // read off these (8.7.4), so it needs the order and which of them the rail draws.
+          // read off these, so it needs the order and which of them the rail draws.
           <FavoritesView chains={chains.data ?? []} />
         ) : place === "system" ? (
           // This machine's own wiring: no chain and no set of settings is in scope, which is

@@ -4,7 +4,7 @@ import { useState } from "react";
  *
  *  The box is drawn whether or not there is a picture in it: a card with no mark is the same
  *  card with nothing in that box, not a card of a different height - the same reason the
- *  shelf reserves the score's corner (8.8.2). It is a square because the whole screen is, and
+ *  shelf reserves the score's corner. It is a square because the whole screen is, and
  *  the fill when it is empty is the theme's own black or white (--logo-empty) rather than
  *  nothing at all, so an empty box reads as empty. The box is drawn in the accent at 2px, and
  *  The fill says which box it is, and the ring says there is a box at all - a hairline in

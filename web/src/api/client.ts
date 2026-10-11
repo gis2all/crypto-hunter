@@ -40,7 +40,7 @@ export class ApiError extends Error {
 
 /** What to put on the screen when a request failed.
  *
- * The backend writes the detail of a 4xx for the operator (CLAUDE.md 2.3.3), so that sentence is
+ * The backend writes the detail of a 4xx for the operator (CLAUDE.md · 红线), so that sentence is
  * the message and the status line in front of it is noise. A 5xx detail is written for
  * nobody - "500 Internal Server Error" is a report, not advice - so it keeps its code.
  */

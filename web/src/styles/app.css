@@ -219,7 +219,7 @@ html{scrollbar-gutter:stable}
 .card-foot{margin-top:0}
 .deltas,.sec-quality .kv-grid,.sec-quality .safety{min-height:auto}
 /* 收藏 is the one grid where searched cards and round cards stand side by side, and it holds
-   them to one height (the block above). A searched card prints no score (8.8.2), so on that
+   them to one height (the block above). A searched card prints no score, so on that
    grid the one block it is missing - the score bar (8px bar + 17.8px label + the 5px and 9px
    around them) - is held open at the height the round card gives it. Measured, the two cards
    then agree block for block: same 结论, same folds, same footer line. Scoped to the shelf on
@@ -241,7 +241,7 @@ html{scrollbar-gutter:stable}
    light theme, where an empty box is white on a near-white card, so it is drawn at the weight
    of a thing you are meant to notice rather than of a thing meant to disappear. The corners are
    square (2026-10-06, user): the box carried a 6px radius for a while, which made it the
-   second !important exception to 8.4.5 after .cfg-dot, and that exception is gone - the run
+   second !important exception after .cfg-dot, and that exception is gone - the run
    dot is the only one left. The box still clips its own picture (overflow) so a mark cannot
    paint outside the ring.
 
@@ -506,7 +506,7 @@ html{scrollbar-gutter:stable}
   overflow-wrap:anywhere}
 .pact-note.bad{color:var(--danger-fg)}
 
-/* 测试连接 asks every configured key (8.9.7), so its answer is a line per key instead of one
+/* 测试连接 asks every configured key, so its answer is a line per key instead of one
    sentence: the row the key came from, then the sentence it earned. The block takes the room
    left of the buttons and drops under them when there is none; only the verdict wears the red,
    so which key failed stays legible at a glance. */
@@ -663,14 +663,14 @@ div.pgroup>.pset{margin-top:auto}
      2026-10-11: 671 wide against a 649 need at 2250, 698 at 2300) - there 硬过滤 is on its
      own 680 floor and 评分口径 reads 568, twice its widest row's 264. Below that the row
      stacks, title on its own line and boxes packed right beneath it, which is the fallback
-     8.1.6 already describes; nothing overflows at 2048 or 1668.
+     the row rule already describes; nothing overflows at 2048 or 1668.
 
      The tracks follow the order the API hands the groups over (2026-09-28): 评分口径
      moved to the left edge, so the floors travelled with the groups rather than the
      positions - the first track is the panel that needs the least, and both floors stay
      on the two groups that need them. */
   .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.15fr) minmax(416px,1.18fr)}
-  /* 运行 carries two groups since 369b703 took 提醒 out (8.2.11), but this template still spelled
+  /* 运行 carries two groups since 369b703 took 提醒 out, but this template still spelled
      three tracks: 提醒 was the 1fr middle, so 推送与依赖 moved up into it and the third
      track - 1.11fr, the ratio 推送与依赖 held while 提醒 stood between them - was left with
      nothing in it. That empty track is the 382px of air right of 推送与依赖 (measured at
@@ -856,7 +856,7 @@ div.pgroup>.pset{margin-top:auto}
 .fav-search::placeholder{color:var(--muted)}
 .fav-search:focus{outline:none;border-color:var(--accent)}
 /* The shelf's and the wall's two controls, in the panel beside their cards (features/favorites
-   /FavoritesView.tsx and features/lookup/LookupView.tsx, 8.8.19 / 8.8.20). It is one rule for
+   /FavoritesView.tsx and features/lookup/LookupView.tsx). It is one rule for
    both pages on purpose (2026-10-11, user): 收藏 and 搜索 are the two places that are not a
    radar, so a reader who has learned one must not have to learn a second set of widths. The
    搜索 page briefly rode the radar's own track rule instead - its cards came out exactly a
@@ -921,7 +921,7 @@ div.pgroup>.pset{margin-top:auto}
    are not a radar read as one page with a different set under it.
 
    Two columns, and the left one is the shelf's own: the same 320px panel and the same card
-   tracks, from the rule declared with `#view-favorites .fav-body` above (8.8.13). */
+   tracks, from the rule declared with `#view-favorites .fav-body` above. */
 
 .look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted)}

@@ -17,7 +17,7 @@ import { Icon } from "../../components/Icon";
  * moment the last stage ended is how the answer to "what took the time" got written and then
  * hidden. A round that is queued but not started yet keeps the bare `rst` markers and the
  * `本轮 · 待运行` header of the prototype pre-run state. The panel carries no 收起 of its
- * own: folding is the 运行结果 switch in the topbar (8.3.7), which is the only control that
+ * own: folding is the 运行结果 switch in the topbar, which is the only control that
  * ever needs to know where the panel is.
  *
  * A round the operator stopped (`cancelled`) says 已中止 in the header - the answer to the

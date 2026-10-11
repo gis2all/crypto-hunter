@@ -52,13 +52,13 @@ const JOB_KEY = "ch.lookjob";
 
 /** 链 / 排序, and the direction under the sort: the panel the shelf wears on the 收藏 page,
  *  standing in the column the wall stands beside (2026-10-11, user). The two groups are the same
- *  two lists for the same reason (8.8.19) - a sort is two decisions, a key and a direction,
+ *  two lists for the same reason - a sort is two decisions, a key and a direction,
  *  and eight combinations read better as two short lists than as one dropdown nobody opens.
  *
  *  The chains are the ones the rail lists, always, whether or not the list holds one of them
  *  today: a control that comes and goes with the contents is one the reader has to go looking
  *  for, and "never searched this chain" is a real answer rather than a reason to hide the row.
- *  其他 is the one row that is not a chain: a CA settles its own chain (8.8.1), so the list can
+ *  其他 is the one row that is not a chain: a CA settles its own chain, so the list can
  *  hold a token from a chain this app has no radar for, and no chain row can find it. */
 type SortKey = "origin" | "name";
 type SortDir = "asc" | "desc";
@@ -68,7 +68,7 @@ type SortDir = "asc" | "desc";
  *
  *  生成时间 is the stamp a row's own card prints (origin_label) and the order the backend
  *  hands the list over in, so it is the default this page asks for nothing with. There is no
- *  分数 key: a searched card carries no 综合分 (8.8.2), and a column of blanks is not a sort. */
+ *  分数 key: a searched card carries no 综合分, and a column of blanks is not a sort. */
 const SORTS: {
   value: SortKey;
   label: string;
@@ -111,7 +111,7 @@ function provenance(row: Favorite, labels: Map<string, string>) {
  *  differences: the bar is the share of stages that have ENDED rather than a percent the
  *  pipeline reported, because a search has no finer checkpoint to read; and there is no 中止,
  *  because the backend has nothing that could stop a queued search. Folding it is the 运行结果
- *  switch in the bar above - the same control that folds a round (8.3.7). */
+ *  switch in the bar above - the same control that folds a round. */
 function SearchPanel({ job, open, labels, queued }: {
   job: Job | undefined;
   open: boolean;
@@ -213,12 +213,12 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   const [jobId, setJobId] = useState<string | null>(() => readPref(JOB_KEY) || null);
   const [panelOpen, setPanelOpen] = useState(false);
   /** 展开卡片 / 收起卡片 is one bulk edit over five uncontrolled <details>, the same control a
-   *  radar bar carries (8.3.7): bumping the tick remounts them with the new default. */
+   *  radar bar carries: bumping the tick remounts them with the new default. */
   const [bulk, setBulk] = useState({ open: false, tick: 0 });
   /** 搜索管理, a drawer over the page - the same shape 配置管理 opens in. It edits the list
    *  the column below reads, which is why it is a drawer and not a row of controls. */
   const [mgrOpen, setMgrOpen] = useState(false);
-  /** 链 / 排序 are view state, not kept anywhere (8.8.19): the list arrives newest first, which
+  /** 链 / 排序 are view state, not kept anywhere: the list arrives newest first, which
    *  is exactly 生成时间 / 从新到旧, so the defaults below are the page asking for nothing. */
   const [chain, setChain] = useState("");
   const [key, setKey] = useState<SortKey>("origin");
@@ -249,7 +249,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   const sortNow = SORTS.find((sort) => sort.value === key) ?? SORTS[0];
   /** What the wall draws: every search, filtered by chain and read in the chosen order. The
    *  records 搜索管理 edits stay on `rows`, because hiding a card here is not forgetting it
-   *  (8.8.18). */
+   * . */
   const listed = useMemo(() => {
     const list = rows.filter((row) => {
       if (chain === ELSEWHERE) {
@@ -277,7 +277,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
   const settled = job.data && job.data.status !== "running" ? job.data : null;
   // Seeded with the job this page was already holding, so a restored one counts as read:
   // the reader left that panel folded (or never opened it), and a reload that unfolds it is
-  // the page moving under them - the same reason a round own panel starts folded (8.3.7).
+  // the page moving under them - the same reason a round own panel starts folded.
   const answered = useRef<string | null>(jobId);
   useEffect(() => {
     if (!settled || answered.current === settled.id) {
@@ -288,7 +288,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
     // The panel was opened to watch this search run, so a run that came back folds it away -
     // left open it would cover the card it was waiting for. One that failed keeps it open,
     // because the reason is written in there. The chain filter goes back to 全部 for the same
-    // reason as the fold: a card settles its own chain (8.8.1), and a filter left on the last
+    // reason as the fold: a card settles its own chain, and a filter left on the last
     // one would hide the card that just landed.
     setPanelOpen(settled.status === "failed");
     setChain("");
@@ -325,7 +325,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
 
   /** The star a card in the wall wears, drawn and written per row: it reads 书架 for whether to
    *  draw solid and writes the same (chain, CA) back, so one star and one shelf cannot disagree
-   *  (8.8.4). This used to be the selected card's star; the wall has no selection. */
+   * . This used to be the selected card's star; the wall has no selection. */
   const toggle = (row: Favorite) => {
     if (kept.has(rowKey(row))) {
       forget.mutate({ chainId: row.chain_id, ca: row.ca });
@@ -346,7 +346,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
         <div className="fav-tools">
           {/* The leftmost control in the actions row, on purpose: it belongs to the search the
               way 默认配置 and 展开卡片 belong to a radar. Never disabled - a page that has
-              queued nothing of its own folds the last search on record (8.8.11). */}
+              queued nothing of its own folds the last search on record. */}
           <button
             className="btn sec"
             id="look-toggle"
@@ -358,7 +358,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
             运行结果
             <Icon as={panelOpen ? ChevronUp : ChevronDown} size={14} />
           </button>
-          {/* The same bulk edit a radar bar makes (8.3.7). One label, two states, so the
+          {/* The same bulk edit a radar bar makes. One label, two states, so the
               reader learns it once and it always says what the next click does. */}
           <button className="btn sec"
             onClick={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}>
@@ -366,7 +366,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
             {bulk.open ? "收起卡片" : "展开卡片"}
           </button>
           {/* 搜索管理: the records the wall is drawing. It stands between 展开卡片 and the box
-              the way 配置管理 stands beside 保存并生效 on a radar (8.3.7) - the same kind of
+              the way 配置管理 stands beside 保存并生效 on a radar - the same kind of
               control, so it wears the same box and the same trailing chevron. */}
           <button className="btn sec" onClick={() => setMgrOpen(true)}>
             <Icon as={Settings2} size={14} />
@@ -405,7 +405,7 @@ export function LookupView({ chains }: { chains: Chain[] }) {
 
       <div className="grid look-body">
         <aside className="fav-side">
-          {/* 链 and 排序: the panel the 收藏 page's shelf wears (8.8.19), one group fewer -
+          {/* 链 and 排序: the panel the 收藏 page's shelf wears, one group fewer -
               what they act on is the wall in the column beside them. */}
           <h4 className="look-h">链</h4>
           <div className="fav-opts">
@@ -456,8 +456,8 @@ export function LookupView({ chains }: { chains: Chain[] }) {
 
         <section className="look-card">
           {/* Every address this page has read, one card each: the wall the left panel
-              filters and orders (8.8.20). It rides the radar's own grid, so a searched card
-              and a round card are the same width whatever stands beside them (8.8.13).
+              filters and orders. It rides the radar's own grid, so a searched card
+              and a round card are the same width whatever stands beside them.
               重新搜索 is the card's own control, drawn in its head rather than on a strip
               above it (Card.tsx). */}
           {recent.isError ? (
