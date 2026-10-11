@@ -1027,6 +1027,10 @@ def absorb(base: SafetyFacts, extra: SafetyFacts) -> SafetyFacts:
 
 
 def _usd(value: float | None) -> str:
+    """A reading printed beside the limit it failed, so it keeps the decimal that
+    `core.caliber.usd` drops: `$7.0K 低于下限 $8.0K`. Rounding both ends the short way
+    would print `$7K 低于下限 $7K` for a token that missed by fifty dollars.
+    """
     if value is None:
         return "—"
     if value >= 1e6:
@@ -1047,8 +1051,8 @@ def _count(value: int | None) -> str:
 def _clause(name: str, value, limit, *, formatter=None, wording: str = "低于下限") -> str:
     """One threshold miss as a sentence: the name, the number, the side, the bound.
 
-    `formatter` is resolved at call time rather than as a default argument, because the
-    money formatter is defined below the class that calls this one.
+    `formatter` is resolved at call time rather than bound as a default argument, so this
+    module's money formatter stays the one default every caller gets.
     """
     if value is None or limit is None:
         return "%s 无数据" % name
