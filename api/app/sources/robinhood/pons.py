@@ -31,11 +31,12 @@ gateway that dies costs a mark, never a row.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
-from ..base import social_url, web_url
+from ...core.parse import positive_float as _num, utc_from_unix
+from ..base import SOCIAL_COLUMNS, socials_from, website_list
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://ponsfamily.com/api"
@@ -56,27 +57,10 @@ ARTWORK = "https://dbk-vercel.vercel.app/api/ipfs/content/%s?variant=card"
 IPFS_URI = re.compile(r"^ipfs://([a-zA-Z0-9]+)")
 
 
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
 def _when(value: Any) -> datetime | None:
     """`createdAt` is unix seconds. A value that will not read as one is a gap, and a gap
     must not become a timestamp of the epoch."""
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        return None
-    if seconds <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError):
-        return None
+    return utc_from_unix(value, require_positive=True)
 
 
 def _artwork(value: Any) -> str | None:
@@ -161,17 +145,8 @@ class Pons:
 
 
 def _socials(row: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    source = row.get("socials") or {}
-    for kind in ("twitter", "telegram", "discord"):
-        url = social_url(kind, source.get(kind))
-        if url:
-            out[kind] = url
-    return out
+    return socials_from(row.get("socials") or {}, SOCIAL_COLUMNS)
 
 
 def _websites(row: dict) -> list[str]:
-    """The site is kept beside the handles, so it cannot be read by the per-token loop that
-    reads `websites` off the metrics."""
-    url = web_url((row.get("socials") or {}).get("website"))
-    return [url] if url else []
+    return website_list((row.get("socials") or {}).get("website"))
