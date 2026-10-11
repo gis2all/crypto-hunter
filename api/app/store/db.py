@@ -1723,9 +1723,11 @@ def opportunity_counts() -> dict[str, int]:
         posts = conn.execute("SELECT count(*) AS n FROM opportunity_posts").fetchone()
         sources = conn.execute(
             "SELECT count(*) AS n FROM opportunity_sources WHERE enabled = 1").fetchone()
+        sites = conn.execute(
+            "SELECT count(*) AS n FROM opportunity_sites WHERE enabled = 1").fetchone()
     finally:
         conn.close()
-    out = {"posts": posts["n"], "sources": sources["n"]}
+    out = {"posts": posts["n"], "sources": sources["n"], "sites": sites["n"]}
     for row in rows:
         out["%s:%s" % (row["status"], row["kind"])] = row["n"]
     return out

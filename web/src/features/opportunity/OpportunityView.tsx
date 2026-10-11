@@ -192,8 +192,19 @@ function ScanPanel({ scan, open, stopping, onCancel }: {
   const result = (key: string): string => {
     if (key === "sources") {
       return counters.watchlist
-        ? `账号 ${counters.accounts ?? 0} · 查询 ${counters.queries ?? 0}`
+        ? `X 查询 ${counters.queries ?? 0}`
         : "—";
+    }
+    if (key === "refresh") {
+      // 官网是另一条 lane：站点数、这轮读了几家、几家真的变了。不和 X 查询挤在一格里。
+      const sites = (counters.refresh ?? {}) as {
+        sites?: number; registered?: number; read?: number; changed?: number; failed?: number;
+      };
+      if (sites.sites === undefined) {
+        return "—";
+      }
+      return `站点 ${sites.registered ?? sites.sites} · 读 ${sites.read ?? 0}`
+        + ` · 变 ${sites.changed ?? 0}` + (sites.failed ? ` · 失败 ${sites.failed}` : "");
     }
     if (key === "collect") {
       // 这一格报的是 X 调用次数与过闸条数：查询行一条会变成好几次调用（切片），而
@@ -1125,7 +1136,7 @@ export function OpportunityView() {
           control here that could not save would be the silent switch this app does not ship. */}
       <details className="opp-fold">
         <summary>
-          {form.sources_title ?? "watchlist"}（{sources.data?.length ?? 0}）
+          X {form.sources_title ?? "watchlist"}（{sources.data?.length ?? 0}）
         </summary>
         <p className="opp-hint">{form.sources_lead}</p>
         {sources.isError ? (
@@ -1160,9 +1171,8 @@ export function OpportunityView() {
 
       {view === "report" ? (
         <div className="opp-tally">
-          已读帖子 {counts.posts ?? 0} · watchlist {counts.sources ?? 0}
-          （账号 {sources.data?.filter((row) => row.kind === "official").length ?? 0}
-          · 查询 {sources.data?.filter((row) => row.kind === "query").length ?? 0}）
+          已读帖子 {counts.posts ?? 0} · X 查询 {counts.sources ?? 0}
+          {" · "}官网 {counts.sites ?? 0}
         </div>
       ) : null}
     </div>

@@ -63,8 +63,10 @@ _BY_KEY = {field["key"]: field for field in FIELDS}
 #: file keep their one-key-per-setting shape.
 BLOCKS = (
     {"key": "collect", "title": "采集", "columns": 1, "groups": (
-        {"key": "budget", "title": "扫描预算",
-         "keys": ("sources_per_scan", "calls_per_scan", "x_interval", "sites_per_scan")},
+        {"key": "x", "title": "X 采集",
+         "keys": ("sources_per_scan", "calls_per_scan", "x_interval")},
+        {"key": "site", "title": "官网刷新",
+         "keys": ("sites_per_scan",)},
     )},
     {"key": "analyze", "title": "分析", "columns": 1, "groups": (
         {"key": "models", "title": "模型预算",

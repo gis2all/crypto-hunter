@@ -230,6 +230,7 @@ def run(scan_id: str, tell=None, cancel: threading.Event | None = None, fetch=No
     pending = db.opportunity_sites_due(1000)
     due = pending[:budget]
     counters["deferred"] = max(0, len(pending) - len(due))
+    counters["registered"] = len(pending)
     if not due:
         return counters
     total = len(due)
