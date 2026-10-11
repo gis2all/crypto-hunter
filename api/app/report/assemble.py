@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 
 from .. import config
-from ..api.v1 import forms
+from ..core import caliber
 from ..store import db
 from . import cards as card_builder
 
@@ -279,7 +279,7 @@ def _caliber(conn, run: dict, summary: dict) -> list[str]:
     settings = _effective(conn, run)
     if not settings:
         return summary.get("caliber", [])
-    return forms.caliber_text(settings)
+    return caliber.text(settings)
 
 
 def _market_cap_floor(settings: dict) -> float | None:
@@ -293,7 +293,7 @@ def batch(run_id: str, per_round: int = 5) -> dict:
     conn = db.connect()
     try:
         data = _load(conn, run_id)
-        caliber = _caliber(conn, data["run"], data["summary"])
+        caliber_lines = _caliber(conn, data["run"], data["summary"])
     finally:
         conn.close()
     run = data["run"]
@@ -311,7 +311,7 @@ def batch(run_id: str, per_round: int = 5) -> dict:
         "gate": summary.get("gate") or {"judged": 0, "unjudged": 0},
         "rule_counts": summary.get("rule_counts", []),
         "changes": summary.get("changes", []),
-        "caliber": caliber,
+        "caliber": caliber_lines,
         "sources": summary.get("sources", []),
         "push": summary.get("push") or {"status": "", "delay": "", "unavailable": MISSING_BATCH},
         "note": summary.get("note", ""),
@@ -342,7 +342,7 @@ def _decline_reasons(metrics: dict, safety: dict, floor: float | None) -> list[s
         reasons.append("LP 未锁定" if lp is False else "LP 未判定")
     cap = metrics.get("market_cap_usd")
     if floor is not None and cap is not None and cap < floor:
-        reasons.append("市值 <%s" % forms._usd(floor))
+        reasons.append("市值 <%s" % caliber.usd(floor))
     return reasons
 
 

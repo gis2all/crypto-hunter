@@ -6,6 +6,7 @@ import re
 
 from app import config
 from app.api.v1 import forms
+from app.core import caliber
 from app.pipeline import schedule
 from app.report import assemble
 from app.store import db
@@ -424,7 +425,7 @@ def test_run_rows_say_what_a_change_does_instead_of_counting(client):
 
 def test_caliber_line_is_generated_from_the_settings(client):
     """The overview口径 and the settings page read the same knobs, so they cannot drift."""
-    lines = forms.caliber_text(config.chain(ARC))
+    lines = caliber.text(config.chain(ARC))
     assert len(lines) == 3
     assert lines[0].startswith("硬过滤：市值 $10K – $200K ｜ 流动性 ≥ $5K")
     assert "陷阱占比 < 45%" in lines[1]
@@ -435,7 +436,7 @@ def test_caliber_line_follows_a_change(client):
     """Change the knob, and the口径 sentence moves with it."""
     chain = copy.deepcopy(config.chain(ARC))
     chain["pipeline"]["prefilter"]["liquidity_min_usd"] = 31000
-    lines = forms.caliber_text(chain)
+    lines = caliber.text(chain)
     assert "流动性 ≥ $31K" in lines[0]
 
 
@@ -444,7 +445,7 @@ def test_caliber_reads_the_holder_band_only_when_there_is_a_ceiling(client):
     snapshot reads exactly as it did; fill one in and the line becomes a band."""
     chain = copy.deepcopy(config.chain(ARC))
     chain["pipeline"]["prefilter"]["holders_max"] = 2000
-    assert "持有人 100 – 2000" in forms.caliber_text(chain)[0]
+    assert "持有人 100 – 2000" in caliber.text(chain)[0]
 
 def test_push_group_carries_no_read_only_banner(client):
     """The banner was a `sub` row reading 只读状态（系统告诉你的，不是你配的）. Cut on
