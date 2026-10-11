@@ -32,7 +32,7 @@ from typing import Callable
 from uuid import uuid4
 
 from . import config
-from .core.models import SafetyFacts, TokenMetrics, ca_key
+from .core.models import SafetyFacts, TokenMetrics, ca_key, share_site
 from .pipeline import collect, decide
 from .report import assemble, cards as card_builder, lexicon, research
 from .sources import dexscreener, http, registry
@@ -185,7 +185,7 @@ def run(ca: str, tell: Callable[[str], None] | None = None) -> dict:
         # putting it on the numbers before the writer is asked is what keeps the card and the
         # sheet the writer read the same reading.
         gathered = research.gather(row, known=known)
-        collect.share_site(metrics, str(gathered.get("site") or ""))
+        share_site(metrics, str(gathered.get("site") or ""))
         entry = research.one(
             row,
             gathered,
