@@ -17,6 +17,7 @@ from app.core.models import RunStatus, SafetyFacts, TokenMetrics
 from app.pipeline import run as pipeline_run
 from app.pipeline.decide import Engine
 from app.store import db
+from conftest import metrics_row as _row, settings_dict as _settings
 
 ARC = "arc"
 CHAIN = {"id": ARC, "label": "Arc", "pipeline": {"scan_limit": 500}, "sources": []}
@@ -25,27 +26,6 @@ CHAIN = {"id": ARC, "label": "Arc", "pipeline": {"scan_limit": 500}, "sources": 
 #: recorder for every test, because most tests are about what a request starts and must not
 #: reach five sources; these are the tests about the round itself, so they call this one.
 RUN_CHAIN = pipeline_run.run_chain
-
-
-def _settings() -> dict:
-    return {
-        "schedule": {},
-        "scoring": {"onchain_weight": 55, "offchain_weight": 45},
-        "report": {"per_round": 2},
-        "pipeline": {
-            "enrich_limit": 2,
-            "prefilter": {"market_cap_min_usd": 50_000, "market_cap_max_usd": 200_000,
-                          "liquidity_min_usd": 8_000, "holders_min": 150},
-            "safety": {},
-        },
-    }
-
-
-def _row(ca: str, **kw) -> TokenMetrics:
-    base = dict(ca=ca, symbol=ca[-4:].upper(), market_cap_usd=100_000, liquidity_usd=30_000,
-                volume_24h_usd=10_000, holders=500, top10_pct=10.0, bundling_pct=1.0)
-    base.update(kw)
-    return TokenMetrics(**base)
 
 
 class StoppingSource:
@@ -127,7 +107,7 @@ def test_a_stop_between_two_sources_costs_the_rest_of_the_pull():
     engine = Engine(CHAIN, sources=[first, second])
     try:
         with pytest.raises(cancel.RoundCancelled):
-            engine.run(_settings(), "run-1")
+            engine.run(_settings(enrich_limit=2), "run-1")
     finally:
         cancel.clear("run-1")
     assert first.reads == 1
@@ -187,7 +167,7 @@ def test_a_stop_during_the_fill_costs_only_the_rows_in_flight():
     engine = Engine(CHAIN, sources=[source])
     try:
         with pytest.raises(cancel.RoundCancelled):
-            engine.run(_settings(), run_id)
+            engine.run(_settings(enrich_limit=2), run_id)
     finally:
         cancel.clear(run_id)
     # The rows the pool already had running are left to finish - that is what a stop costs -
