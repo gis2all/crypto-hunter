@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from collections.abc import Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -68,3 +69,30 @@ def web_url(value: Any) -> str | None:
     if text.startswith("http://") or text.startswith("https://"):
         return text
     return "https://" + text.lstrip("/")
+
+
+#: The social columns the registries publish flat, in the order the card lists them.
+SOCIAL_COLUMNS = (("twitter", "twitter"), ("telegram", "telegram"), ("discord", "discord"))
+
+
+def socials_from(source: Any, columns: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """One row's social columns as `{kind: url}`, with the columns nobody filled left out.
+
+    `columns` pairs each column name with the kind it feeds, because the same kind arrives
+    under different names (`twitter_username` on GMGN) and the row is sometimes flat and
+    sometimes nested under `socials` - which is the caller's to unwrap.
+    """
+    out: dict[str, str] = {}
+    for key, kind in columns:
+        url = social_url(kind, (source or {}).get(key))
+        if url:
+            out[kind] = url
+    return out
+
+
+def website_list(value: Any) -> list[str]:
+    """One website column as the list the snapshot carries: the link, or no entry at all. The
+    card prints whatever is in this list, so an entry holding a broken link is worse than a
+    list that stays empty."""
+    url = web_url(value)
+    return [url] if url else []
