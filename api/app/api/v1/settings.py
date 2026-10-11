@@ -153,7 +153,7 @@ def _boxes(weights: dict, path: str, labels: dict[str, str]) -> str:
     A 422 that only says "must sum to 100" leaves the operator adding five numbers by
     hand; naming the rows and printing each one turns it into "move this box". The labels
     come from the page's own model (`forms.field_labels`), so the error and the row above it
-    cannot read differently (CLAUDE.md · 红线).
+    cannot read differently (CLAUDE.md · 设计取舍).
     """
     return " ｜ ".join("%s %s%%" % (labels.get(path + key, key), _pct(value))
                       for key, value in weights.items())

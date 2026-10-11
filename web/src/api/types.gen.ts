@@ -650,7 +650,7 @@ export interface components {
          * ActionOut
          * @description A button a group carries. What it does is the page's business; what it says is not.
          *
-         *     The label travels with it (CLAUDE.md · 红线), and the id is the one word the page does act
+         *     The label travels with it (CLAUDE.md · 设计取舍), and the id is the one word the page does act
          *     on - it is the map from a name to a handler, which is behaviour and belongs to the page. A
          *     group with no actions draws no strip.
          */

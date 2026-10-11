@@ -1671,7 +1671,7 @@
      "label"
     ],
     "title": "ActionOut",
-    "description": "A button a group carries. What it does is the page's business; what it says is not.\n\nThe label travels with it (CLAUDE.md · 红线), and the id is the one word the page does act\non - it is the map from a name to a handler, which is behaviour and belongs to the page. A\ngroup with no actions draws no strip."
+    "description": "A button a group carries. What it does is the page's business; what it says is not.\n\nThe label travels with it (CLAUDE.md · 设计取舍), and the id is the one word the page does act\non - it is the map from a name to a handler, which is behaviour and belongs to the page. A\ngroup with no actions draws no strip."
    },
    "BatchOut": {
     "properties": {
