@@ -2,24 +2,15 @@
 
 ## 产品定义
 
-每 3 小时从一条链上的数千个代币中挑出 N 个（默认 5，即 `per_round`），每个附一份两分钟内可读完的判断。本项目是研究流水线，不是行情终端。
+每条链按生效配置的周期自动跑一轮，从数千个代币里挑出 N 个，各附一份两分钟内可读完的判断。本项目是研究流水线，不是行情终端。交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。
 
-后端为 Python 3.13、FastAPI、SQLite(WAL)、httpx（GMGN 需要 TLS 指纹，走 curl-cffi），由 uv 管理；前端为 React、TypeScript(strict)、Vite、TanStack Query，不使用 UI 组件库，样式全部自写。部署为同域单进程：FastAPI 托管 `web/dist`，仅一个端口 8787。排程由服务内 ticker 与 `runs` 表的唯一约束共同保证幂等（`run_key`），不使用 APScheduler。
+# 2. 技术栈
 
-## 不做的事
+后端 Python 3.13、FastAPI、SQLite(WAL)、httpx（GMGN 需要 TLS 指纹，走 curl-cffi），由 uv 管理；前端 React、TypeScript(strict)、Vite、TanStack Query，不使用 UI 组件库，样式全部自写。
 
-交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。当前接入 Arc、Robinhood、Solana、BSC 四条链，左栏只渲染 `enabled` 的链。
+部署为同域单进程：FastAPI 托管 `web/dist`，仅一个端口 8787。排程由服务内 ticker 与 `runs` 表的唯一约束共同保证幂等（`run_key`），不使用 APScheduler。
 
-## 红线
-
-- 分层不成环：前端不接触数据源与数据库；后端不内嵌 HTML（只托管 `web/dist`）；`api/app/core/` 内不得有 IO。
-- 一个源一个适配器，源与源互不感知：同名指标的取值由 `pipeline/collect.py` 的 `DEFAULT_PRIORITY` 与 `FIELD_PRIORITY` 决定，与调用顺序无关。
-- 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 提供，前端不识别任何一条。例外是一轮的「口径」三行位于 `core/caliber.py`：落库与页面都需输出同一句，两边各写一份即产生漂移。
-- 分数只在后端计算：前端不计分、不补数，页面上的每个数字都来自 `/api/v1`。
-- 一轮只写一次：卡片文字在落库时即为终稿，没有任何阶段回头改写已发布的报告。
-- 缺值语义为未知：缺失的数是 `None` 或空，不得用 0 或空字符串替代。
-
-# 2. 运行与验证
+# 3. 运行与验证
 
 ## 启动与构建
 
@@ -39,15 +30,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 修改数据源解析后：执行 `pytest tests/test_<source>.py`，并清理对应前缀缓存。
 - 长命令（build 与 pytest）应将输出重定向到日志后查看末尾，避免把整屏输出写入上下文。
 
-## Windows 本机注意事项
-
-- 不使用 `&&`，改用 `;` 或 `if`；含 `&` 的 URL 需要加引号。
-- 所有写入文件的操作用无 BOM 的 UTF-8；不得用 PowerShell here-string 写非 ASCII 内容，那些字符会被写成 `?`。
-- 终端把中文显示成 `????` 属于显示问题，文件本身没有损坏：应以 UTF-8 读取确认后再下结论。
-- 保存设定会用 `os.replace` 换掉 `config/chains/<chain>.yaml`；目标文件正被别的进程读取时抛出 `PermissionError [WinError 5]`，因此全套测试中偶发一条失败（`test_a_text_knob_can_still_be_cleared`），单独运行时通过、重跑也通过 —— 属于文件抢占，不是代码缺陷。
-- 服务常驻 `127.0.0.1:8787` 并托管 `web/dist`：前端改动后需要 build 并强制刷新浏览器。
-
-# 3. 一轮流水线
+# 4. 一轮流水线
 
 拉取扫描源、去重、硬过滤第一半（市值区间与空壳淘汰）、逐币补齐链上数据（持有人、Top10、捆绑、24h 成交与市场口径行情）、硬过滤第二半与安全判定与距高回撤、链下调研与写作、打分排序、选取前 N、落库出卡、归档、下一轮对比上一轮。
 
@@ -67,7 +50,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 
 三种粒度不可混用：这九个键是耗时日志与运行面板的键；运行面板折成六格；进度条只用五段。新增或修改阶段需三处同时改动，细节见 `api/app/pipeline/README.md`。
 
-# 4. 代码结构
+# 5. 代码结构
 
 - `api/app/api/v1/`：唯一 HTTP 层（`chains`、`runs`、`lexicon`、`settings`、`favorites`、`lookup`、`system`、`health`），页面文案在 `forms.py`。见该目录 `README.md`。
 - `api/app/pipeline/`：一轮的编排（`collect`、`decide`、`states`、`progress`、`run`、`schedule`、`write`）。见 `README.md`。
@@ -82,10 +65,10 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
 - `web/src/features/`：一个页面一个目录；`web/src/components/` 存放通用件；`web/src/styles/` 是视觉的唯一出处。见两份 `README.md`。
-- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）。
+- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
 - `data/`：`crypto-hunter.db` 与 `raw/`（每轮原始响应与 HTTP 缓存），不入库。
 
-# 5. 术语
+# 6. 术语
 
 - 扫描、淘汰、候选、入选：一轮的四个数（`scanned`、`dropped`、`candidates`、`selected`），候选包含入选，四个数一次数出，`scanned = dropped + candidates` 是恒等式。
 - 未判定：表示未问到，不等于不合格 —— 既不计入通过也不计入淘汰。
@@ -101,7 +84,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 收藏与搜索记录：同一张 `favorites` 行（主键 `(chain_id, ca)`），区别仅在于 `origin` 与 `kept`；链名、配置、轮次只是随行存储的值，不发生任何级联。
 - 市场口径：一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` 与 `h24`），而非榜单或发射台自报的数值。
 
-# 6. 变更入口
+# 7. 变更入口
 
 | 变更目标 | 读 | 动 |
 | --- | --- | --- |
@@ -113,14 +96,14 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 | 修改设定页字段或说明文案 | `api/app/api/v1/README.md` · 设定页 | `api/app/api/v1/forms.py` 与 `web/src/features/settings/` |
 | 新增或删除一套配置 | `api/app/api/v1/README.md` · 设定页 | `api/app/api/v1/chains.py`、`config/chains/*.yaml` 与 `settings/ConfigManager.tsx` |
 | 修改视觉 | `web/src/styles/README.md` | `web/src/styles/tokens.css`（先改此处，再动 `proto.css` 与 `app.css`） |
-| 修改一轮的阶段或顺序 | 本文件第 3 节（一轮流水线）与 `api/app/pipeline/README.md` | `api/app/pipeline/decide.py`、`progress.py` 与运行面板的 `STAGE_PHASES` |
+| 修改一轮的阶段或顺序 | 本文件第 4 节（一轮流水线）与 `api/app/pipeline/README.md` | `api/app/pipeline/decide.py`、`progress.py` 与运行面板的 `STAGE_PHASES` |
 | 新增或修改数据表 | `api/app/store/README.md` | `api/app/store/schema.sql` 与 `store/db.py` |
 | 修改收藏页 | `web/src/features/README.md` · 收藏页 | `api/app/api/v1/favorites.py`、`report/assemble.py` 与 `web/src/features/favorites/` |
 | 修改 CA 搜索 | `web/src/features/README.md` · CA 搜索 | `api/app/lookup.py`、`api/app/api/v1/lookup.py` 与 `web/src/features/lookup/` |
 | 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py` 与 `web/src/features/system/` |
-| 第 7 节（边界与待决）中的待决事项 | 先与用户确认 | 第 7 节 |
+| 第 8 节（边界与待决）中的待决事项 | 先与用户确认 | 第 8 节 |
 
-# 7. 边界与待决
+# 8. 边界与待决
 
 尚未接入的部分（不是缺陷）：
 
@@ -135,8 +118,14 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - worker 线程卡住（进程仍存活）时，该轮与「正在跑」状态无法区分；深色主题的状态边框对比度不达标。
 - 链上读路径已无可去除的重复调用；链下调研五项的边界；分位分母为混口径（补齐过的行是市场口径，其余仍是粗筛口径），改动需要重跑一轮对比。
 
-# 8. 设计取舍
+# 9. 设计取舍
 
+- 分层不成环：前端不接触数据源与数据库；后端不内嵌 HTML（只托管 `web/dist`）；`api/app/core/` 内不得有 IO。
+- 一个源一个适配器，源与源互不感知：同名指标的取值由 `pipeline/collect.py` 的 `DEFAULT_PRIORITY` 与 `FIELD_PRIORITY` 决定，与调用顺序无关。
+- 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 提供，前端不识别任何一条。例外是一轮的「口径」三行位于 `core/caliber.py`：落库与页面都需输出同一句，两边各写一份即产生漂移。
+- 分数只在后端计算：前端不计分、不补数，页面上的每个数字都来自 `/api/v1`。
+- 一轮只写一次：卡片文字在落库时即为终稿，没有任何阶段回头改写已发布的报告。
+- 缺值语义为未知：缺失的数是 `None` 或空，不得用 0 或空字符串替代。
 - 缺值只会是「未知」，不会变成放行：把未判定当作通过，上千条发射台自报的行会直接进池；反之把「对方回答没有」当作失败，Arc 上多数代币每轮都需重新查询。
 - 一个静默的空开关比缺少一个旋钮更糟：设定页上无人读取的开关，勾选与否结果完全相同，会让用户误认为它已生效：要么接通行为，要么删除该动作。
 - 事实只写一处：同一件事在两处各写一份，两边就会漂移；落地即冻结的三张表（`settings_versions`、`snapshots`、`reports`）就是这条规则的机器化实现。
@@ -144,7 +133,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 排序键应选择「各来源答案一致」的那个：以未校准的读数作主键时，改动一个阈值就会整体重排池子。
 - 不可观测即不可复核：日志是唯一可复核阶段耗时与进度的出处，数据库只保留结论。
 
-# 9. 文档约定
+# 10. 文档约定
 
 - 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
 - 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md`。
@@ -152,3 +141,11 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 模块引用用短名：`sources/` 到 `api/v1/` 在 `api/app/` 下，`features/` 与 `styles/` 在 `web/src/` 下。
 - 维护范围：分层、契约、运行方式、数据模型、视觉规则发生变化时更新本文件；改动代码的那一次同步修改对应模块文档；口径变化时直接改写原条目，不追加「某天起改为…」。
 - 唯一出处：视觉为 `web/src/styles/`，数据模型为 `api/app/store/schema.sql`，出厂设定为 `config/chains/*.example.yaml`。
+
+# 11. 注意事项
+
+- 不使用 `&&`，改用 `;` 或 `if`；含 `&` 的 URL 需要加引号。
+- 所有写入文件的操作用无 BOM 的 UTF-8；不得用 PowerShell here-string 写非 ASCII 内容，那些字符会被写成 `?`。
+- 终端把中文显示成 `????` 属于显示问题，文件本身没有损坏：应以 UTF-8 读取确认后再下结论。
+- 保存设定会用 `os.replace` 换掉 `config/chains/<chain>.yaml`；目标文件正被别的进程读取时抛出 `PermissionError [WinError 5]`，因此全套测试中偶发一条失败（`test_a_text_knob_can_still_be_cleared`），单独运行时通过、重跑也通过 —— 属于文件抢占，不是代码缺陷。
+- 服务常驻 `127.0.0.1:8787` 并托管 `web/dist`：前端改动后需要 build 并强制刷新浏览器。
