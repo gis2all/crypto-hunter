@@ -123,7 +123,7 @@ def _name(metrics: TokenMetrics, best: dict, ca: str) -> None:
 
 class DexScreener:
     name = "dexscreener"
-    chains = ("arc", "robinhood", "solana")
+    chains = ("arc", "bsc", "robinhood", "solana")
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         """Nothing to sweep: this host is asked about a CA, not about a chain."""

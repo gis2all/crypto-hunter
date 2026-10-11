@@ -165,7 +165,7 @@ def test_a_source_without_the_knob_is_left_alone():
 def test_the_registry_knows_the_source_and_which_chains_it_answers():
     from app.sources import registry
 
-    assert registry.ALL["dexscreener_rank"].chains == ("robinhood", "solana")
+    assert registry.ALL["dexscreener_rank"].chains == ("bsc", "robinhood", "solana")
 
 
 def test_a_board_row_keeps_its_numbers_through_the_merge():

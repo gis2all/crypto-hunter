@@ -122,7 +122,7 @@ def pool_row(item: dict, chain_id: str) -> dict:
 
 class GeckoTerminal:
     name = "geckoterminal"
-    chains = ("arc", "robinhood", "solana")
+    chains = ("arc", "bsc", "robinhood", "solana")
 
     # ---------------------------------------------------------------- universe
 

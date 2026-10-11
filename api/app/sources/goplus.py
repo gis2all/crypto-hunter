@@ -23,8 +23,9 @@ from ..core.models import SafetyFacts, TokenMetrics, ca_key
 from .http import SourceError, UA_JSON, json_get
 
 BASE = "https://api.gopluslabs.io/api/v1"
-#: GoPlus identifies chains by EVM chain id, not by name. Arc is 5042 and Robinhood is 4663.
-CHAIN_IDS = {"arc": 5042, "robinhood": 4663}
+#: GoPlus identifies chains by EVM chain id, not by name. Arc is 5042, BSC 56 (the id the
+#: rest of the world uses for it) and Robinhood 4663.
+CHAIN_IDS = {"arc": 5042, "bsc": 56, "robinhood": 4663}
 
 #: The remaining yes/no fields GoPlus answers, kept for the card's 附加警示 line. Nothing
 #: scores them, so they stay a list of field names rather than a dozen model fields.
@@ -152,7 +153,7 @@ def _share(holders: list[dict], mark: str) -> float | None:
 
 class GoPlus:
     name = "goplus"
-    chains = ("arc", "robinhood")
+    chains = ("arc", "bsc", "robinhood")
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         """GoPlus has no enumeration endpoint: it answers about a CA, never about a chain."""

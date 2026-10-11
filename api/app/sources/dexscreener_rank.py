@@ -191,7 +191,7 @@ class DexScreenerRank:
     """The board, unioned over a few orders. One sweep per round, cached for half an hour."""
 
     name = "dexscreener_rank"
-    chains = ("robinhood", "solana")
+    chains = ("bsc", "robinhood", "solana")
 
     #: The band `collect.set_scan_band` injects once per round, from the same
     #: `pipeline.prefilter` the round is about to filter on. 0 means no line, and no line
