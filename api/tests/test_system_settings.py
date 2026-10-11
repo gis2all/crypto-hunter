@@ -62,7 +62,7 @@ def _fields() -> dict[str, dict]:
 def test_every_key_has_a_row():
     """A key in the table with no label is a row nobody can read, and a label with no key is a
     box nothing writes - unless the key is file-only, which is the one deliberate way for the
-    page not to offer something the file takes (6.4.8's gateway headers). Both are caught here
+    page not to offer something the file takes (the gateway headers rule). Both are caught here
     rather than on the page."""
     keys = {key for key, _env, _kind in config.SYSTEM_KEYS}
     assert set(forms.SYSTEM_LABELS) | config.FILE_ONLY_KEYS == keys
@@ -268,7 +268,7 @@ def gateway(monkeypatch):
 
 
 def test_the_page_offers_the_usual_gateways_and_the_two_probes():
-    """The form carries them, so the page needs no list of its own (8.9.1)."""
+    """The form carries them, so the page needs no list of its own."""
     fields = _fields()
     assert [p["label"] for p in fields["llm.base_url"]["presets"]] == [
         "opencode zen", "OpenAI", "DeepSeek"]
@@ -360,7 +360,7 @@ def test_a_typo_is_refused_before_anything_is_called(system_file, client, gatewa
 
 def test_a_stored_credential_shows_its_ends_and_never_its_middle():
     """The row has to answer "is the panel using the key I think it is?" without handing a
-    credential to a screenshot or a bug report (8.9.4)."""
+    credential to a screenshot or a bug report."""
     assert system_settings.masked("sk-live-0123456789") == "sk-liv…6789"
     assert system_settings.masked("") == ""
     assert system_settings.masked("tiny") == "…"             # nothing to hide behind a middle
@@ -369,7 +369,7 @@ def test_a_stored_credential_shows_its_ends_and_never_its_middle():
 
 def test_every_key_is_asked_not_just_the_primary(system_file, client, gateway):
     """The standby is the key nobody has ever watched answer, and a round only meets it on the
-    day the primary is refused - the worst day to learn it is bad too (8.9.7)."""
+    day the primary is refused - the worst day to learn it is bad too."""
     _with_standby(system_file, "sk-backup-9876543210")
     gateway.box.response = _answer("pong")
     body = client.post("/api/v1/system/test", json={"patch": {}}).json()
@@ -434,7 +434,7 @@ def x_cli(monkeypatch):
 
 def test_the_x_group_carries_its_own_probe():
     """The button belongs to the rows it tests: the page hands the group's key back and the
-    answer is printed under that group, so the action travels with the group (8.9.1)."""
+    answer is printed under that group, so the action travels with the group."""
     groups = {g["key"]: g for block in forms.system_blocks(system_settings.state())
               for g in block["groups"]}
     assert [a["label"] for a in groups["x-session"]["actions"]] == ["测试连接"]
@@ -477,7 +477,7 @@ def test_a_session_that_is_not_configured_is_a_sentence_and_no_process(system_fi
 
 
 def test_the_x_probe_reads_the_draft_session_not_the_file(system_file, client, x_cli):
-    """The same rule as the gateway's probes (8.9.2): a cookie typed but not saved is the cookie
+    """The same rule as the gateway's probes: a cookie typed but not saved is the cookie
     this button spends, or the operator would have to store it in order to test it."""
     x_cli.box.stdout = WHOAMI
     body = client.post("/api/v1/system/x",

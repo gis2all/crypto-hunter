@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config
+from app.core.models import TokenMetrics
 from app.pipeline import schedule
 from app.store import db
 
@@ -64,3 +65,32 @@ def client(isolated_db):
 
     with TestClient(create_app()) as c:
         yield c
+
+
+def metrics_row(ca: str, **kw) -> TokenMetrics:
+    """One healthy row: the numbers every filter in a round reads, with room for overrides."""
+    base = dict(ca=ca, symbol=ca[-4:].upper(), market_cap_usd=100_000, liquidity_usd=30_000,
+                volume_24h_usd=10_000, holders=500, top10_pct=10.0, bundling_pct=1.0)
+    base.update(kw)
+    return TokenMetrics(**base)
+
+
+def settings_dict(enrich_limit: int = 3, **over) -> dict:
+    """One chain's settings, the shape the pipeline reads.
+
+    Two round-level test files drive the same engine, so the numbers a filter sees live in
+    one place: they had drifted apart already (one file said 2 enriched rows, the other 3).
+    """
+    settings = {
+        "schedule": {},
+        "scoring": {"onchain_weight": 55, "offchain_weight": 45},
+        "report": {"per_round": 2},
+        "pipeline": {
+            "enrich_limit": enrich_limit,
+            "prefilter": {"market_cap_min_usd": 50_000, "market_cap_max_usd": 200_000,
+                          "liquidity_min_usd": 8_000, "holders_min": 150},
+            "safety": {},
+        },
+    }
+    settings.update(over)
+    return settings

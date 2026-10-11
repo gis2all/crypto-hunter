@@ -197,7 +197,7 @@ export function Card({
               instead of sitting at opposite ends of the head. The stack keeps its two lines
               tight (line-height:1) so 21px + 11.5px stays inside the 40px mark beside it
               and the head does not grow - the shelf stands searched cards and round cards
-              in one grid (8.8.2), and a head that grows would move every block under it. */}
+              in one grid, and a head that grows would move every block under it. */}
           {listed ? (
             <span className="score-stack">
               <span className="score-line">
@@ -237,7 +237,7 @@ export function Card({
           </div>
         </div>
       ) : (
-        /* A searched card has no score to print (8.8.2), but the shelf mixes it with round
+        /* A searched card has no score to print, but the shelf mixes it with round
            cards, and this card's own rule is that only one block is variable. The score
            block holds its place so this card's conclusion, its two folds and its footer
            still land on the same line as the round card beside it. */
@@ -248,7 +248,7 @@ export function Card({
           that row to itself: the address moved up beside the name, and these three numbers
           are a reading of the round rather than of the token, so they sit under the head.
           A card with no round keeps the row and prints nothing in it - the shelf stands
-          searched cards and round cards in one grid (8.8.2), and a row present on one and
+          searched cards and round cards in one grid, and a row present on one and
           missing on the other would move every block under it. */}
       <div className="card-ranks">
         {ranked ? (

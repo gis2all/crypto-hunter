@@ -35,6 +35,7 @@ import re
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics, ca_key
+from ..core.parse import as_float as _num, positive_float
 from .base import social_url, web_url
 from .http import SourceError, UA_HTML, cached, get
 
@@ -59,19 +60,10 @@ LOGO = "https://cdn.dexscreener.com/cms/images/%s"
 SOCIAL_TYPES: dict[int, str] = {1: "discord", 2: "twitter", 3: "telegram", 5: "tiktok", 7: "instagram"}
 
 
-def _num(value: Any) -> float | None:
-    """A number, or None. Zero is a number: a pair that did not move is an answer (6.6.2)."""
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _money(value: Any) -> float | None:
     """A dollar figure, or None. Zero is not a reading here: a market cap of nothing and a
     pool with no reserves both mean this source has no price, not that the price is nil."""
-    number = _num(value)
-    return number if number and number > 0 else None
+    return positive_float(value)
 
 
 def _array(document: str, open_at: int) -> str | None:

@@ -23,7 +23,7 @@ from .schemas import SystemFormOut, SystemModelsOut, SystemTestOut, SystemXOut
 router = APIRouter(prefix="/system", tags=["system"])
 
 #: The row the endpoint's own model list belongs to. It travels in the answer so the page can
-#: offer the list on the right row without learning a key name (8.9.1).
+#: offer the list on the right row without learning a key name.
 _MODEL_ROW = "llm.model"
 
 
@@ -79,10 +79,10 @@ def post_test(body: SystemIn) -> dict:
     """A really small real call per key: the writing path itself, not a reachable endpoint.
 
     Reachability is not the question a person is asking when they press this - an endpoint
-    that answers 200 with an empty message is the failure this repo has already paid for once
-    (6.4.8). So the reading that comes back is whether text arrived. Every key is asked, not
+    that answers 200 with an empty message is the failure this repo has already paid for once.
+    So the reading that comes back is whether text arrived. Every key is asked, not
     just the first: the standby has never answered anything, and a round only meets it on the
-    day the primary is refused (8.9.7).
+    day the primary is refused.
     """
     try:
         current = _probe_current(body.patch)
@@ -142,7 +142,7 @@ def _probe_current(patch: Mapping[str, Any]) -> dict:
 
     `llm.settings()` is the one place that knows what a call is made of; this only moves the
     values a form can change. A blank secret box is not a blank key: `effective` has already
-    answered it with what is stored, which is the rule a save follows too (8.9.3).
+    answered it with what is stored, which is the rule a save follows too.
     """
     values = system_settings.effective(patch)
     current = llm.settings()

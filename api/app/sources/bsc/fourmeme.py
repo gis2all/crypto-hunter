@@ -56,10 +56,11 @@ those is no mark, never a row lost.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
+from ...core.parse import utc_from_unix
 from ..http import SourceError, UA_JSON, cached, json_post
 
 BASE = "https://four.meme/meme-api"
@@ -105,16 +106,7 @@ def _ticker(value: Any) -> str | None:
 def _when(value: Any) -> datetime | None:
     """`createDate` is unix milliseconds. A value that will not read as one is a gap, and a
     gap must not become a timestamp of the epoch."""
-    try:
-        millis = float(value)
-    except (TypeError, ValueError):
-        return None
-    if millis <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(millis / 1000.0, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError):
-        return None
+    return utc_from_unix(value, unit="ms", require_positive=True)
 
 
 def _artwork(value: Any) -> str | None:

@@ -32,11 +32,10 @@ adds is the bottom of the curve that a ranking never reaches.
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics
-from ..base import social_url, web_url
+from ...core.parse import positive_float as _num, utc_from_unix as _iso
+from ..base import socials_from, website_list
 from ..http import SourceError, UA_JSON, cached, json_get, pmap
 
 BASE = "https://api.tollylabs.com"
@@ -53,23 +52,6 @@ SORT = "mcap"
 #: sequential on purpose - it exists to stop, and stopping needs the page before it.
 WORKERS = 8
 UNIVERSE_TTL = 900
-
-
-def _num(value: Any, zero_ok: bool = False) -> float | None:
-    """Numbers, with 0 kept where 0 is an answer rather than a gap.
-
-    `volume24h == 0` means nobody traded this, which the volume floor has to be allowed to
-    reject. Collapsing it to None would file it under unknown and let it through the
-    filter - the exact hole that lets an untraded launch survive a volume floor. A zero
-    market cap or price carries no such meaning, so those still collapse.
-    """
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if number > 0:
-        return number
-    return 0.0 if zero_ok and number == 0 else None
 
 
 def _all_below(rows: list[dict], floor: float) -> bool:
@@ -203,23 +185,10 @@ class Tolly:
 
 
 def _socials(row: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for key, kind in (("twitter", "twitter"), ("telegram", "telegram")):
-        url = social_url(kind, row.get(key))
-        if url:
-            out[kind] = url
-    return out
+    return socials_from(row, (("twitter", "twitter"), ("telegram", "telegram")))
 
 
 def _websites(row: dict) -> list[str]:
-    url = web_url(row.get("website"))
-    return [url] if url else []
+    return website_list(row.get("website"))
 
 
-def _iso(seconds: Any) -> Any:
-    from datetime import datetime, timezone
-
-    try:
-        return datetime.fromtimestamp(float(seconds), tz=timezone.utc)
-    except (TypeError, ValueError):
-        return None

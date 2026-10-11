@@ -17,11 +17,9 @@ export type Library = components["schemas"]["LibraryOut"];
 export type Run = components["schemas"]["RunOut"];
 export type Batch = components["schemas"]["BatchOut"];
 export type Card = components["schemas"]["CardOut"];
-export type DeclineRow = components["schemas"]["DeclineRowOut"];
 export type Settings = components["schemas"]["SettingsOut"];
 export type SettingsForm = components["schemas"]["SettingsFormOut"];
 export type SettingsBlock = components["schemas"]["BlockOut"];
-export type SettingsGroup = components["schemas"]["GroupOut"];
 export type SettingsField = components["schemas"]["FieldOut"];
 export type SystemForm = components["schemas"]["SystemFormOut"];
 export type SystemModels = components["schemas"]["SystemModelsOut"];
@@ -29,9 +27,6 @@ export type SystemTest = components["schemas"]["SystemTestOut"];
 export type SystemX = components["schemas"]["SystemXOut"];
 export type Segment = components["schemas"]["SegmentOut"];
 export type ChangeOut = components["schemas"]["ChangeOut"];
-export type RuleCount = components["schemas"]["RuleCountOut"];
-export type SourceCount = components["schemas"]["SourceCountOut"];
-export type PushInfo = components["schemas"]["PushOut"];
 export type Funnel = components["schemas"]["FunnelOut"];
 export type Favorite = components["schemas"]["FavoriteOut"];
 export type Job = components["schemas"]["JobOut"];
@@ -45,7 +40,7 @@ export class ApiError extends Error {
 
 /** What to put on the screen when a request failed.
  *
- * The backend writes the detail of a 4xx for the operator (CLAUDE.md 2.3.3), so that sentence is
+ * The backend writes the detail of a 4xx for the operator (CLAUDE.md · 设计取舍), so that sentence is
  * the message and the status line in front of it is noise. A 5xx detail is written for
  * nobody - "500 Internal Server Error" is a report, not advice - so it keeps its code.
  */

@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ..core.models import SafetyFacts, TokenMetrics
+from ..core.parse import as_float as _num
 
 NA = "—"
 #: List sections are capped: the writer needs the shape of the distribution, not every row,
@@ -34,13 +35,6 @@ def _val(source: Any, name: str) -> Any:
     if isinstance(source, Mapping):
         return source.get(name)
     return getattr(source, name, None)
-
-
-def _num(value: Any) -> float | None:
-    try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
 
 
 def money(value: Any) -> str:

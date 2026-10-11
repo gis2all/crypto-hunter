@@ -35,11 +35,11 @@ export function TopBar({
    *  panel rises from under this bar, so the switch stands at the left end of the same
    *  bar: it acts on the page rather than on one tab, which is why it is not a tab.
    *  Folding a round the operator stopped hands the page back to the newest round with
-   *  cards (9.2.8) - it is the callback's business, and the panel's only way out. */
+   *  cards - it is the callback's business, and the panel's only way out. */
   runPanelOpen: boolean;
   onToggleRunPanel: () => void;
   /** No round in the library yet means no panel to fold. A switch that opens nothing
-   *  costs the reader a click, so this one is drawn dimmed and refuses it (8.3.4). */
+   *  costs the reader a click, so this one is drawn dimmed and refuses it. */
   hasRun: boolean;
   onOverview: () => void;
   onExport: () => void;

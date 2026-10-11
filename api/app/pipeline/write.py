@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import json
 
-from ..api.v1 import forms
 from .. import out
-from ..core import filters
+from ..core import caliber, filters
 from ..report import lexicon
 from .decide import RoundResult
 
@@ -248,7 +247,7 @@ def store_round(conn, result: RoundResult) -> None:
         "batch_label": _batch_label(result.run_id, settings),
         "rule_counts": _rule_count_rows(counts),
         "changes": result.changes,
-        "caliber": forms.caliber_text({**settings, "id": result.chain_id}),
+        "caliber": caliber.text({**settings, "id": result.chain_id}),
         "sources": result.sources,
         # The run panel's 淘汰 row is the strip's own number: the filter rejects a token
         # before the round spends a token on it, so there is no third column to subtract.

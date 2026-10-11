@@ -493,7 +493,7 @@ export interface paths {
          * @description Empty 最近搜索 of the records that are only records.
          *
          *     Never a card on the shelf: a row the reader starred is a favourite, and the star is the
-         *     only write that ends that (8.8.4). A list that had nothing to drop answers false, which
+         *     only write that ends that. A list that had nothing to drop answers false, which
          *     is one answer rather than an error - the same way forgetting a card twice is not one.
          */
         delete: operations["clear_recent_lookups_api_v1_lookup_recent_delete"];
@@ -604,10 +604,10 @@ export interface paths {
          * @description A really small real call per key: the writing path itself, not a reachable endpoint.
          *
          *     Reachability is not the question a person is asking when they press this - an endpoint
-         *     that answers 200 with an empty message is the failure this repo has already paid for once
-         *     (6.4.8). So the reading that comes back is whether text arrived. Every key is asked, not
+         *     that answers 200 with an empty message is the failure this repo has already paid for once.
+         *     So the reading that comes back is whether text arrived. Every key is asked, not
          *     just the first: the standby has never answered anything, and a round only meets it on the
-         *     day the primary is refused (8.9.7).
+         *     day the primary is refused.
          */
         post: operations["post_test_api_v1_system_test_post"];
         delete?: never;
@@ -650,9 +650,9 @@ export interface components {
          * ActionOut
          * @description A button a group carries. What it does is the page's business; what it says is not.
          *
-         *     The label travels with it (2.3.3), and the id is the one word the page does act on - it is
-         *     the map from a name to a handler, which is behaviour and belongs to the page. A group with
-         *     no actions draws no strip.
+         *     The label travels with it (CLAUDE.md · 设计取舍), and the id is the one word the page does act
+         *     on - it is the map from a name to a handler, which is behaviour and belongs to the page. A
+         *     group with no actions draws no strip.
          */
         ActionOut: {
             /** Id */
@@ -1702,7 +1702,7 @@ export interface components {
          * @description What `/models` answered, and which row the answer is for.
          *
          *     `apply_to` travels so the page can offer the list on the right row without learning a key
-         *     name - the same reason the rows themselves arrive composed (8.9.1).
+         *     name - the same reason the rows themselves arrive composed.
          */
         SystemModelsOut: {
             /** Ok */
@@ -1748,7 +1748,7 @@ export interface components {
         };
         /**
          * SystemTestOut
-         * @description One small real call per configured key, in the order a round would try them (8.9.7).
+         * @description One small real call per configured key, in the order a round would try them.
          */
         SystemTestOut: {
             /** Ok */
@@ -1758,7 +1758,7 @@ export interface components {
         };
         /**
          * SystemXOut
-         * @description Whether the X session still works, in the client's own words (8.9.10).
+         * @description Whether the X session still works, in the client's own words.
          *
          *     One sentence rather than 测试连接's line per key: there is one session, and it either is
          *     logged in or says why it is not.

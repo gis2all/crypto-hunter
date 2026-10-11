@@ -51,8 +51,7 @@ from typing import Any, Callable, Mapping, Sequence
 from .. import cancel
 from .. import llm
 from ..config import chain_name, chain_thesis
-from ..core.models import ca_key
-from ..pipeline import collect
+from ..core.models import ca_key, share_site
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
 from ..search.identify import fetch_page
@@ -694,7 +693,7 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
             # snapshot a card is drawn from is written from the pool decide holds, so the
             # card's 官网 line is decided here or nowhere. A caller whose target carries no
             # metrics - a test's stub - is left alone.
-            collect.share_site((targets_by_ca.get(ca) or {}).get("metrics"),
+            share_site((targets_by_ca.get(ca) or {}).get("metrics"),
                                (gathered.get(ca) or {}).get("site"))
             return ca, payload
         except cancel.RoundCancelled:

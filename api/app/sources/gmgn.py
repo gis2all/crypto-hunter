@@ -15,11 +15,12 @@ It returns two different things and both matter:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from ..core.models import SafetyFacts, TokenMetrics, ca_key
-from .base import social_url, web_url
+from ..core.parse import as_float as _num, positive_float as _positive, utc_from_unix
+from .base import socials_from, website_list
 from .http import SourceError, UA_GMGN, cached, json_get, pmap
 
 BASE = "https://gmgn.ai"
@@ -90,19 +91,6 @@ def _bool(value: Any) -> bool | None:
     return None
 
 
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number
-
-
-def _positive(value: Any) -> float | None:
-    number = _num(value)
-    return number if number and number > 0 else None
-
-
 def _first(*values: Any) -> Any:
     """The first value that is not None.
 
@@ -123,13 +111,7 @@ def _fraction_to_pct(value: Any) -> float | None:
 
 def _when(value: Any) -> datetime | None:
     """GMGN's timestamps are unix seconds. A zero is "no answer", not 1970."""
-    seconds = _num(value)
-    if not seconds or seconds <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError):
-        return None
+    return utc_from_unix(value, require_positive=True)
 
 
 def _count(value: Any) -> int | None:
@@ -480,14 +462,8 @@ def _honeypot(value: Any) -> bool | None:
 
 
 def _websites(row: dict) -> list[str]:
-    url = web_url(row.get("website"))
-    return [url] if url else []
+    return website_list(row.get("website"))
 
 
 def _socials(row: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for key, kind in (("twitter_username", "twitter"), ("telegram", "telegram")):
-        url = social_url(kind, row.get(key))
-        if url:
-            out[kind] = url
-    return out
+    return socials_from(row, (("twitter_username", "twitter"), ("telegram", "telegram")))

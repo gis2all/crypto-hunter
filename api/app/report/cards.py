@@ -495,11 +495,6 @@ def spark(metrics: Mapping[str, Any]) -> dict:
     }
 
 
-#: What a stored evidence page reads as, when the caller did not already name it. The name
-#: is decided by the research pass (the side that knows what a kind is); this is the
-#: fallback for a kind it did not recognise, so a new kind shows up as itself, not as blank.
-
-
 #: The footer order: where to trade, then where the project lives. The three trackers come
 #: off the snapshot; the three after them are the project's own pages, which the 社区活跃度
 #: block no longer repeats - a block that argues about 互动率 and 持续性 is not where a reader

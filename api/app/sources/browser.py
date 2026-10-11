@@ -11,6 +11,13 @@ Four to six seconds a page against a fraction of a second is why this is a fallb
 than a lane. Twenty pages through one shared browser were measured at 5.0 s of wall clock,
 so the browser is started once and the open tabs are capped.
 
+The pages are strangers' pages: every one arrived as a link a round harvested, and none was
+vouched for. On 2026-10-12 one of them walked the browser to a domain the machine's own
+security software recognized and blocked, and this file could not say which URL it was - it
+kept no record of what it had opened. So every render writes the address it asked for, the
+address it ended on and the requests that failed, and Chromium's sandbox - which Playwright
+leaves off by default - stays on. See SANDBOX.
+
 Playwright's synchronous API cannot be driven from several threads - it raises and takes the
 browser down under them - so the one event loop lives on a thread of its own and callers hand
 it work from wherever they are. The application runs fifteen of those threads at a time.
@@ -23,6 +30,7 @@ import atexit
 import logging
 import threading
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +51,48 @@ STARTUP = 45.0
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/153.0.0.0 Safari/537.36")
 
+#: Chromium's own sandbox, left on. Playwright passes --no-sandbox unless this is asked for,
+#: and this lane loads whatever link a round harvested. Turning it on was measured on
+#: 2026-10-12 against eight sites the rounds had already read: the same launch, and the same
+#: document - six of the eight to the same word count - at a median of 4.5 s a page against
+#: 5.0 s with the flag. Checked against the launched process rather than by reading this line:
+#: the flag is gone from its command line.
+SANDBOX = True
+
+
+def _host(url: str) -> str:
+    """The host a URL names, lowercased, or "" when it names none."""
+    return (urlsplit(url).hostname or "").lower()
+
+
+def _same_site(left: str, right: str) -> bool:
+    """Whether two hosts are one site.
+
+    A scheme change, and a bare name against its own `www.`, are a site's housekeeping
+    rather than a jump, and reading either as one would make this log noise nobody reads.
+    """
+    if left == right:
+        return True
+    return left.endswith("." + right) or right.endswith("." + left)
+
+
+def _record(url: str, final: str, failed: list[tuple[str, str]]) -> None:
+    """One line per render: the address asked for, the address it ended on, what never came.
+
+    This lane kept no record of the pages it opened, which is why a page that walked the
+    browser to a domain the machine's own security software had blocked could not be traced
+    back to the token that paid for it (2026-10-12). The failed requests are the other half of
+    that answer: a request the machine refused arrives here as `net::ERR_BLOCKED_BY_CLIENT`,
+    named by host.
+    """
+    missed = sorted({"%s (%s)" % (_host(item) or item, why) for item, why in failed})
+    if len(missed) > 6:
+        missed = missed[:6] + ["+%d more" % (len(missed) - 6)]
+    tail = " | failed: " + ", ".join(missed) if missed else ""
+    log.info("render %s -> %s%s", url, final, tail)
+    if not _same_site(_host(url), _host(final)):
+        log.warning("render %s ended on another host: %s", url, final)
+
 
 class Chromium:
     """The playwright calls and nothing else, so the rest of this file can be tested."""
@@ -60,15 +110,29 @@ class Chromium:
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        self._browser = await self._playwright.chromium.launch(headless=True,
+                                                              chromium_sandbox=SANDBOX)
         self._context = await self._browser.new_context(user_agent=UA)
 
     async def page(self, url: str) -> str:
         tab = await self._context.new_page()
+        # Attached before the navigation, not after: a request the machine refuses is
+        # answered before the document finishes loading, and a listener attached afterwards
+        # would miss exactly the events this line exists for.
+        failed: list[tuple[str, str]] = []
+        tab.on("requestfailed", lambda request: failed.append(
+            (request.url, request.failure or "failed")))
         try:
-            await tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
-            await tab.wait_for_timeout(self.settle)
-            return await tab.content()
+            try:
+                await tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+                await tab.wait_for_timeout(self.settle)
+                document = await tab.content()
+            finally:
+                # Written even when the navigation itself failed, which is the case worth
+                # reading most: a document the machine refused never gets this far, and the
+                # address it was refused at is the one line that answers "which URL".
+                _record(url, tab.url, failed)
+            return document
         finally:
             await tab.close()
 
@@ -172,7 +236,9 @@ class Renderer:
             self._one = self.driver(settle=self.settle, timeout=self.timeout)
             await self._one.start()
         except Exception as exc:
-            log.warning("no browser, so no rendering this process: %r", exc)
+            log.error("no browser, so no page will be rendered for the rest of this process:"
+                      " %r - every later render answers with an empty document, and nothing"
+                      " downstream can tell that from a site with nothing on it", exc)
             self._refused = True
             self._ready.set()
             return

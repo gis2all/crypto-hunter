@@ -177,6 +177,43 @@ class TokenMetrics(BaseModel):
     provenance: dict[str, str] = Field(default_factory=dict)
 
 
+def share_site(row: TokenMetrics | dict | None, url: str) -> None:
+    """Put the site a search just proved at the head of one row's websites.
+
+    The card prints exactly one site, and until this ran it printed only what the sources
+    listed - a token whose site the search learned off the project's own page had no 官网
+    line on it at all. Prepend rather than append: the sites a union of launchpad rows
+    produces arrive in whatever order the sources were read, and the page that was actually
+    read and tied back to the token is the one worth printing.
+
+    `row` is a TokenMetrics in the collect pass and a plain dict on the paths that never
+    built one - a CA search, and the research pass filling in the row it was handed - so both
+    are written. `search` joins the provenance list because it is one of the sources this
+    union field is now built from, which is what keeps "where did this link come from"
+    answerable.
+    """
+    url = str(url or "").strip()
+    if row is None or not url:
+        return
+    if isinstance(row, dict):
+        sites = [str(site) for site in (row.get("websites") or [])]
+        provenance = dict(row.get("provenance") or {})
+    else:
+        sites = [str(site) for site in (row.websites or [])]
+        provenance = dict(row.provenance or {})
+    sites = [url] + [site for site in sites if site and site != url]
+    names = [name for name in str(provenance.get("websites") or "").split(",") if name]
+    if "search" not in names:
+        names.append("search")
+    provenance["websites"] = ",".join(names)
+    if isinstance(row, dict):
+        row["websites"] = sites
+        row["provenance"] = provenance
+    else:
+        row.websites = sites
+        row.provenance = provenance
+
+
 class SafetyFacts(BaseModel):
     """Cross-source safety evidence. None means "not established", never "safe"."""
 

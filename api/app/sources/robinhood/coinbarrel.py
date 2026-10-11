@@ -26,11 +26,11 @@ never the one that answers 社媒.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
+from ...core.parse import positive_float as _num, utc_from_unix as _iso
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://coinbarrel.com/market/api/v1"
@@ -46,15 +46,6 @@ UNIVERSE_TTL = 900
 SORT = "volume_sol_24h"
 
 
-def _num(value: Any) -> float | None:
-    """A measurement: anything at or below zero is "not established", not a zero."""
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
 def _signed(value: Any) -> float | None:
     """A change: zero is a real reading and negatives are the common case."""
     try:
@@ -65,13 +56,6 @@ def _signed(value: Any) -> float | None:
 
 def _rate(row: dict) -> float | None:
     return _num(row.get("quote_usd_rate"))
-
-
-def _iso(seconds: Any) -> datetime | None:
-    try:
-        return datetime.fromtimestamp(float(seconds), tz=timezone.utc)
-    except (TypeError, ValueError):
-        return None
 
 
 class CoinBarrel:

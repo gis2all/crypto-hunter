@@ -7,31 +7,9 @@ every assertion here is about which token was asked about, when, and what came o
 from app.core import filters, funnel
 from app.core.models import SafetyFacts, TokenMetrics
 from app.pipeline.decide import GATE_LIMIT, RESEARCH_LIMIT, Engine, _gate_cap, _research_cap, _rule_note
+from conftest import metrics_row as _row, settings_dict as _settings
 
 CHAIN = {"id": "arc", "label": "Arc", "pipeline": {"scan_limit": 5000}, "sources": []}
-
-
-def _settings(**over):
-    settings = {
-        "schedule": {},
-        "scoring": {"onchain_weight": 55, "offchain_weight": 45},
-        "report": {"per_round": 2},
-        "pipeline": {
-            "enrich_limit": 3,
-            "prefilter": {"market_cap_min_usd": 50_000, "market_cap_max_usd": 200_000,
-                          "liquidity_min_usd": 8_000, "holders_min": 150},
-            "safety": {},
-        },
-    }
-    settings.update(over)
-    return settings
-
-
-def _row(ca, **kw):
-    base = dict(ca=ca, symbol=ca[-4:].upper(), market_cap_usd=100_000, liquidity_usd=30_000,
-                volume_24h_usd=10_000, holders=500, top10_pct=10.0, bundling_pct=1.0)
-    base.update(kw)
-    return TokenMetrics(**base)
 
 
 class FakeSource:

@@ -8,11 +8,10 @@ everything except the safety verdict is already in the cached row.
 
 from __future__ import annotations
 
-from typing import Any
-
 from ...core.filters import is_empty_shell
 from ...core.models import SafetyFacts, TokenMetrics
-from ..base import social_url, web_url
+from ...core.parse import positive_float as _num, utc_from_unix as _iso
+from ..base import SOCIAL_COLUMNS, socials_from, website_list
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://api.radardex.pro"
@@ -22,14 +21,6 @@ PAGE_LIMIT = 2000
 #: that is too small and too quiet to rank yet.
 SORTS = ("mcap", "volume24", "firstSeen")
 UNIVERSE_TTL = 900
-
-
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
 
 
 class RadarDEX:
@@ -112,23 +103,10 @@ class RadarDEX:
 
 
 def _socials(row: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for key, kind in (("twitter", "twitter"), ("telegram", "telegram"), ("discord", "discord")):
-        url = social_url(kind, row.get(key))
-        if url:
-            out[kind] = url
-    return out
+    return socials_from(row, SOCIAL_COLUMNS)
 
 
 def _websites(row: dict) -> list[str]:
-    url = web_url(row.get("website"))
-    return [url] if url else []
+    return website_list(row.get("website"))
 
 
-def _iso(seconds: Any) -> Any:
-    from datetime import datetime, timezone
-
-    try:
-        return datetime.fromtimestamp(float(seconds), tz=timezone.utc)
-    except (TypeError, ValueError):
-        return None

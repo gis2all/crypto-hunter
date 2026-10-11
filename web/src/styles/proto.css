@@ -109,7 +109,7 @@ code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
    card's identity, and a bordered pill under a name reads as a form field. */
 .ca{color:var(--fg)}
 /* min-height is the line this row prints plus the 8px under it, so the row a searched card leaves
-   empty is the same row a round card fills (8.8.2). */
+   empty is the same row a round card fills. */
 .card-ranks{display:flex;align-items:center;justify-content:flex-end;padding:0 12px 8px;
   min-height:calc(10.5px * 1.55 + 8px);font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 .ranks{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

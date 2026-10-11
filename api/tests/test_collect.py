@@ -6,8 +6,8 @@ first source in the order carries the field, so an empty list wins it and the so
 actually answered is never read.
 """
 
-from app.core.models import TokenMetrics
-from app.pipeline.collect import merge, share_site
+from app.core.models import TokenMetrics, share_site
+from app.pipeline.collect import merge
 
 
 def test_an_empty_list_does_not_win_a_field():

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="210" viewBox="0 0 880 210" role="img" aria-label="一轮流水线的十个阶段">
+<style>
+.b{fill:#ECECFF;stroke:#9370DB;stroke-width:1.1}
+.t{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif;font-size:13px;fill:#333;text-anchor:middle}
+.a{stroke:#9370DB;stroke-width:1.1;fill:none}
+.h{fill:#9370DB;stroke:none}
+@media (prefers-color-scheme:dark){.b{fill:#2d333b;stroke:#768390}.t{fill:#adbac7}.a{stroke:#768390}.h{fill:#768390}}
+</style>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="h" d="M0,0 L10,5 L0,10 Z"/></marker></defs>
+<rect class="b" x="18.0" y="18.0" width="97.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="66.5" y="54.0">拉取扫描源</text>
+<rect class="b" x="163.0" y="18.0" width="94.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="210.0" y="54.0">按 CA 去重</text>
+<rect class="b" x="305.0" y="18.0" width="131.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="370.5" y="45.0">硬过滤 · 补齐前</text>
+<text class="t" x="370.5" y="63.0">市值、空壳</text>
+<rect class="b" x="484.0" y="18.0" width="199.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="583.5" y="45.0">逐币补齐链上数据</text>
+<text class="t" x="583.5" y="63.0">持有人、Top10、捆绑、成交</text>
+<rect class="b" x="731.0" y="18.0" width="131.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="796.5" y="45.0">硬过滤 · 补齐后</text>
+<text class="t" x="796.5" y="63.0">与安全判定</text>
+<rect class="b" x="238.0" y="128.0" width="58.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="267.0" y="164.0">归档</text>
+<rect class="b" x="344.0" y="128.0" width="84.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="386.0" y="164.0">落库出卡</text>
+<rect class="b" x="476.0" y="128.0" width="83.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="517.5" y="164.0">选取前 N</text>
+<rect class="b" x="607.0" y="128.0" width="84.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="649.0" y="164.0">打分排序</text>
+<rect class="b" x="739.0" y="128.0" width="123.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="800.5" y="164.0">链下调研与写作</text>
+<path class="a" marker-end="url(#ar)" d="M121.0,50.0 L159.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M263.0,50.0 L301.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M442.0,50.0 L480.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M689.0,50.0 L727.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M338.0,160.0 L300.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M470.0,160.0 L432.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M601.0,160.0 L563.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M733.0,160.0 L695.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M796.5,82.0 L796.5,105.0 L800.5,105.0 L800.5,124.0"/>
+</svg>

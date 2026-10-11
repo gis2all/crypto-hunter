@@ -76,7 +76,7 @@ def clear_recent_lookups() -> dict:
     """Empty 最近搜索 of the records that are only records.
 
     Never a card on the shelf: a row the reader starred is a favourite, and the star is the
-    only write that ends that (8.8.4). A list that had nothing to drop answers false, which
+    only write that ends that. A list that had nothing to drop answers false, which
     is one answer rather than an error - the same way forgetting a card twice is not one.
     """
     return {"removed": ca_lookup.forget_all() > 0}

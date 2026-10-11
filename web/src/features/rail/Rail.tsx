@@ -85,7 +85,7 @@ export function Rail({
         </div>
         {/* The one row that is neither a chain nor a shelf: this machine's own wiring. It sits
             at the bottom of the list because it is global, like the theme switch below it, and
-            it is a Place all the same - so exactly one row lights (8.3.8) and it can be left
+            it is a Place all the same - so exactly one row lights and it can be left
             for on a reload (prefs). */}
         <div className="nav-foot">
           <div

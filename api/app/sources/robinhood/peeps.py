@@ -17,10 +17,8 @@ on this chain.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
-
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
+from ...core.parse import positive_float as _num, utc_from_iso_text as _iso
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://peeps.wtf/api/launchpad/tokens"
@@ -28,21 +26,6 @@ PAGE_SIZE = 100
 MAX_PAGES = 8
 UNIVERSE_TTL = 900
 TAB = "trending"
-
-
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
-def _iso(text: Any) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(text).replace("Z", "+00:00")).astimezone(timezone.utc)
-    except (TypeError, ValueError):
-        return None
 
 
 class Peeps:

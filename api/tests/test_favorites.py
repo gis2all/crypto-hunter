@@ -71,7 +71,7 @@ def _shelf(client):
 
 
 def _search_card(ca=CA, symbol="ABC"):
-    """A card the way `lookup.read` writes it: no pool, so no rank and no score (8.8.2)."""
+    """A card the way `lookup.read` writes it: no pool, so no rank and no score."""
     return {"ca": ca, "sym": symbol, "score": None, "rank": 0}
 
 

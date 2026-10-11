@@ -17,11 +17,9 @@ the source's own answer, not a gap to patch, and DexScreener leads the field any
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
-
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
-from ..base import social_url, web_url
+from ...core.parse import positive_float as _num, utc_from_iso_text as _iso
+from ..base import SOCIAL_COLUMNS, socials_from, website_list
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://api.pez.family/api"
@@ -29,23 +27,6 @@ BASE = "https://api.pez.family/api"
 PAGE_SIZE = 100
 MAX_PAGES = 8
 UNIVERSE_TTL = 900
-
-
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
-def _iso(text: Any) -> datetime | None:
-    """PEZ writes `2026-09-14T16:56:15.000Z`. A value that will not parse is a gap, and a
-    gap must not become a timestamp of the epoch."""
-    try:
-        return datetime.fromisoformat(str(text).replace("Z", "+00:00")).astimezone(timezone.utc)
-    except (TypeError, ValueError):
-        return None
 
 
 class Pez:
@@ -133,18 +114,8 @@ def _change_pct(row: dict) -> float | None:
 
 
 def _socials(row: dict) -> dict[str, str]:
-    out: dict[str, str] = {}
-    source = row.get("socials") or {}
-    for key, kind in (("twitter", "twitter"), ("telegram", "telegram"),
-                      ("discord", "discord")):
-        url = social_url(kind, source.get(key))
-        if url:
-            out[kind] = url
-    return out
+    return socials_from(row.get("socials") or {}, SOCIAL_COLUMNS)
 
 
 def _websites(row: dict) -> list[str]:
-    """PEZ keeps the site inside `socials`, next to the handles, so it cannot be read by the
-    per-token loop that reads `websites` off the metrics."""
-    url = web_url((row.get("socials") or {}).get("website"))
-    return [url] if url else []
+    return website_list((row.get("socials") or {}).get("website"))

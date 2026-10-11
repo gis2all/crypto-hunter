@@ -11,7 +11,7 @@ import { onlyRecords, rowKey, shortCa } from "./rows";
 /** 搜索管理: the records 最近搜索 is holding, and the two writes that drop them.
  *
  *  最近搜索 grows by itself - every address ever read leaves a card behind, which is what
- *  makes a second look at one free (8.8.5) - so a page that could only add to it would be a
+ *  makes a second look at one free - so a page that could only add to it would be a
  *  list the reader cannot tidy. This drawer is that tidy-up, and it is a drawer for the same
  *  reason 配置管理 is one: it edits the list itself while the page below reads the list.
  *
@@ -19,7 +19,7 @@ import { onlyRecords, rowKey, shortCa } from "./rows";
  *  looked this up" means. A row the reader starred is not only a record - it is a card on
  *  the shelf - so those rows are greyed out with the reason on the button instead of being
  *  offered a press that the backend would refuse: the star is the only write that ends a
- *  collection (8.8.4), and this drawer is not a second one (ConfigManager 对 默认 / 生效
+ *  collection, and this drawer is not a second one (ConfigManager 对 默认 / 生效
  *  同样处理). 清空 says how many it would take before it takes them.
  */
 
@@ -32,7 +32,7 @@ export function LookupManager({
 }: {
   rows: Favorite[];
   /** The (chain, CA) pairs on the shelf, off `useFavorites` - the one place the shelf is
-   *  written (8.8.4), so the star a row is drawn from and the star it is guarded by cannot
+   *  written, so the star a row is drawn from and the star it is guarded by cannot
    *  disagree. */
   kept: Set<string>;
   labels: Map<string, string>;

@@ -29,11 +29,12 @@ dollar on the same token), and the row's own high and day change are not publish
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from ...core.models import SafetyFacts, TokenMetrics, ca_key
-from ..base import social_url
+from ...core.parse import positive_float as _num, utc_from_unix
+from ..base import socials_from
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://launch-mint-v1.raydium.io"
@@ -51,27 +52,10 @@ UNIVERSE_TTL = 900
 HTTP = re.compile(r"^https?://")
 
 
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
 def _when(value: Any) -> datetime | None:
     """`createAt` is milliseconds. A value that will not read as one is a gap, and a gap
     must not become a timestamp of the epoch."""
-    try:
-        millis = float(value)
-    except (TypeError, ValueError):
-        return None
-    if millis <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(millis / 1000.0, tz=timezone.utc)
-    except (OverflowError, OSError, ValueError):
-        return None
+    return utc_from_unix(value, unit="ms", require_positive=True)
 
 
 class LaunchLab:
@@ -146,5 +130,4 @@ def _image(value: Any) -> str | None:
 
 
 def _socials(row: dict) -> dict[str, str]:
-    url = social_url("twitter", row.get("twitter"))
-    return {"twitter": url} if url else {}
+    return socials_from(row, (("twitter", "twitter"),))

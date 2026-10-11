@@ -133,7 +133,7 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
   const [key, setKey] = useState<SortKey>("saved");
   const [dir, setDir] = useState<SortDir>("desc");
   /** 展开卡片 / 收起卡片 reaches every card at once - the same bulk edit a radar bar and
-   *  the 搜索 page make (8.3.7). The folds are uncontrolled <details>, so the tick is what
+   *  the 搜索 page make. The folds are uncontrolled <details>, so the tick is what
    *  remounts them and a manual toggle keeps working until the next click. */
   const [bulk, setBulk] = useState({ open: false, tick: 0 });
 
@@ -180,7 +180,7 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
       if (key === "score") {
         const x = a.card.score ?? null;
         const y = b.card.score ?? null;
-        // A card with no score is not a card on 0 (8.8.2) - a searched token has no pool to
+        // A card with no score is not a card on 0 - a searched token has no pool to
         // be a percentile of - so it sinks in both directions instead of leading 从低到高.
         if (x === null || y === null) return x === y ? tie(a, b) : x === null ? 1 : -1;
         return flip * (x - y) || tie(a, b);
@@ -207,7 +207,7 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
           <b>收藏</b>
         </div>
         <div className="fav-tools">
-          {/* The same bulk edit a radar bar makes (8.3.7). One label, two states, so the
+          {/* The same bulk edit a radar bar makes. One label, two states, so the
               reader learns it once and it always says what the next click does. */}
           <button className="btn sec"
             onClick={() => setBulk((prev) => ({ open: !prev.open, tick: prev.tick + 1 }))}>
@@ -219,7 +219,7 @@ export function FavoritesView({ chains }: { chains: Chain[] }) {
               beside 导出 rather than under a heading (2026-10-02, user). */}
           <input className="fav-search" value={query} placeholder="过滤 symbol / CA"
             onChange={(event) => setQuery(event.target.value)} />
-          {/* Locked like the topbar's 导出 and for the same reason (9.5.1): the handler is
+          {/* Locked like the topbar's 导出 and for the same reason: the handler is
               wired, the control says so. */}
           <button type="button" className="btn sec demo" disabled
             title="导出尚未接入（当前不做任何事）"

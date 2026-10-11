@@ -23,6 +23,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..core.models import SafetyFacts, TokenMetrics, ca_key
+from ..core.parse import positive_float as _num
 from .http import SourceError, cached, explorer_headers, json_get
 from .onchain import BLOCKSCOUT_TRANSPORT, explorer_url
 
@@ -36,14 +37,6 @@ HOLDERS_FLOOR = 50
 MAX_PAGES = 400
 UNIVERSE_TTL = 1800
 ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
-
-
-def _num(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
 
 
 def _holders(row: dict) -> int:
