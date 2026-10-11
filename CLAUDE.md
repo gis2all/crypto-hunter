@@ -1,524 +1,154 @@
----
-doc: CLAUDE.md
-role: 接手文档 —— 读完能自己往下推
-stack:
-  backend: Python 3.13 + FastAPI + SQLite(WAL) + httpx（GMGN 要 TLS 指纹，走 curl-cffi），uv 管理，依赖精确 pin
-  frontend: React + TypeScript(strict) + Vite + TanStack Query，无 UI 组件库，样式全部自写
-  deploy: 同域单进程 —— FastAPI 托管 web/dist，只有一个端口 8787；dev 用 Vite 5173，/api 代理到 8787
-  schedule: 服务内 ticker + runs 表唯一约束做幂等（run_key），不用 APScheduler
-  icon: lucide-react，统一走 web/src/components/Icon.tsx
-run: cd api; uv run python -m app
-build: cd web; npm run build
-verify: cd api; uv run python -m pytest -q
-truth:                                           # 每个领域的唯一出处，本文件只写规矩、不抄内容
-  - api/app/store/schema.sql      数据模型
-  - web/src/styles/               视觉（tokens -> proto -> app，加载顺序即优先级）
-  - config/chains/*.example.yaml  出厂设定模板（跟仓库）；同名的 *.yaml 是本机那份，首次从模板播种、不进 git
-  - config/system.yaml            本机接线（LLM 网关 / X 会话 / 日志等级）；页面「系统设置」是它的表
-  - api/app/sources/<chain>/SOURCES.md  逐源端点、传输方式、实测结论
----
+# 1. 项目定位
 
-# 1. 这份文档怎么用
+## 产品定义
 
-## 1.1 图谱优先：先问 code-review-graph
+每 3 小时从一条链上的数千个代币中挑出 N 个（默认 5，即 `per_round`），每个附一份两分钟内可读完的判断。本项目是研究流水线，不是行情终端。
 
-本仓已建 `.code-review-graph/graph.db`。定位代码、追调用链、讲架构、评影响、动手前理解代码，**先调 `code-review-graph` MCP 工具**，不要默认全文读取或全仓搜索。
+后端为 Python 3.13、FastAPI、SQLite(WAL)、httpx（GMGN 需要 TLS 指纹，走 curl-cffi），由 uv 管理；前端为 React、TypeScript(strict)、Vite、TanStack Query，不使用 UI 组件库，样式全部自写。部署为同域单进程：FastAPI 托管 `web/dist`，仅一个端口 8787。排程由服务内 ticker 与 `runs` 表的唯一约束共同保证幂等（`run_key`），不使用 APScheduler。
 
-| 步 | 用法 |
-| --- | --- |
-| 1 | 起步一律 `get_minimal_context_tool`（带 `task`），由它决定下一步用哪个工具。 |
-| 2 | 架构用 `get_architecture_overview_tool`；评审改动用 `detect_changes_tool` ＋ `get_review_context_tool`；调用 / 依赖关系用 `query_graph_tool` / `semantic_search_nodes_tool`。 |
-| 3 | 影响面用 `get_impact_radius_tool` / `get_affected_flows_tool`，别靠猜文件名。 |
-| 4 | 图缺失或过期先 `build_or_update_graph_tool`。**`head_matches_build` 只比 commit**：改了代码没提交时它仍是 `true` —— 改完代码就 update，别拿它当新鲜度。**新增文件在进 git 之前图谱看不见**（它按 `git ls-files` 枚举，全量 `build` 也不兜底）—— 查新模块查不到，不等于它不存在。 |
+## 不做的事
 
-## 1.2 维护这份文档
+交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。当前接入 Arc、Robinhood、Solana、BSC 四条链，左栏只渲染 `enabled` 的链。
 
-| 规则 | 内容 |
-| --- | --- |
-| 写什么 | **只写「读代码看不出来」的两类：因果 / 意图，和踩过坑的陷阱。** 打开文件就能读到的（数值、类名、几何、位置）不写 —— 理由写在代码注释里，那里不会漂。判据：把这条删掉，读者下次会不会**写错**？ |
-| 不记改动史 | 改了口径就**改写**那一条，不要追加「某天起改成…」。过程与当时的实测数字属于提交信息。 |
-| 何时改 | 碰了分层 / 契约 / 运行方式 / 数据模型 / 视觉规则，就回来改这里。 |
-| 编号 | 正文只写编号；一个编号下可以有多行。**编号有空洞是正常的**，那条要么进了代码注释、要么不再需要。跨节引用只写编号 —— 代码注释也在引这些号（`rg` 全仓搜那个编号就知道），**删一条规则前先搜一遍**：改过号或删过规则的那条注释会变成一个找不到的地址。 |
-| 视觉真相 | 只有一处：`web/src/styles/`，没有别的设计源。 |
+## 红线
 
-# 2. 一页纸
+- 分层不成环：前端不接触数据源与数据库；后端不内嵌 HTML（只托管 `web/dist`）；`api/app/core/` 内不得有 IO。
+- 一个源一个适配器，源与源互不感知：同名指标的取值由 `pipeline/collect.py` 的 `DEFAULT_PRIORITY` 与 `FIELD_PRIORITY` 决定，与调用顺序无关。
+- 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 提供，前端不识别任何一条。例外是一轮的「口径」三行位于 `core/caliber.py`：落库与页面都需输出同一句，两边各写一份即产生漂移。
+- 分数只在后端计算：前端不计分、不补数，页面上的每个数字都来自 `/api/v1`。
+- 一轮只写一次：卡片文字在落库时即为终稿，没有任何阶段回头改写已发布的报告。
+- 缺值语义为未知：缺失的数是 `None` 或空，不得用 0 或空字符串替代。
 
-## 2.1 是什么
+# 2. 运行与验证
 
-每 3 小时，从一条链上的几千个币里挑出 N 个（默认 5 ＝ `per_round`），每个附一份两分钟能读完的判断。**研究流水线，不是行情终端。**
+## 启动与构建
 
-## 2.2 不做什么
+```powershell
+cd api; uv run python -m app          # 后端 127.0.0.1:8787，同时托管 web/dist
+cd web; npm install; npm run dev      # 前端 5173，/api 代理到 8787
+cd web; npm run build                 # 生产：tsc -b 与 vite build，随后强制刷新浏览器
+```
 
-交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎。当前接了 **Arc** / **Robinhood** / **Solana** / **BSC**（左栏只渲染 `enabled` 的链）。
+接口类型：Pydantic 是唯一真源 —— 先执行 `cd api; uv run python -m app.export_openapi`，再执行 `cd web; npm run types`；不得手写 DTO。
 
-## 2.3 红线
+## 改动后的验证
 
-| 编号 | 红线 |
-| --- | --- |
-| 2.3.1 | 分层不成环：前端不碰数据源与数据库；后端不内嵌 HTML（只托管 `web/dist`）；`api/app/core/` 里**不许有 IO**。 |
-| 2.3.2 | 一个源一个适配器，源与源互不感知：同名指标取谁的值由 `pipeline/collect.py` 的 `DEFAULT_PRIORITY` / `FIELD_PRIORITY` 决定，不由调用顺序决定。 |
-| 2.3.3 | 文案只在后端：页面上的解释性文案由 `api/app/api/v1/forms.py` 给，前端不认识任何一条文案。**例外**：一轮的「口径」三行在 `core/caliber.py` —— 落库（`pipeline/write`）与页面（`report/assemble`）都要印同一句，两边各写一份就是漂移 |
-| 2.3.4 | 分数只在后端算：前端不算分、不补数，页面上每个数字都来自 `/api/v1`。 |
-| 2.3.5 | 一轮只写一次：卡片文字在落库那一刻就是终稿，没有任何阶段回头改写已发布的报告。 |
-| 2.3.6 | 缺值语义 ＝ 未知：没有的数是 `None` / 空，不许用 0 或空字符串替代。 |
+- 修改 `.py` 后：`cd api; uv run python -m pytest -q` 必须全绿（不记条数），随后重启 API —— 它是常驻进程，不重启运行的仍是旧代码。
+- 修改前端后：`cd web; npm run build`，退出码为 0（内含 `tsc -b`）。
+- 修改 `prompts/*.md` 后：执行 `pytest tests/test_prompts.py`，prompt 内的 JSON 示例需与 `NewTokenEntry` 一致。
+- 修改数据源解析后：执行 `pytest tests/test_<source>.py`，并清理对应前缀缓存。
+- 长命令（build 与 pytest）应将输出重定向到日志后查看末尾，避免把整屏输出写入上下文。
 
-## 2.4 一轮的阶段
+## Windows 本机注意事项
 
-拉扫描源 -> 去重 -> 硬过滤（不花钱那半：市值区间 ＋ 空壳淘汰）-> 补齐链上数据（持有人 / Top10 / 捆绑 / 24h 成交 ＋ 市场口径行情）-> 硬过滤（花钱那半：流动性 / 24h 成交下限 ＋ 筹码 ＋ 零数据）-> 安全判定与距高回撤（判完整池）-> 链下调研与写作（过关池按流动性取前 N）-> 打分排序 -> 选前 N -> 落库出卡 -> 归档 -> 下一轮对比上一轮
+- 不使用 `&&`，改用 `;` 或 `if`；含 `&` 的 URL 需要加引号。
+- 所有写入文件的操作用无 BOM 的 UTF-8；不得用 PowerShell here-string 写非 ASCII 内容，那些字符会被写成 `?`。
+- 终端把中文显示成 `????` 属于显示问题，文件本身没有损坏：应以 UTF-8 读取确认后再下结论。
+- 保存设定会用 `os.replace` 换掉 `config/chains/<chain>.yaml`；目标文件正被别的进程读取时抛出 `PermissionError [WinError 5]`，因此全套测试中偶发一条失败（`test_a_text_knob_can_still_be_cleared`），单独运行时通过、重跑也通过 —— 属于文件抢占，不是代码缺陷。
+- 服务常驻 `127.0.0.1:8787` 并托管 `web/dist`：前端改动后需要 build 并强制刷新浏览器。
+
+# 3. 一轮流水线
+
+拉取扫描源、去重、硬过滤第一半（市值区间与空壳淘汰）、逐币补齐链上数据（持有人、Top10、捆绑、24h 成交与市场口径行情）、硬过滤第二半与安全判定与距高回撤、链下调研与写作、打分排序、选取前 N、落库出卡、归档、下一轮对比上一轮。
 
 | 阶段（时间线键） | 做什么 | 实现 |
 | --- | --- | --- |
 | `pull` | 每个扫描源拉一次全量 | `pipeline/collect.py` |
-| `dedupe` | 按 CA 去重，逐字段按优先级合并 | `collect.py`（6.1.2） |
-| `prefilter` | 硬过滤第一半：粗筛行就能定的规则 | `core/filters.py` `check_prefilter_free`（6.1.3 / 6.1.4） |
-| `topup` | 逐币补齐持有人 / Top10 / 捆绑 / 24h 成交，并带回市场口径行情 | `decide.Engine._top_up`（6.1.9） |
-| `gate` | 硬过滤第二半 ＋ 安全判定与距高回撤，**判完整个过关池** | `check_prefilter_enriched` ＋ `decide.Engine._gate`（6.1.8 / 6.2.8） |
-| `draft` | 链下调研与写作：过关池按流动性取前 `research_limit` 个 | `report/research.py`（6.4） |
-| `score` | 链上分位 ＋ 链下块 = 综合分 | `core/scoring.py`（6.3） |
-| `sharpen` | 选出前 `per_round` ＋ 入选后补读 GeckoTerminal | `decide.Engine._picks`（6.2.10） |
-| `write` | 落库（一笔事务） | `pipeline/write.py`（7.2） |
+| `dedupe` | 按 CA 去重，逐字段按优先级合并 | `collect.py` |
+| `prefilter` | 硬过滤第一半：粗筛行就能定的规则 | `core/filters.py` |
+| `topup` | 逐币补齐持有人 / Top10 / 捆绑 / 24h 成交，并带回市场口径行情 | `decide.Engine._top_up` |
+| `gate` | 硬过滤第二半 ＋ 安全判定与距高回撤，判完整个过关池 | `check_prefilter_enriched` ＋ `decide.Engine._gate` |
+| `draft` | 链下调研与写作：过关池按流动性取前 `research_limit` 个 | `report/research.py` |
+| `score` | 链上分位 ＋ 链下块 ＝ 综合分 | `core/scoring.py` |
+| `sharpen` | 选出前 `per_round`，入选后补读 GeckoTerminal | `decide.Engine._picks` |
+| `write` | 落库（一笔事务） | `pipeline/write.py` |
 
-表的顺序就是 `decide.py` 里 `clock.mark` 的顺序（`write` 在 `run.py`）。**三个粒度别混**：这九个键是耗时日志与运行面板的键；运行面板折成六格（`RunPanel.tsx` 的 `STAGE_PHASES`：`collect` = `pull`、`dedupe` 单列、`prefilter` 含 `prefilter`＋`topup`＋`gate`、`score` 含 `score`＋`sharpen`、`report` 含 `draft`＋`write`、`push` 无阶段）；进度条只用五段（`progress.py` 的 `PHASES`，额度见 9.6）。**加 / 改阶段要三处一起动。**
+顺序依据：不产生费用的规则先跑（一张粗筛行即可判定），需要逐币读数的规则必须排在补齐之后 —— 未判定永不淘汰，因此先付费再裁决；安全判定又必须排在调研之前，否则调研名额会被深而质量差的行占满。
 
-## 2.5 怎么跑
+三种粒度不可混用：这九个键是耗时日志与运行面板的键；运行面板折成六格；进度条只用五段。新增或修改阶段需三处同时改动，细节见 `api/app/pipeline/README.md`。
 
-```powershell
-cd api; uv run python -m app          # 后端 127.0.0.1:8787，生产也只有一个进程，它同时托管 web/dist
-cd web; npm install; npm run dev            # 前端开发 5173，/api 代理到 8787
-cd web; npm run build                       # 生产：tsc -b + vite build，然后强刷浏览器
-```
+# 4. 代码结构
 
-- 接口类型：Pydantic 是唯一真源 → `cd api; uv run python -m app.export_openapi` → `cd web; npm run types`。**不许手写 DTO。**
-- 本机快捷方式 `scripts/*.ps1` **不在仓库里**（`.gitignore` 忽略了 `scripts/`），与上面几条等价。
+- `api/app/api/v1/`：唯一 HTTP 层（`chains`、`runs`、`lexicon`、`settings`、`favorites`、`lookup`、`system`、`health`），页面文案在 `forms.py`。见该目录 `README.md`。
+- `api/app/pipeline/`：一轮的编排（`collect`、`decide`、`states`、`progress`、`run`、`schedule`、`write`）。见 `README.md`。
+- `api/app/core/`：纯逻辑（`filters`、`funnel`、`scoring`、`models`、`parse`、`caliber`），不得有 IO；「0 是否算读数」只由 `parse.py` 与 `sources/base.py` 决定。
+- `api/app/sources/`：一个源一个适配器，跨链的放根目录，只服务一条链的放 `<chain>/`。见 `README.md` 与该链 `SOURCES.md`。
+- `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
+- `api/app/search/`：挖链（识别、发现、抓取、引擎）。见 `README.md`。
+- `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
+- `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
+- `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
+- `api/app/system_settings.py`：系统设置页那张表，读写 `config/system.yaml` 并写入 `os.environ`。
+- `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
+- `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
+- `web/src/features/`：一个页面一个目录；`web/src/components/` 存放通用件；`web/src/styles/` 是视觉的唯一出处。见两份 `README.md`。
+- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）。
+- `data/`：`crypto-hunter.db` 与 `raw/`（每轮原始响应与 HTTP 缓存），不入库。
 
-## 2.6 怎么验（改完必须做）
+# 5. 术语
 
-| 改了什么 | 跑什么 | 通过标准 |
+- 扫描、淘汰、候选、入选：一轮的四个数（`scanned`、`dropped`、`candidates`、`selected`），候选包含入选，四个数一次数出，`scanned = dropped + candidates` 是恒等式。
+- 未判定：表示未问到，不等于不合格 —— 既不计入通过也不计入淘汰。
+- 判定池：通过硬过滤、送入安全判定的那一批，默认全部判定（`gate_limit: 0`，负数按 0 处理）。
+- 调研池：过关池中按流动性取前 `research_limit` 个、本轮实际写入词条的那一批（0 表示全部）。
+- 链上质量与链下调研：综合分的两半，默认权重 55% 与 45%。
+- 词条：一个代币在本轮的链下调研结果（`lexicon` 表一行）；本轮未完成调研的标的为 `pending`，不参与排名，也不显示 0 分。
+- 距高回撤：距历史最高点的跌幅。
+- 貔貅：可买不可卖；它与陷阱占比（GMGN 的 `top_entrapment_trader_percentage`）不是同一个数。
+- 发射台：launchpad，新币多数由其发行，每条链各有自己的发射台。
+- 主池：流动性最大的池。
+- `0`：是答案而非缺失 —— 判空用 `is not None` 而非 `if value:`；集合类型的 `[]` 视为「未答」，不赢走字段。
+- 收藏与搜索记录：同一张 `favorites` 行（主键 `(chain_id, ca)`），区别仅在于 `origin` 与 `kept`；链名、配置、轮次只是随行存储的值，不发生任何级联。
+- 市场口径：一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` 与 `h24`），而非榜单或发射台自报的数值。
+
+# 6. 变更入口
+
+| 变更目标 | 读 | 动 |
 | --- | --- | --- |
-| `.py` | `cd api; uv run python -m pytest -q` | 必须全绿（0 failed），**不记条数**；然后**重启 API**（常驻进程，不重启跑的还是旧代码） |
-| 前端 | `cd web; npm run build` | exit 0（内含 `tsc -b`） |
-| `prompts/*.md` | `pytest tests/test_prompts.py` | prompt 里的 JSON 示例与 `NewTokenEntry` 一致 |
-| 数据源解析 | `pytest tests/test_<source>.py` ＋ 清对应前缀缓存 | 见 7.1 |
-
-长命令（build / pytest）把输出重定向到日志再看尾巴，别把整屏刷进上下文。
-
-## 2.7 本机坑（Windows）
-
-| 坑 | 说明 |
-| --- | --- |
-| PowerShell 语义 | 不要用 `&&`，用 `;` 或 `if`；含 `&` 的 URL 要加引号。 |
-| 写文件一律 UTF-8 无 BOM | 不要用 PowerShell here-string 写非 ASCII 内容；改 `.md` 前先确认是 LF 还是 CRLF。 |
-| 终端里中文显示成 `????` | 是 GBK 显示问题，**文件没坏**，用 UTF-8 读一遍再下结论。 |
-| 跑 pytest 前先想一下常驻服务 | 保存设定会用 `os.replace` 换掉 `config/chains/<chain>.yaml`，目标文件正被别的进程读着时换不动 —— 抛 `PermissionError [WinError 5]`，整套里偶发一条红（`test_a_text_knob_can_still_be_cleared`，重跑就绿）。判据是「单独跑这条过、只在全套里偶尔不过」——那是抢文件，不是代码坏了。 |
-| 服务常驻 `127.0.0.1:8787` | 托管 `web/dist`，前端改完要 build ＋ 强刷。 |
-
-# 3. 任务索引
-
-| 我要做… | 读 | 动 |
-| --- | --- | --- |
-| 加 / 改一个数据源 | 6.2 ＋ 该链的 `SOURCES.md` | 通用源 `api/app/sources/`，链专属源 `api/app/sources/<chain>/`；**新源必须同时进 `registry.ALL` 和 `FIELD_PRIORITY` + `DEFAULT_PRIORITY`**（四个静默的坑见 6.2） |
-| 调硬过滤默认值 | 6.1 | 出厂默认 `config/chains/*.example.yaml`，本机那份是同名 `*.yaml`（首读从模板播种；改模板不覆盖它）。保存后以 `settings_versions` 表为准 |
-| 改评分权重 / 因子 | 6.3 | `core/scoring.py` ＋ 出厂默认 `config/chains/*.example.yaml`（本机那份同名 `*.yaml`） |
-| 改卡片印什么 | 8.1 | `api/app/report/cards.py` |
-| 改卡片文案规则 / 结论写法 | 6.5 | `api/app/report/prompts/research.md` ＋ `report/schema.py` |
-| 改设定页字段 / 说明文案 | 8.2 | `api/app/api/v1/forms.py` ＋ `web/src/features/settings/` |
-| 加 / 删一套设定（配置） | 8.2 | `api/app/api/v1/chains.py` ＋ `config/chains/*.yaml` ＋ `settings/ConfigManager.tsx` |
-| 改视觉（颜色 / 字号 / 主题） | 8.4 / 8.6 | `web/src/styles/tokens.css`（先改这里，再动 proto / app） |
-| 改一轮的阶段或顺序 | 2.4 | `api/app/pipeline/decide.py` ＋ `progress.py` |
-| 加 / 改数据表 | 7.2 | `api/app/store/schema.sql` ＋ `store/db.py` |
-| 改收藏（书架） | 8.7 | `api/app/api/v1/favorites.py` ＋ `report/assemble.py` 的 `refresh_kept` ＋ `web/src/features/favorites/` |
-| 改 CA 搜索 | 8.8 | `api/app/lookup.py` ＋ `api/app/api/v1/lookup.py` ＋ `web/src/features/lookup/` |
-| 改搜索（挖链） | 6.4.3 / 6.4.4 | `api/app/search/`（配置 `config/system.yaml` 的 X 搜索段） |
-| 改本机接线（LLM / X / 日志） | 8.9 | `config/system.yaml` ＋ `api/app/system_settings.py` ＋ `web/src/features/system/` |
-| 想动待决里的东西 | **先问用户** | 10 |
-
-# 4. 术语
-
-| 词 | 意思 |
-| --- | --- |
-| 扫描 / 淘汰 / 候选 / 入选 | 一轮的四个数：`scanned` / `dropped` / `candidates`（**含入选**）/ `selected`；口径只有一处实现（6.7） |
-| 未判定 | **没问到**，不是不合格 —— 既不计通过也不计淘汰 |
-| 判定池 | 过完硬过滤、送进安全判定的那批，**默认全部判定**（`gate_limit`，`0` ＝ 全池，负数按 0 读） |
-| 调研池 | 过关池里按流动性取前 `research_limit` 个、这一轮真去写词条的那批（`0` ＝ 全部） |
-| 链上质量 / 链下调研 | 综合分的两半，默认 55% / 45%（`onchain_weight` / `offchain_weight`） |
-| 词条 | 一个币本轮的链下调研结果（`lexicon` 表一行） |
-| 距高回撤 | 距历史最高点跌了多少，见 6.1.13 |
-| 貔貅 | 能买不能卖；**判定与门槛是两个不同的数**（6.1.8 / 8.1.7） |
-| 陷阱占比 | GMGN 的 `top_entrapment_trader_percentage` —— 与貔貅不是一个数 |
-| 发射台 | launchpad；新币多数由它发出来，每条链各有自己的（见 6.2 分工表） |
-| 主池 | 流动性最大的那个池 |
-| `0` | **是答案，不是缺失**：判空用 `is not None` 而不是 `if value:`，见 6.6.2 |
-| 空列表 | 集合类的 `[]` 算「没答」，不赢走字段，见 6.6.3 |
-| 收藏 | 书架上的一张卡：组装好的卡片的一份**拷贝**，主键 `(chain_id, ca)`，链名 / 配置 / 轮次只是跟着走的**值**、不是键，什么都不级联；拷贝**跟着币走**（8.7） |
-| 搜索记录 | CA 搜索留下的那张卡：**同一张 `favorites` 行**，只是 `origin = 'search'`、`kept = 0`（8.8） |
-| `kept` | `favorites` 上唯一区分「收藏的」和「看过的」的列：书架读 `kept = 1`，最近搜索读 `origin = 'search'`（两个条件不互斥）。只有点星能改它（`db.favorite_set_kept`），轮次刷新**不许**动（8.8.4） |
-| 市场口径 | 一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` / `h24`），不是榜单或发射台自报的那个（6.1.3） |
-
-# 5. 代码地图
-
-| 路径 | 责任 |
-| --- | --- |
-| `api/app/api/v1/` | HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health` |
-| `api/app/system_settings.py` | 系统设置页的那张表：读写 `config/system.yaml`（行级往返，没改的行逐字节不变）、把值灌进 `os.environ`；键表 `config.SYSTEM_KEYS` 同时喂 loader 与页面，页面因此提不出一个没人读的旋钮（8.9） |
-| `api/app/lookup.py` | CA 搜索的全部工作，一个地址一条链：认链 -> 逐源读这一个币 -> 链上 LP 判定 -> 链下调研 -> 出卡并落成一行搜索记录；`STAGES` / `start` / `drive` / `submit` 把它包成一个可轮询的 job（表 `search_jobs`）。**不在一轮的编排里**，也不碰 `runs` |
-| `api/app/config.py` | 链文件的读与写，一个文件里六段：路径常量（import 时读一次，`CH_*` 可移）/ `system.yaml` → 环境 / 读链文件 / 写链文件（增删改一套设定）/ 存档版本（一轮照它跑）/ patch 变形。路径常量是模块全局、只有一份，测试靠改 `config.CHAINS_DIR` 把应用指向自己的目录 |
-| `api/app/core/` | 纯逻辑：`filters` / `funnel` / `scoring` / `models` / `parse` / `caliber`（**不许有 IO**） |
-| `api/app/llm/` | 写手客户端：对 OpenAI 兼容端点的一次调用（`settings()` 每次现读、key 轮换与冷却、两种请求形状自动选、记账 `llm_calls`）。另外两个入口不记账、不吃冷却，只服务系统设置页那两个按钮：`list_models()`（拉 `/models`）与 `probe_keys()`（每把 key 各一次真的最小调用，8.9.7） |
-| `api/app/pipeline/` | 一轮的编排：`collect` / `decide` / `states` / `progress` / `run` / `schedule` / `write` |
-| `api/app/report/` | 报告：`facts`（唯一事实表）/ `cards` / `assemble` / `lexicon` / `research` / `segments` / `prompts`（CA 搜索复用 `cards` ＋ `lexicon.report_payload`，形状不许分家） |
-| `api/app/search/` | 挖链：`base`（命中与 URL 归一）/ `identify`（读页面定 tier）/ `discover`（搜索 ＋ 互证）/ `harvest` / `engines/xsearch` |
-| `api/app/sources/` | 一个源一个适配器：**跨链的放根目录，只服务一条链的放 `<chain>/`**；都从 `registry.ALL` 取 ＋ `http`（缓存与节流）＋ 各自 `SOURCES.md` |
-| `core/parse.py` ＋ `sources/base.py` | 每个适配器都要读的三种列：数字与时间戳在 `core/parse.py`（`positive_float` 把 0 当缺口，`as_float` 把 0 当答案），链接列在 `sources/base.py`（`socials_from` / `website_list`）。**改「0 算不算读数」只改这两处** |
-| `api/app/store/` | SQLite：`schema.sql` ＋ `db.py` |
-| `api/tests/` | 测试，按模块分文件（基线数见 2.6） |
-| `web/src/features/` | `report`（含共用的 `foot.ts`）/ `settings` / `system` / `run` / `rail` / `favorites` / `lookup` / `overview` |
-| `web/src/styles/` | `tokens.css`（两态颜色）-> `proto.css`（布局）-> `app.css`（覆盖），**加载顺序即优先级** |
-| `web/src/components/` | `Icon`（唯一入口）/ `CopyCa` / `Rich` / `Mark` / `ArcMark` / `BscMark` / `RobinhoodMark` / `SolanaMark` / `Logo` / `chainMark` / `Pick` |
-| `config/` | `chains/*.example.yaml`（出厂设定模板，一条链一个文件，跟仓库）/ 同名的 `chains/*.yaml`（本机那份：首次读时从模板播种，页面的增删改都写它，**不入库**）/ `system.yaml`（本机私密接线：LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，**不入库**） |
-| `data/` | `crypto-hunter.db` ＋ `raw/`（每轮原始响应与 HTTP 缓存）；不入库 |
-
-**分层是硬约束**（2.3.1）：`api/app/core/` 不许有 IO；`api/app/api/v1/` 是唯一 HTTP 层，页面文案只在 `forms.py`（口径三行在 `core/caliber.py`，见 2.3.3）；前端不碰数据源与数据库、不自己算分。动一个模块前先在图里确认它的调用方（1.1）。
-
-# 6. 流水线
-
-## 6.1 硬过滤
-
-先免费后花钱：第一半只放**粗筛行就能定**的规则（现在只剩市值区间与空壳淘汰），缺数据的先按 `MARKET_ENRICH` 买回来，再跑第二半。两半的分界是「这个数是不是每个源答得一样」，不是「要不要花钱」。补齐默认覆盖**整个过关池**（`gate_limit: 0`）—— 第二半的规则要对每一行都给出判决，只判一个样本不算过滤。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.1.1 | 拉取：universe 的主源是「池」不是「币」。GeckoTerminal 分页拉池做全量，RadarDEX 一次拉全量做长尾补充；Arc 没有 token 级列表端点。（适配器在拉取侧就把空壳行剔掉：与规则共用 `filters.is_empty_shell`，CoinBarrel 302→217 2026-10-06 实测，Tolly / RadarDEX 同改） | 别拿 RadarDEX 的 `sort=mcap` 当全链排名 —— 它的市值口径与 GMGN / GT 不是一回事。 |
-| 6.1.2 | 合并按优先级：一个源一个适配器，同名标量取谁的值由 `collect.py` 的 `DEFAULT_PRIORITY` 定，字段级例外在 `FIELD_PRIORITY`；集合类型取并集、**空列表不赢走字段**。 | 细则见 6.6。 |
-| 6.1.3 · 6.1.5 – 6.1.7 | 阈值都在 `config/chains/*.yaml` 的 `pipeline.prefilter`，但**分两半跑**：第一半只剩市值区间 ＋ 空壳淘汰（`require_market_data`，默认开：市值与流动性**同时**缺失的行直接淘汰 —— 那不是「源没回答」，是「没有可答的东西」；这一条的 reason 是 `empty_shell`，面板上就是「空壳币」那一行的读数）；流动性 / 24h 成交下限与持有人区间在第二半。**持有人是区间**：`holders_max` 默认 `null` ＝ 不设上限，上下限共用「持有人」这一条规则，**缺键 ＝ 无上限**。 | 为什么只有市值留在第一半：同一个币的市值在 GMGN / DexScreener 两家按美元一致，而流动性 / 成交不一致 —— 第一半的判决是终审，不能拿没校准的读数开判（动一下就整体重排池子）。下限压到 1 万是为了不漏刚起步的那批（Arc 上 85% 的币停在发射台发币时的 5000–9000 U 初始 FDV）。两个反例：老快照没有 `require_market_data` 这个键 -> 一轮把四千个空壳行全判成「未知 ＝ 通过」；随手给 `holders_max` 一个数 ＝ 凭空开始砍币（10.4）。 |
-| 6.1.4 | 零数据淘汰：五个排序因子一个数都没有的按 `missing_data` 淘汰 —— 它没法打分。**只在富集之后判**；关掉用 `prefilter.min_scored_fields: 0` 或缺键。**它和空壳淘汰是两个 reason**：空壳是 `empty_shell`（面板「空壳币」那行），零数据是 `missing_data`；2026-10-06 之前两者共用一个 reason，面板把每轮 85 条（Robinhood）/ 399 条（Arc）空壳行全印成「零数据淘汰」，而真·零数据淘汰近 8 轮一条都没有（Robinhood 实测 0，Arc 未逐条复核）。 | 富集前空字段的含义是「粗筛没带这个字段」；放进 `check_prefilter` 会把粗筛没带字段的行整批误杀。 |
-| 6.1.8 · 6.1.14 | 第二半（`check_prefilter_enriched`，跑在补齐之后）：流动性 / 24h 成交下限、持有人区间、Top10 / 捆绑上限、貔貅。**未判定永不淘汰**：整源缺失记 `None`，既不判通过也不判淘汰 —— 所以凡是要读单个币才能定的数都只能放这一半，先按 `MARKET_ENRICH = ("dexscreener", "gmgn")` 把缺的买回来再裁决。 | 反例：两半合成一次，未知等于放行，上千个发射台自报的行直接进池。 |
-| 6.1.9 · 6.1.10 | 补齐链上数据是独立的一次：`_needs_chips` 决定补谁（缺持有人 / Top10 / 捆绑 / 24h 成交任一项），补多少受 `ENRICH_POOL_MULTIPLE × gate_limit` 限制 —— `gate_limit: 0`（默认）就是补整个过关池；答案落 `item.metrics`，但**不置 `enriched`、不写 `facts`** —— 安全判定仍只由 gate 那一遍给，否则 gate 会以为这个币判过了。补齐走轻量入口 `GmGn.fetch_chips`（只发 `token_stat` 一个请求，不是 `fetch_token` 的四个端点）；DexScreener 同批必问 —— 它是市场口径源，发射台自报的深度是虚的。 | 用全量 `fetch_token`，这一步的耗时就是「行数 × 0.45s 每主机节流」，worker 开 8 / 16 / 24 都一样（已到节流下限）。 |
-| 6.1.11 | 短名单排序键 ＝ 流动性：按流动性降序，**完全相同**才用 24h 成交额破平。 | 反例：用 `min(流动性, 成交额)` 或拿成交额当主键，深但没量的池会被刷量的浅池挤掉。 |
-| 6.1.12 | 淘汰数**按优先级累计，不是独立计数**：优先级顺序即设定页 `RULE_ROWS` 顺序（市值 -> 流动性 -> 持有人 -> Top10 -> 捆绑 -> 貔貅 -> 24h 成交 -> 源码 -> LP -> 危险权限，距高回撤排最后）。这个顺序是**归属顺序，不是运行顺序**。 | 各行独立计数，加起来就不等于 `dropped`。 |
-| 6.1.13 | 距高回撤：回撤 ≤ `drawdown_max_pct` 淘汰，**三个读数任一跌够即淘汰**，不是三个都要同意 —— ① 源高点 `metrics.high_market_cap_usd`；② 库记录高点 `tokens.peak_market_cap_usd`（每轮回写、只升不降，所以源沉默的轮次也仍有真高点）；③ 池面高点 `metrics.drawdown_pct`（GeckoTerminal 按池子全历史日线）。噪声闸 `HIGH_SANITY_MULTIPLE`：任何高点超过链市值上限 ×50 视为解析噪声丢弃。**整源沉默 ＝ 放行**（首见不算「未知」）；**池面读失败 ＝ 未判定**（429 / 超时是一个没问到的问题，不是答案，不许静默放行）。gate **不买**池面读数（一次问二十个会被 GeckoTerminal 打限流），池面由画卡那一遍顺带买（6.2.10），之后再判一次，跌够当场淘汰、顺位补下一个，所以卡片数不会因此变少。 | 反例：要求三读数一致 -> 那批 169 个已跌够的币一个没淘汰，ARCAT 漏进报告。 |
-
-## 6.2 数据源、安全判定与富集
-
-**分工表**（逐源端点、传输方式与实测结论见该链的 `api/app/sources/<chain>/SOURCES.md`，改源之前先读那份）：
-
-| 用途 | 源 |
-| --- | --- |
-| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / pons / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank / launchlab / pumpfun；BSC：gmgn / fourmeme / geckoterminal / dexscreener_rank |
-| 安全与源码 | goplus（貔貅、税、危险权限、`dex[]` / `holders[]` / `lp_holders[]`）/ sourcify（源码验证） |
-| 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `symbol` / `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`**；同一个站点的批量那一半是 `dexscreener_rank`（榜单，见上一行），它**进 `sources:` 当扫描源**，不是 ENRICH_ONLY |
-| 挖链找页面（在 `app/search/`，不在 `sources/`） | X 高级搜索（cookie 子进程，不吃 token）＋ `identify` 读页面互证；只交出候选链接，tier 由 `identify` 挣 |
-| 链上直读 | `sources/onchain.py` 走链自己的 RPC（LP 位置、dev 余额）；Solana 另有 `sources/solana/mint.py` 读 mint 账户的铸造权 / 冻结权（即「危险权限」在这条链上的全部来源，见 `sources/solana/SOURCES.md`） |
-
-**新增一个源时的四个坑**（都是静默的，编译器不报）：
-
-1. **`FIELD_PRIORITY` 决定一个字段能不能输出**。合并逐字段走那张表，表里没列的源对该字段**永远赢不了**，哪怕它答了 —— 行会以「未判定」通过硬过滤、以「空壳」被淘汰。新源要么进已有字段的表项，要么落进 `DEFAULT_PRIORITY`（链专属源排最后）。
-2. **只服务一条链的源不要留在根目录**。RadarDEX / Tolly 在 Robinhood 上返回的是 Arc 的整份数据（`?chain=robinhood` 的 CA 集合与默认调用逐字节相同），放进 `robinhood.yaml` 等于把另一条链的币灌进池子。
-3. **链自己的 id 未必是源要的 slug**。`geckoterminal` / `dexscreener` 把 `chain_id` 直接当路径段或 `chainId` 用，所以 `config/chains/<id>.yaml` 的 `id` 要用那条链在外部站点上的名字（Solana 就叫 `solana`）；`gmgn` 是例外 —— 它自己的榜单把 Solana 拼成 `sol`，所以有 `gmgn.CHAIN_SLUGS` 这张表；`goplus` / `sourcify` 则要另给 EVM chain id。**拼错的代价是静默的**：GMGN 对不认识的链名回 200 ＋ 空榜，报表上就是「这条链没有币」。
-4. **yaml 里加源不等于生效**。一轮的拉取清单读 yaml，但设定页的「扫描源」行与凭证行走**存档版本**（`settings_versions`，四个 section 含 `sources`）：一套设定保存过之后，新加的源**会被拉、页面上却不显示**。加完源记得在设定页点一次保存（等价 `PUT /api/v1/chains/<chain>/settings?config_id=<id>`）；从没保存过的链（如 Solana）以 yaml 为准。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.2.1 | 扫描源与富集源分开：`registry.ENRICH_ONLY` 的源（当前只有 dexscreener）**不进扫描**，只在逐币那一遍被问 —— 它没有全链列表，`fetch_universe` 返回空，所以只可能赢下逐币那一遍。**同一个站点的批量那一半是 `dexscreener_rank`（榜单）：它有全链列表，进 `sources:` 与 `scan_sources:`，不是 ENRICH_ONLY，两者别当一回事。** | 反例一：把 dexscreener 加进 `scan_sources`，只会在凭证行里挂一个 0；真正的代价在别处 —— 只有被逐币补齐的那批行带市场口径，池子里其余行还是粗筛口径，分位分母因此是混的（10.9）。反例二：`symbol` 是唯一一个它排在**表尾**的字段 —— 得排在发射台后面，否则自报的写法被覆盖；但表里不能没有它，否则 Robinhood 上一只普通 Uniswap 池的名字当场变成「—」。 |
-| 6.2.2 · 6.2.3 | 逐字段归属写在 `pipeline/collect.py` 的 `FIELD_PRIORITY`，改前先读那张表。两处不显然：GoPlus 独占 `pool_list` / `top_holders` / 几个筹码与税字段；**blockscout 不在 `scan_sources`**（列表接口只有持有人数、市值与流动性全空，会把候选池灌成四千个），它只在合并链里做兜底，且 `blockscout_checked` 不走 `http.cached`。 | 让 gmgn 抢 `pool_list`，它的空列表会把 goplus 的答案挡在外面（6.6.3）。「浏览器不认识这个地址」每轮都会重问，这是已知的重复代价。 |
-| 6.2.4 | 税率只认 GMGN 安全表（路径按链取：EVM 是 `token_security_evm`、Solana 是 `token_security_sol`，见 `SECURITY_PATHS`；缓存 6h）；同表带 `is_honeypot`，是貔貅判定的第二声。**Solana 的表只有正面算数**：十个实测样本里它一律没有 `lock_percent`、没有 `lock_tags`，对 BONK 与 WIF 都回 `false` —— 那是「GMGN 没有锁仓记录」，不是「未锁」，所以 `LP_LOCK_ONLY_WHEN_TRUE` 只认 `true`，`false` 落成未判定。 | GMGN 排行行的税率是**占位 0**、goplus 在 Arc 上也全是 0，而 **0 是「有值」、会赢走字段** —— 把 goplus 兜底进来，报告里全部税率的 0 都是假的。`false` 是硬淘汰（`core/filters.py`），照抄一个「没有记录」会把整条链按沉默砍掉。 |
-| 6.2.5 | LP 判定先链上、答不出才用 GoPlus：读 `lp_holders[]`（每条带 `percent` / `is_contract` / `is_locked`）—— **多数 LP 在合约里（锁仓合约 / 金库 / 发射台持仓）＝已锁，多数在钱包里＝未锁**；表覆盖不到 50% 的 LP 时不给答案。判定有两条路径（`_recorded_lp` / `_lp_from`），**改口径时两条都要动**；「未判定」的原因取 `LAUNCH_*` 字面值。 | v4 池没有池合约（头寸是头寸管理器里的 NFT），这就是链上读答不出的原因 —— 要补最后一段只能问头寸 NFT 的 `ownerOf`。卡片只分三态（8.1.8）。 |
-| 6.2.6 · 6.6.4 | 源码验证是双源取或：语义是**任一源确认即算已验证**（`dual` 取 `or`）。 | 写成 `and` 会在 Sourcify 收录很差的 Arc 上一票否决。 |
-| 6.2.7 | 链上直读走链自己的 RPC：`sources/onchain.py` 读 LP 位置与 dev 余额，走该链 `yaml` 里的 RPC；一条链只有一个端点、没有备份，记账走同一套 `tally`（7.1）。 | **别再加默认端点**：曾经兜底到 Arc 的节点，链配置漏写 `rpc` 就会拿另一条链的数据、还标着本链的名字。缺 `rpc` / `explorer` 键现在**直接报错**。 |
-| 6.2.8 | 安全判定判**整个过关池**（`pipeline.gate_limit`，默认 `0` ＝ 全池）：读不出来的是「未判定」（既不计通过也不计淘汰）。**这里没有「凑够几张卡就走」的预算** —— 按流动性取前 N 再判，就是把名额先给了最深的那批，而链上排最深的行恰恰是筹码 / 安全规则最想淘汰的那批。真正的预算上限在花钱那一步：链下调研的 `research_limit`（6.4.1）。 | 反例：默认取前 20 判定 —— 深而脏的行吃光名额，浅而干净的行无人裁决。 |
-| 6.2.9 | 逐币富集：同币多源并发问、**结果按源顺序合并**，`_absorb` 的结果不随并发顺序变。 | 反例：按「谁先回答」合并，源换了顺序结论就变。 |
-| 6.2.10 | GeckoTerminal 精查延后到入选之后（`DEFERRED_ENRICH`）：它是唯一能回答「几个池、价格走过的路」的源，也是最贵的一个（逐币三端点、同主机 2.2s 节流、429 固定退避、加线程无效），而它填的全是卡片字段（不进安全判定、不进分数）。 | 第二遍**不要**从批量行重建 `views`（第一遍刚拿到的逐币值会被粗筛行盖掉），要并进第一遍的 `views` 再 merge。 |
-| 6.2.11 | **链本币不是代币**：GeckoTerminal 与 DexScreener 都用零地址 `0x000…0000` 表示链自己的币（BSC 上是 BNB、Robinhood 上是 WETH）。冷热页合并时按 `models.is_placeholder_ca` 剔掉 —— 检查点必须在合并处，冷页那一半是缓存里已经拼好的行。 | 这行能穿过**全部**硬过滤：它的市值是空的，每条市值规则都判「未判定」，而「未判定」从不淘汰；它的流动性却是全链本币池的总和，于是每个排名都拿第一。BSC 上三轮都把它当第 1 张卡发出来，链下调研按「BNB」写成了另一家的稿子；Robinhood 同一行是 WETH（市值 61.9 亿）被 20 万上限挡掉，所以那边没露头。 |
-
-## 6.3 打分
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.3.1 | 分位分母 ＝ **本轮硬过滤幸存者**（不是全历史池，也不是过完安全门槛的池），中点法 `(below + 0.5*ties)/n`；分母用**补齐后的** `item.metrics` 构造（gate 之后建），为的是让这个币和它比较的池子在同一口径上。 | 代价：**分母因此是混口径的** —— 被补齐的行是 DexScreener 的市场口径，没被补齐的行还是粗筛口径（10.9）。所以别再把新源塞进 `scan_sources` 想「顺手校准」（6.2.1）。 |
-| 6.3.2 | 五个链上因子 ＋ 两个**逆向**因子：流动性 / 24h 成交 / 持有人 / Top10 / 捆绑，其中 Top10 与捆绑越小越好（分位反算）。 | 反例：把 Top10 / 捆绑当正向因子，筹码越集中分越高。 |
-| 6.3.3 | 综合分 ＝ 链上质量 ＋ 链下调研：两个总权重与两块各自的五个因子权重都在设定页（`config/chains/*.yaml`，以 `settings_versions` 为准）。 | 两个总权重合计、每套五个因子合计都必须 = 100%，否则 422。 |
-| 6.3.4 | 链下调研没落地的标的 ＝ `pending`（冷启动）：本轮调研还没回来的，既不参与排名也不显示 0 分，等它落地后下一轮才有分数。 | 给 0 分的话，一个刚部署、还没来得及调研的币会被排到末尾当成「差」（6.5.11）。 |
-
-## 6.4 链下调研
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.4.1 · 6.4.2 | 调研是一步，且在记分**之前**：调研池的每个币都读项目自己的页面，一次模型调用先把词条写好、读过的页面进 `lexicon_sources`，再拿这份词条去打分、落库 —— 它在轮次里跑，**没有发布之后的异步动作**。**每轮全新调研，没有跨轮复用**：落库前 `lexicon.forget_other_rounds(run_id)` 把其它轮次的词条删掉。 | 反例：先打分、事后异步补词条，卡片文字与分数就不同源。旧设计的「2 天过期 / 市值波动 40% / 6h 跳过窗口 / 人工确认」已全部取消。 |
-| 6.4.3 | 挖链是 X 高级搜索**两问**：CA 走 `Latest`、`$TICKER` 走 `Top`，合并后按「名字贴合 ticker」排序。**搜索不走模型**（不花 token），第一个引擎有结果就停；没配 cookie 时整层静默失效，**不阻塞流程**（9.5）。 | 只发 CA 那一问会漏：实测只有 ticker 那一问能捞到某些官方号。 |
-| 6.4.4 | 互证只读前 8 个候选页，`tier` 由页面自己挣；**bio 带 CA 才是 `own`**。站点链接先归一到根域再判。 | 刷屏账号会把这 8 个名额占满，所以排序决定谁先被读；不归一的话，一个发射台的三个深链会被逐个读成 `none`。 |
-| 6.4.5 | 读页面的素材有上限：正文合计 **15000 字符**，链接最多 **8 个**；官方 X 时间线另给 **15000 字符**（约最近 20 条，带时间戳与互动数）。`READABLE_SOCIALS` **含 TG** —— `t.me/<name>` 的公开预览页带频道名、成员数与最近几条帖子。 | 上限压到「够写一段」的量，模型就只能凭事实表写，叙事退化成数字堆砌。 |
-| 6.4.6 | 空壳页面交浏览器画，账号页永远不画：静态 lane 不跑 JS，而 Arc 上的发射台官网多是 React 空壳，判定阈值 `identify.SHELL_WORDS`。渲染只在**已证明是空壳**时发生，且只有**候选官网**走这条路；X 与 TG 是例外（`NO_RENDER`）—— X 只把 bio 给静态客户端、浏览器看到的是登录墙。 | 实测几个 Meme 站静态只有 8–10 个词、连 CA 都搜不到，渲染后是几百个词且带 CA —— 曾经因此判成 `none`，卡片上挂的是第三方站。`networkidle` 与第三方渲染服务都试过并放弃（太慢 / 会把 SPA 打残）。 |
-| 6.4.7 | 写词条是**一个币一次调用**，宽度是实测值（找链接 15 并发、写词条 12 并发）。「一次调用写完所有条目」必然撞天花板，已废弃。 | 并发提到 20 实测有 429 而且更慢；一个币失败只丢它自己那条，原因进本轮 note，不阻塞整轮。 |
-| 6.4.8 | LLM 客户端走一个 OpenAI 兼容端点、**两种请求形状**（`/chat/completions` 与 `/responses`）：配置在 `config/system.yaml`（页面「系统设置」）、**真实环境变量优先**，文件**每次调用时重读**，改完下一轮生效、不用重启。形状**先 chat 再 responses**，答过的按「端点＋模型」记住，猜错只花一次被拒的调用（`muse-spark-1.3-contributor` 只服务 `/responses`，问 chat 回 `ModelProtocolUnsupported`）；正文带 `protocol` 的 400 是**形状**不对 —— 换形状、不换 key。换 key 只在 401 / 403 / 429，**外加一种 400**：正文说 workspace 没放行「拿请求数据训练」的模型（`trains on request data` / `privacy settings`）—— workspace 属于 key，同一请求在备用 key 上会 200（实测 2026-10-02）—— 换掉的那个晾 `CH_LLM_KEY_COOLDOWN` 秒；别的 4xx 直接失败；5xx 与网络错误在同一 key 内按 `CH_LLM_TRIES` 重试。 | **日志里只出现 key 的 sha256 前 8 位指纹，不出现 key 本身。** 四个坑都踩过：① **推理模型的思考计入输出额度** —— 额度给小了返回**空消息**（`finish_reason = length`），不是报错，客户端把空消息当失败，于是额度调小会静默降级成「没有文字」；② 该网点偶发 503，所以有上面那条重试；③ 一次调用只写一个币；④ 两种形状参数名不同：系统提示在 responses 里叫 `instructions`，思考预算是嵌套的 `reasoning.effort`（扁平的回 400 `unknown parameter`），且该系列不认 `none`、最低 `minimal` —— 所以 `none` 在 responses 上发 `minimal`；不发这个字段则默认高思考，256 额度里 253 个烧在思考上、正文空。 |
-| 6.4.9 | **官网候选不只吃引擎命中**：`harvest.site_candidates()` 从本轮项目自己的页面里按 host 取候选（X 主页的 `expanded_url` 也算），读并挣 tier；**只有 `tier = own` 的**才落到 `metrics.websites` 首位，卡片才印得出官网。「项目自己的页面」有两处：挣到 `own` 的账号页，以及本轮记录点名的账号页（`discover.named_handles(known)`）—— 多数项目的 bio 只写自己的名字、从不写 CA，这种账号一条 tier 都挣不到，只有被点名才读得到。 | 候选只来自引擎时，项目写在自己 X 主页上的官网（引擎从没索引过）根本不是候选，卡片就没有官网行。 |
-
-| 变量 | 作用 |
-| --- | --- |
-| `CH_LLM_BASE_URL` | 端点，客户端自己拼两种形状之一（6.4.8） |
-| `CH_LLM_API_KEY` / `_FALLBACK` | Bearer。**逗号分隔可写多个**：第一个是主 key，后面是备用，按顺序试 |
-| `CH_LLM_KEY_COOLDOWN` | 被拒的 key 跳过多少秒，默认 600；0 关闭 |
-| `CH_LLM_MODEL` | 模型名；有没有写手看 `/api/v1/health` 的 `llm` / `llm_model` |
-| `CH_LLM_TIMEOUT` | 单次超时。**必须高于成功调用的长尾**（reset 关掉思考后单次 11–17s），**它与重试相乘** |
-| `CH_LLM_MAX_TOKENS` | **推理模型必填**：思考也吃这个额度 |
-| `CH_LLM_REASONING` | 思考预算，作为 `reasoning_effort` 发出。**只有 `none` 是真开关**：`minimal` / `low` 照样花几百思考 token。同一批币实测 `none` 快 3.6 倍、词条更全、字更多；代价是约四成草稿漏必填分项，**由 6.5.9 的重问兜住**（这一行和重问是一套、不能只上一个） |
-| `CH_RESEARCH_WORKERS` | 一次并行调研几个币（一个币一次调用），默认 12 |
-| `CH_LLM_EXTRA_HEADERS` | JSON，额外请求头 |
-| `CH_X_AUTH_TOKEN` / `CH_X_CT0` / `CH_X_CLI` | X 搜索的会话 cookie 与承载客户端（只放在 `config/system.yaml`）。**会话是用时才读的**：存一下新 cookie 下次搜索就用上，不用重启（8.9.6）。**搜索不走模型，所以没有「搜索模型」这一项** |
-
-## 6.5 词条文字
-
-prompt 文件只有一份：`report/prompts/research.md`，`PROMPT_VERSION` 随它升级。**另有第二段提示词内联在代码里**：`research.py` 的 `REPAIR_HEAD`，只在校验没过时发出去，落库记为 `prompt_version = research.md@9+repair`。**一份 prompt 服务所有链**：两个占位符按调用替换 —— 链名 `__CHAIN__` 走 `config.chain_name()`，本链主线 `__THESIS__` 走 `config.chain_thesis()`（链 yaml 的 `thesis:`，没登记就换成 `NO_THESIS`）。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.5.1 | 篇幅上限写在 prompt 里，代码只在超长时记日志、**不退回**（丢一个词条就没有链下分，比文字长一点贵得多）。上限在 `report/schema.py` 的 `CAPS`：`concl` 500（代码下限 160）、五个分项各 200、`badge` 16。 | 同一个字段要记**两条**（`ask` 决定要不要重问、`one` 决定要不要丢这个币，两个判定点都要结果）。 |
-| 6.5.2 · 6.5.8 | 涉及源码 / 权限 / LP 的句子必须**一字不改**地引用事实表 `【安全】` 行的原文；调研必须带安全块（`_facts_line` 一并读 `safety_json`）。 | 不带安全块，管线里最宽的那张事实表恰好看不到它，词条会永远写「安全块三项全部未判定」；卡片曾一边显示「LP 已锁」一边在词条里写「三项全部未判定」。 |
-| 6.5.3 | 链接统一成「说明 ＋ 可点击词」，`segments.py` 把 anchor / markdown / 裸 URL 都变成 link 段，前端 `Rich.tsx` 渲染成 `target="_blank"` 的 `<a>`。 | **全链路没有 `dangerouslySetInnerHTML`** —— 不要让模型文本直接进 HTML。 |
-| 6.5.4 | 页脚列所有入口，正文不放链接：交易页 `GMGN ｜ Debot ｜ DexScreener`，然后 `X ｜ TG ｜ GitHub`（取本轮指标里的社媒）和**第一个**官网，全是文字下划线链接、**没有打开图标**。 | 反例：做成一排七个外链图标，基本就只剩图标了。 |
-| 6.5.5 · 6.5.6 | 三条纪律：① `concl` 与 `narr_text` **严禁重复**（没有新内容就留空）；② 提到外部信息必须附**实读到**的原文 URL；③ `social` 只写判断、用时间线的互动率与发帖节奏说话，**不放链接、不拿粉丝数当卖点**。结论写法：`concl` 五段（定位 / 实质 / 亮点 / 风险 / 收尾）、**不加小标题**，第一句必须是身份句（链 ＋ 赛道 ＋ 定位）且**叙事先行**；**不写观点句**（「本批唯一…」一律不写，判断留给读者）、**不写数字段**（市值 / 流动性 / 筹码不罗列，卡片上都有）。 | 新项目粉丝便宜，证明不了任何事。卡片**不为叙事单开一块** —— 项目自己的故事落在结论里；`narr_text` 写的是「在不在本链主线上」（6.5.13），两者不许重复。 |
-| 6.5.7 | 写作输入必须带页面正文：输入就是「读到的页面 ＋ 事实表」，页面读不到时那个币就**没有词条**，而不是让模型凭记忆编。 | 反例：给模型一句「如无资料请据常理推断」，报告里就会出现不存在的官网与产品。 |
-| 6.5.9 · 6.5.10 · 6.5.11 | **先重问一次，再降级**：`ask` 把上一次的 JSON 与校验器原话（`REPAIR_HEAD`）一起发回去要一份完整重写，第二次还不过才降级。**「读不到」与「没东西」分开**：空壳页面等于没读（静态正文不足 `MIN_CHARS` 时返回 `None`，失败的页面不落库）。**降级 ＝ 该币无词条**：读不到页面 / 答不出契约的币不写词条，该币没有链下分、不进排名 —— **不会用「确定性拼装的正文」冒充一份调研**；失败原因进本轮 note，不阻塞整轮。 | 不重问的话，思考关掉后约四成草稿漏必填分项，会直接损失卡片。把「页面空」当成「项目没有官网」，模型看到的世界里这个项目就凭空少一个入口；拿模板拼一段文字顶上，卡片上有字却没有调研，读者无从分辨。 |
-| 6.5.12 | 链名分两个：`label` 是**雷达**的名字（侧栏、配置管理抽屉），`name` 才是**链**的名字（`config.chain_name()`，yaml 没写就回落 `label`）。写进文字的三处都用后者：写作 prompt 的 `__CHAIN__`、搜索词、设定页 `f_narrative` 的口径行。 | 反例：`label` 与 `name` 混用，一份 prompt 写死了 Arc，模型只能照着答出「与 Arc 无公开关系」。 |
-| 6.5.13 | `f_narrative` 判「在不在本链主线上」：判据只有一句话，写在链 yaml 的 `thesis:`（`config.chain_thesis()`），由 `ask()` 填进 prompt 的 `__THESIS__`（没登记就换成 `NO_THESIS`）。它是**链的事实**不是设定口径 —— 一条链两套配置筛的是同一批币，主线跟着配置走会让同一个项目判出两个分。官方提到 / 转发 / 关注降级成 `badge`，**只展示不进分**；0–5 六档各一句话，档位之间不留空档，**怎么判由模型读页面事实决定，不写操作性判据**。 | 反例：判「和这条链什么关系」，每张卡答的都是官方背书，要答的「在不在主线上」prompt 里只提过一次、没有定义；三条链官方都在讲 RWA 与稳定币，卡上分不出谁踩中主线（user, 2026-10-06）。 |
-
-## 6.6 取值与合并
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.6.1 | 判据是「谁的值更可信」，不是「谁先回答」：同名标量取谁的值由 `DEFAULT_PRIORITY` 决定，字段级例外在 `FIELD_PRIORITY`。 | 反例：按「谁先回答」取，源换了顺序结论就变。 |
-| 6.6.2 | **0 是答案，不是缺失**：`_absorb` 用 `is not None`（空列表也是答案）；GMGN 的 `X or Y` 用 `_first(X, Y)`；dev 发币数 0 是发现。 | 反例：用 `if value:` 判空，0 被当成没答，dev 发币数 0（重要发现）就被丢掉。 |
-| 6.6.3 | 集合类型的空值算「没答」：`collector.merge` 里 `[]` 不赢走字段。 | 不挡的话，GMGN 的空 `pool_list` 会把 goplus 的答案挡在外面。 |
-| 6.6.5 | 覆盖方向是 `overlay(universe_bulk, per_token_merge)`：逐币富集值盖在批量视图上，**别写反**；`overlay` **不复制 `provenance`**，所以 `provenance` 要单独合并。 | — |
-| 6.6.6 | 卡片读数取「先有值的那一份」：同一批读数库里存两份（`metrics` 批量榜单、`safety` 逐币判定），`cards._either` 逐字段取。 | 硬过滤与安检读的是 `metrics`，所以取错只是显示错、不是判断错 —— 但显示错同样要修。 |
-| 6.6.8 | 事实表只有一份实现：`report/facts.py` 的 `lines()` / `block()` / `safety_line()` 由**卡片与词条两处共用**，缺值打印「—」（「五个源都没这个数」本身就是事实）。 | 两边各拼一份，同一轮里两处对同一个字段的取值就不一样。 |
-| 6.6.9 | 链接与社媒逐币从 DexScreener 读（`registry.ENRICH_ONLY`，位置在写词条之前，所以链接是写作输入的一部分）；取值只认 `baseToken.address` 命中的那一对，否则若答案里只有一条链才接受。 | 反例：另一条链的 X 句柄写到这张卡上 —— 比空着更糟。 |
-
-## 6.7 读数与漏斗
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 6.7.1 | 四个数（扫描 / 淘汰 / 候选 / 入选）**一次数出来**，口径只有一个实现（`core/funnel.py` 的 `summarize()`，`write.py` 照抄）。 | 于是 `scanned = dropped + candidates` 是**恒等式**，不再是四个各自来源的数字碰巧排在一起（四个数各自统计就会加起来对不上 —— 读者第一眼就会去加）。 |
-| 6.7.2 · 6.7.3 | 落选池标题的「候选」**含入选**；`runs.dropped` 是总淘汰，份额单独列（`dropped_hard`，按优先级归属算出）。 | 前端用「总淘汰 − 其他」倒算，规则一改就错位。 |
-| 6.7.4 · 6.7.5 | 落选池收**全部候选**：有分的按分数排，没分的排在其后并写明理由。退出项的名字从 `tokens`（CA 主档）取。 | 只收有分的，就会出现「候选 78」而表里只有 20 行；退回短地址就是给读者一串没有意义的片段。 |
-
-# 7. 数据与状态
-
-## 7.1 缓存与记账
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 7.1.1 | 「对方说没有」也是答案：生产者用 `http.NEGATIVE` 标记「对方答了，答案是空」，`cached` 会缓存它（读回来仍是 `None`），真正超时 / 5xx 的 `None` 照旧不缓存。 | 不缓存否定答案，Arc 上多数币在 GeckoTerminal 没有池，等于每轮重问、每次 3 次重试 ＋ 2.2s 节流。 |
-| 7.1.3 | 记账要覆盖最贵的那台主机：`http.tally()` 是公开入口，`onchain.rpc_checked` 按同一套计数，所以链节点会出现在每轮的主机行里。 | 漏记链节点，每轮最慢的那台就看不见。 |
-| 7.1.4 | 日志是唯一的耗时真相：`logging_setup.py` 给 `crypto-hunter` 命名空间挂 stderr handler（`CH_LOG_LEVEL`，页面「系统设置」可改、保存即生效，`propagate = False` 不污染 uvicorn）；秒表由 `run_chain` 持有、按 `run(clock=...)` 传入，引擎只填不打印。 | 不挂 handler，`logging.lastResort` 只写 WARNING 及以上，阶段耗时会被静默丢弃。 |
-| 7.1.5 | 不要拿单轮数字下结论：节点延迟轮间 2.2–4s 波动，`eth_getLogs` 的调用次数也轮间不可比（9.1.4）。 | — |
-
-## 7.2 数据模型
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 7.2.1 | 数据模型以 `api/app/store/schema.sql` 为准（13 张表）。加列走 `db.init_db` 的 `_ADDED_COLUMNS`（配 `SCHEMA_VERSION`），老库靠它补齐并回填。 | **别手改 `.db`** —— 老库不会自动长出那一列。 |
-| 7.2.3 | 三种表不许改写：`settings_versions`（改设定 ＝ 追加一行）、`snapshots`（每轮每币一写）、`reports`（落库即冻结）。`favorites` **不在此列** —— 那一行说的是「这个币现在该看哪张卡」，不是某一轮说了什么（8.7.7）。 | 就地 UPDATE 已发布报告，历史轮次与当时的卡片就对不上。 |
-
-# 8. 界面
-
-## 8.1 报告卡
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.1.1 · 8.1.2 · 8.1.5 | 折叠状态下**所有卡片等高**：`结论` 固定十行（`--verdict-lines`），放不下的部分由**卡片自己右下角的 `展开` 按钮**打开（`.verdict-more`）—— 不是 hover 弹层，弹层钉不住、还盖住下面那张卡。「链上质量」与「链下调研」两块**默认折叠**；顶栏那个按钮一次开合全部，做法是**不接管 `details`**：换 key ＋ 给新默认值，让它们连同结论一起重挂一遍，各卡自己的开合用不着变成页面状态。 | 给分项挂「说明性文字」就会换行（卡片窄）。默认展开就把卡片撑高，「结论在前、数据一键展开」这套重排就白做了。 |
-| 8.1.6 | **卡片头部是两行身份**：最左是图标方框，右边上下两行 —— 上行 `标的` ＋ `新进/续榜`，下行 CA（截断）＋ **复制 icon**（点击变绿换对勾）。**CA 与复制钮都没有框、没有底色** —— 地址挂在名字下面带着边框像输入框；复制钮也**不能填 `--surface`**，领奖台上的卡头部是有底色的，填了会露出一个矩形。概览表里那个复制钮仍有框（它单独站在表格单元格里），两种用法各写各的。头部右上角上下两行：上行 `综合分`，下行 `排名`（序号两位，领奖台颜色也跟到这一行；2026-10-02 用户要求从左侧挪到这里），`重新搜索` / 星标与它们同行。 | 池内排名（`流动性 · 成交 · 持有人`）因此单独一行右对齐 —— 它原先是 CA 那行的右半边，地址挪上去之后同一行放得下 CA、放不下排名。评分条把两块画成两段，**不带 ×55% 这类占比文案**。 |
-| 8.1.7 · 8.1.8 | 貔貅是**判定不是数字**：读 GoPlus 的 `is_honeypot`，输出「是 / 否 / —」三态带**色框**（复用安全区 pill 的配方）。**LP 也只分三态**（已锁 / 未锁 / 未判定，8.1.8）：显示「已锁」时不跟括号解释，标签本身就是答案。CSS 必须写成 `.kv .kv-v.hb-*` 才压得住缺值行的灰字。 | 两层的写法会**静默失效**。陷阱占比由「陷阱」chip 承担（`honeypot_pct`）—— 两者不是一个数，别把同一个值挂在两个名字下。 |
-| 8.1.9 | 「链上质量」表**不印**开盘与总供应、洗量、机器人 / 新钱包 / 私人金库 / 优质持有人 / 信号数，**筹码分布与池子清单也撤了**（payload 里仍带着，供归档与 API）。 | GMGN 在 Arc 上对这些一律回 0，一整行 0.0% 是噪声 —— 印上去，有价值的那几行就被淹没。 |
-| 8.1.11 · 8.1.12 | 「一轮那一条」＝ 日期步进 ＋ `扫描 -> 淘汰 -> 候选 -> 入选` ＋ `已判定 / 未判定` ＋ 本期变化 chips（新进 / 退出），**一行到底、同一字号与颜色**；退出项显示**币的名称**不是 CA。**日期控件属于报告页**，与首张卡片对齐。 | 三块分割线画到边框上，整行就像被切成三个盒子。放到全局顶栏，设定页上也会出现一个改了没用的控件。 |
-| 8.1.13 · 8.1.14 | **展示层的链接一律「说明 ＋ 可点击词」**，不印裸 URL（8.1.13）。**头部有币的图标位**：位置在名字左边，方框**大小就是它旁边那两行身份的高度**（头部由文本定高，方框怎么变形都不动别的），描边走 `--accent`、**直角**（2026-10-06，用户点名：不再是 8.4.5 的例外）。`Logo` 的尺寸由调用方给（2026-10-02，用户），卡头是它现在唯一站的地方 —— 搜索页原本那个 19px 的调用点随行列表一起没了（2026-10-11）。图按 `dexscreener` → `geckoterminal` 取：前者是 `info.imageUrl`，后者是 pools 响应里 `include=base_token` 带回来的那张，两条都是**已经在请求**的响应，所以**不加请求、不加数据源、不加钱**。GMGN 也有图，但它的 CDN 只认 gmgn.ai 自己的引用（浏览器里实测加载失败），不进这张表。存的是 **URL** 而不是字节（卡片是拷贝、会被归档）。**没图时留位**（空格子填 `--logo-empty`，深色纯黑 / 浅色纯白），不塌掉；图加载失败也退回空格子，不留破图。 | 空格子是白底落在近白卡片上，用 `--border` 几乎看不见有没有格子，所以描边走 `--accent`。图当二等公民（有就画、没有就不画）会让同一行的卡高度不一，收藏页上搜索卡与轮次卡会错位（8.8.2）。 |
-
-## 8.2 设定页
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.2.1 | 保存走 `settings_versions`（不可变，之后以表为准），出厂默认在 `config/chains/*.example.yaml`（本机那份从它播种，8.2.2）。**链与链不共享设定，同一条链的多套设定之间也不共享**。一次 PUT 是一张 dotted-path 的 patch，落到两层以上的组里要**深合并**。 | 同一组里改两个键，浅合并的 `{**a, **b}` 会把先改的那个整组覆盖掉。被拒的保存要写成操作者能照着做的一句话（中文、带当前值、把 key 翻成页面上的行名）—— 前端不翻译，只把 `detail` 印出来。 |
-| 8.2.2 | 一条链一个 yaml 文件：文件里 `configs` 是这条链的一套套设定，链自己的事实（`explorer` / `rpc`）写在文件顶层、不进 `configs`。内部名字是 `arc:wide` 这种复合 id，落库是 `chain_id` ＋ `config_id` 两列。`default` 带 `locked`、任何链都留着、删不掉。**每条链同一时刻只跑一套**。跟仓库的只有 `<id>.example.yaml` 模板，运行时那份 `<id>.yaml` 首次读时从它播种、不入库 —— 页面的所有写入都落在后者，所以切配置不会脏 git。**加一条链就是放一个文件进去**：`_chains_signature` 按目录里每个 yaml 的名字 / 大小 / 时间戳给解析结果做缓存键，所以手写的新链文件当场可见，不用重启（页面的增删改另有 `reload()`）。 | 隔离的边界：`settings_versions` / `runs` / `reports` / `lexicon` / `previous_picks` 都按设定分开；**不隔离**的是 `tokens` 与 `peak_market_cap_usd` —— 那是链级事实，与哪套在看它无关。几套设定并排跑只会抢同一批源与限流，让第一套更慢。 |
-| 8.2.3 | 名字与 id 分开：`config_id` 是随机生成、**永不改、永不复用、不上页面**；页面上写的一律是 `label`（链内唯一）。新建的一律 `enabled: false` —— 加一套设定不该悄悄把正在跑的那套换掉；`PUT /settings` 除了存 patch 还调 `set_active_config()`（按钮就叫**保存并生效**）。**每条链最多一个 `enabled: true`**：多过一个是数据坏了，只留一个并把话写进 `ChainOut.warning`，链照常能读。 | 反例：把 `config_id` 当 label 用，改名就要动五个主键和每条 run 的 key。报错会让整条链打不开，而操作者才是能决定留哪个的人。拒绝分三个码（400 名字问题 / 404 没有这套 / 409 现在不能动），删除前要把 label **原样打一遍** —— 点一下就能过的「二次确认」不是确认。删除连带清空这套的全部痕迹（`runs` / `reports` / `snapshots` / `lexicon` / `settings_versions` 与 `data/raw/<run_id>/`）；**`tokens` 与 `llm_calls` 不动**。文件是**往返改写**不是重写（`ruamel.yaml` 保注释、保引号、保 CRLF），改完 `arc.yaml` 往返应当逐字节相同。 |
-| 8.2.4 | **参数设置页头整个撤掉**（链名与「正在编辑哪一套」都在顶栏）。解释折进「说明」icon，判据是「这句是这一轮的**读数**，还是关于字段本身的规定」：读数留屏幕，规定进 icon；**文案仍只在 `forms.py`**（2.3.3）。 | 标题下面挂一行解释，一屏里就全是灰字、读者找不到真正的读数。反过来把规定性的口径搬到屏幕上，就是在重复「这是规则」。 |
-| 8.2.8 · 8.2.9 | `市值` 与 `持有人` 都是**区间**，持有人上限与下限共用同一条规则，所以淘汰计数、漏斗行、设定页那一行都不用跟着改；设定页只多一条 —— **空格子必须能存回去**（空 -> `None`，数字 -> `int`，已存过再清空要原样活过类型转换）。链下五项各 0–5、按 `offchain_factor_weights` 合成，与链上那半边**同形**：改一个就要把合计调回 100，否则 422。 | 把上限写成 `0` 就是「一个都不留」；缺键当 0 权重会把没这个键的老快照的币全砍掉；把五项做成只读说明，权重这类口径就只能靠改代码（10.8）。 |
-| 8.2.10 | 设定页只放**有代码读的**旋钮：「提醒」那一组四个开关（X 改名次数 / X 建币数量 / 同名合约并行 / 官网漏收录 X/TG）从来没有代码读它，勾不勾一轮跑出来一模一样 —— 2026-10-06 整组删掉，三个 yaml 模板里的 `alerts:` 块一并删。数据没动：改名次数由 GMGN 照印在事实表，官网 / X / TG 链接照在页脚。 | 一个静默的空开关比缺一个旋钮更坏：读者会以为它已经生效。要么把行为接上，要么把这个动作删掉。 |
-| 8.2.11 | **组数 ＝ 轨道数**，而且轨道按**块名**认领：`block.columns` 只管闸门以下的 auto-fit；闸门以上（`app.css` 的 `min-width:1668px` media query）由 `data-blk`（＝ block 的 `key`）逐个硬写轨道。删 / 加一组、给块改名，都要回 `web/src/styles/app.css` 改对应模板。 | 轨道**多过**组时多出来的那条照样占位 —— 页面不报错、几何也看不出错，只有一块面板右边空一片（删「提醒」，见 8.2.10）。块改名留下的**死选择器**反过来更坑：被当成「还没写的模板」指到真实块上，那块会压成三分之一宽（`product` / `offchain`）。 |
-
-## 8.3 侧栏与顶栏
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.3.1 | 左栏只渲染 `enabled` 的链：未接的整行不出现（不是变灰），链名旁不挂计数（入选数在「一轮那一条」里）。链名取 yaml 的 `label`（就是链名本身，不带「雷达」这类后缀）；**`label` 是雷达的名字，`name` 才是链自己的名字**（6.5.12）。 | 把没接的链渲染成灰行，就是每次都提醒读者「这里缺东西」。 |
-| 8.3.4 | 顶栏右端 ＝ **当前页面的动作**，同一时刻只存在一份：报告页 `本轮总览 › ｜ 导出 ｜ 推送 TG`，设定页 `配置切换器 ｜ 配置管理 ｜ 保存并生效 ｜ 立即运行`。不可用的动作**灰显不可点**、`title` 写明原因；点下去会打开抽屉 / 面板的那个末尾带 chevron —— 那是这一排里「会离开本页」的唯一记号。 | 两页的动作同时列出来，读者就分不清哪个属于当前页。 |
-| 8.3.7 | 动作行**最左端**是「运行结果」开关：它折的是整条顶栏**下面**那层面板，属于这一轮，不属于你正站着的那个 tab，所以排在动作行第一个。这是**唯一**的折叠处 —— 面板自己没有关闭按钮，所以「停止的一轮把页面交回去」搭在它的**收起**那一半上（展开不挪人）。 | 塞回 tab 组旁边，读者会以为它换的是右边那片内容 —— 它折的是整页下面那条。 |
-| 8.3.8 · 8.3.9 | 刷新要落在原来那一页：链 / 配置 / tab / 地方四个选择写 `ch.*`，读法就是 `useState` 的初值；**报告轮次下标不存** —— 它由开页那一次列表回答，存下来会和那份回答打架。链列表**里面**、紧跟最后一条链的是 `搜索` 和 `收藏` 两行（`搜索` 在上），**不画分隔线、不留额外内边距**，四行**同墨色**，人在哪里由**亮行**说明。**同一时刻只有一行是亮的**：链行亮 ＝ 在雷达且是当前链，在书架上链行全灭。 | 把轮次下标一起存了，下一轮跑完后刷新会翻开一个旧批次。把这两行调淡，读者会以为它们不可点；两行同时亮，读者会以为书架是那条链底下的东西；同一个地方三个名字（`搜索` 不叫 `CA`），读者要猜它们是不是同一页。 |
-
-| 8.3.10 | 「系统设置」是**一行 rail 行、也是一个 Place**：它不属于任何链，所以排在链与两条书架那一列之下、主题开关之上（`.nav-foot` ＋ `.nav` 是列 flex），侧栏里全局的东西都落在这一带。**它是页面不是 tab**：点开就是整页表单，没有 `搜索 / 设定` 那对 tab。**同一时刻仍只有一行是亮的**（8.3.8）。 | 塞进某条链的 tab 组里，读者会以为这份接线是那条链的；挂在最上面，等于告诉读者它比链还常用。 |
-
-## 8.4 视觉（字体 / 颜色 / 圆角 / 图标 / 主题）
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.4.1 · 8.4.2 · 8.4.3 | 字体全站只用 sans：`--mono` 与 `--serif` 都是 `var(--sans)`，所以任何地方写 `var(--mono)` 都是 no-op —— 想让 CA 恢复等宽，改这一行即可；等宽原本承担的对齐交给 `tabular-nums`。**字号只有固定几档**，按钮与表单控件一档、表格正文一档、块标题三层。字重只用 400 / 500 / 600。 | 随手写一个字号表之外的尺寸，之后没人敢改；CSS 不写字重就落回浏览器默认 700，会出现「同为小标题、一个字更黑」。 |
-| 8.4.4 | 颜色只有一条来源 `tokens.css`，页面里不写字面 hex：文字用 `--fg` / `--fg-2` / `--muted`；`--accent` **只做填充与边框，文字用 `--accent-fg`**；状态文字用 `--ok-fg` / `--warn-fg` / `--danger-fg`。 | 组件里写一个十六进制色，浅色主题下就是看不清的深色。 |
-| 8.4.5 | 直角是全局的（`*{border-radius:0!important}`），新控件不要再引入圆角；原生控件内部不吃 `border-radius`。**例外只有一个，要写 `!important` 才盖得住全局那条，并且要登记在这里**：运行点（`50%`）。卡片图标位曾是第二个（`6px`），2026-10-06 用户点名改回直角。 | 给第三个控件顺手加圆角就是漂移 —— 除非用户点名要，并且补的这一行。 |
-| 8.5.1 | 图标只有一套：`lucide-react` ＋ 组件 `Icon.tsx` ＋ 一条规则 `.ico{stroke-width:1.5;stroke-linecap:square;stroke-linejoin:miter}`。**几何在样式表里否掉 lucide 的默认**（24 格、描边 2、圆角端点）—— `stroke-*` 是继承属性、样式表声明赢过表现属性，所以后加的图标不可能漏掉。 | 直接在组件里用 lucide 原组件就会混进圆角端点与 2px 描边。 |
-| 8.6.1 · 8.6.3 | 两套 token 都在 `tokens.css`，持久化只写 `ch.theme` 一个键；`index.html` 里一段内联脚本抢在首屏前设好 `data-theme`。**浅色不是反色**：右区与左栏整体互换 —— 左栏跟 `--surface`，**报告卡片也重新提出来跟 `--surface`**，没有一处写死颜色。 | 只在 React 里设主题，深色用户每次刷新会先闪一帧白；写反了就是右侧一片灰、视觉重心跑到侧栏上。 |
-
-## 8.7 收藏（书架）
-
-收藏是**那份组装好的卡片的一份拷贝**，不是指针：报告行随轮次消失，报告库还会被整套删掉，指针留着就只剩一条断链。主键 `(chain_id, ca)`、**不带 `config_id`**（搜索能收藏任何链的币）。**写入口三个**：报告页的星 `POST /favorites`（服务端从组装好的那批卡里拷一份，所以拷贝与报告页画的一模一样）；书架与搜索页的星 `DELETE`；搜索页收一张已经在库里的卡只翻 `kept`（8.8.4）。行形状两处，各管各的来源。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.7.4 | 书架自己那条上只有标题一个词，不印张数；右侧依次：`展开卡片 / 收起卡片` -> 过滤框（宽到装得下整条 CA，placeholder 用 `--muted`）-> `导出`（灰显，9.5.1）。`来源` / `排序` / 方向**不在这条上**，站在卡片左边的面板里（8.8.19）。筛选与排序是页面状态，**不落库**。 | 会随书架内容出现 / 消失 / 换位的控件，读者每次都得重新找一遍；两个 label 宽度不同的按钮会让旁边那颗来回挪。 |
-| 8.7.5 | 卡片的**第二条页脚**（只有书架传、报告页不传就不画）：第一行 `链: 链名 ｜ 配置: 配置名`，第二行 `生成时间: x ｜ 收藏时间: x`。没有配置文件的链把 id 变成名字（三个字母及以下全大写，更长只大写首字母；**id 本身保持小写**，主键与文件名都读它）。时间只到分钟、不带时区。**一个字段的值缺了就连标签一起不画**，不留破折号。 | 放进卡里才跟卡是一体的：框外那一行是页面注脚，框内这一行才是这张卡的出处。 |
-| 8.7.7 | 一轮写完就把书架补上：把这一轮写过、而且书架上正好有的那几张卡换成本轮的新卡。四条边界：**只换不增**（没人收藏的币不进书架 —— 那是程序替读者决定跟不跟）、**只同链同设定**、**只往新的方向走**（某一轮被重跑也不会把旧卡塞回去）、**不动 `origin`**（被接管的搜索行不会因此从最近搜索消失）。`saved_at` **不动**：那是读者收藏的时刻。 | 收藏是跟**币**不是跟某一刻：读者点了星，之后每一轮自动就是当前答案。`收藏时间` 一旦跟着刷新走，就和 `生成时间` 变成同一个数。这一步被 try 包住：书架没刷上不算这一轮没发布。 |
-
-## 8.8 CA 搜索（任意链）
-
-前面几节讲的是**一轮**；搜索是**一个地址**。左栏「搜索」就是这一页，贴一条 CA 拿一张卡，搜过的那几张都留在右栏那面墙上。它不是「一轮的小号」——没有池、没有排名、没有设定，下面每一条都由这三件事推出来。工作全在 `api/app/lookup.py`。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.8.1 | **链由地址决定**，不由读者选：先问 DexScreener 的代币端点，把同一地址的池**按链聚合**、取流动性**最深**的那条。yaml 里没有的链照样出卡：链上那一半如实空着（`None` ＝ 未判定，不是 0），市场与链下两半照答。**没有「简卡」**。 | 让读者先选链，就是让他回答一个常常不知道的问题；不聚合就按行取，同名 CA 在两条链上都有时会拿到浅的那条 —— 那是另一个币的数。 |
-| 8.8.2 | **没有分**：综合分是池内百分位，池里只有一个币就没有百分位。**搜索页不画分数相关的任何东西**：序号、`新进/续榜`、池内排名那行字、`综合分`、整条评分条一起不渲染，**不是画成 `—`**（排名那一行本身还在、只是空的）；留在这儿的只有收藏星标和 `重新搜索`，两个都跟分数无关。开关是 `Card` 的 `listed`：搜索页**显式传 `false`** —— 一行被一轮接管后 payload 里会带上 rank / score / config，显式传才不让那张卡的 payload 反过来决定画什么。**收藏页里空位照留**（那是搜索卡与轮次卡唯一并排站的地方），所以收藏页给评分条一个固定 `min-height`，两张卡逐块对齐。 | 借一个旧池的百分位、或者自己编一个数，就是 2.3.4 的反面；「0 分」与「没判」是两件事（6.6.2）。空位不留，它下面每一块都会跟着上移。 |
-| 8.8.3 · 8.8.4 · 8.8.6 | **落一行，不落一轮**：写 `origin='search'`、`kept=0`、`config_id=None`、`rank=None`；卡片仍由报告页那同一个组装函数出，**两张卡的形状不许分家**；调研**不写 `lexicon`** —— 词条按「链 ＋ CA ＋ 设定」存，一次搜索不属于任何一套设定。**收藏 ＝ 翻 `kept`，不写第二行**：星画实心与否读的是**书架**，所以一颗星和一面书架不可能各说各话；重新搜一个已收藏的币只换正文，那条写入**有意不带 `kept`** —— 全世界只有点星能改这一列。**取消收藏按来源分岔**：搜索来的那张只把 `kept` 归 0（仍留在最近搜索，再点星还收得回来），轮次来的那张才真删行。 | 自动收进书架，就是程序替读者决定跟不跟；拿搜索去覆盖某一套设定的词条，下一轮报告会印出一段没人复核过的文字；一律删行，读者取消一次收藏就丢掉自己那次的查询记录，还得再花一次钱才找得回来。 |
-| 8.8.5 · 8.8.8 | **秒开**：右栏每一张卡**都是库里存的那一份** —— 列表查询就带回整张卡，所以切链 / 换排序 / 过滤都是本地读，不是请求；同一个币看第二遍不再付一次钱。所以 `重新搜索` 是**唯一**要再花钱的动作，它是按钮而不是默认行为，长在它要替换的那张卡的头部。默认按**那次搜索自己的时钟**排（`origin_label` `DESC`，不是写库那一刻），也正是后端交上来的顺序。搜索卡的**页脚只有两格**：`链: …` 与 `生成时间: …`（不印配置，也不印收藏时间 —— 那是采集时刻，不是读者做过的动作）。 | 点一张卡跑一次搜索，等于每次翻旧账都重新买一遍。把写库时刻当成「收藏时间」印出来，页面就出现一个读者从没做过的动作。 |
-| 8.8.7 | **慢，所以是个 job**：一次搜索读一个币在该链的全部源 ＋ 一次链下调研，量级几十秒到两分钟。入队只答 **202 ＋ 一个 job**，页面轮询到 `done` / `failed`。**job 就是那个时钟**：五个阶段各记 state 与实测秒数，每过一站写一行。链下没回来**不算失败**：卡照出，note 写明缺的是哪一半。 | 为了「快」去砍超时，只会让**有时候**少一半数据而读者看不出是哪一次；把请求挂住不答，读者在那两分钟里看不到任何阶段，中途失败时也只拿到一句 500。 |
-| 8.8.10 · 8.8.12 | 搜索页**没有链 / 配置的 TopBar**：它的顶栏与书架共用一条 —— 标题 ＋「运行结果」＋「展开卡片 / 收起卡片」＋ 搜索框 ＋ 按钮（「运行结果」排最左，与雷达上同一个理由）。**只有一页**：没有 `搜索 / 设定` 那对 tab，搜索框也不因为输入为空就灰掉。 | 把链 / 配置搬过来，读者会以为这一页跟着当前链走；一个只能解释自己的 tab，就是一次白点的点击。 |
-| 8.8.11 | **运行结果面板就是一块面板**：搜索复用一轮的样式表和同一个 Marker，所以「认链」和「拉取扫描源」是同一排东西。两处不同：进度条是**已结束阶段的比例**，**没有「中止」**（后端没有能停下一个已入队搜索的东西）。**那颗按钮永远可点**：这一页自己没排过队时，它折的是**最近一次搜索**；一条记录都没有时才写「还没有搜索记录」，而不是假装排着队。**排队时自动展开；跑完自动收起，失败除外** —— 这块面板是给「这一趟跑到哪了」看的，卡一落下它就正好挡住要看的那张卡；而一次失败的原因正写在里面，那一次留着展开。 | 另造一套阶段面板，两边「失败停在哪」很快会长得不一样；给一个停不下来的搜索画一个「中止」，就是第 3 条红线；把面板留在原地展开，读者每搜一次都要先手动关掉一块挡在结果前面的东西；失败也跟着收起，读者只剩「没出卡」这一个信息。 |
-| 8.8.13 | **搜索卡宽 ＝ 收藏卡宽**（2026-10-11，用户）：两页共用同一条轨道规则 —— `#view-favorites .fav-body,#view-lookup .look-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}`，左栏面板写死 320px，卡片段跨其余轨道，段内再套一层同样的 `.grid`。两页都是「不是雷达」的地方，面板一样宽、卡一样宽，读者学一次就够。 | **把容器换成 `.grid` 并不够** —— 旧的两栏切法让卡片那栏只剩一条轨道，卡片宽出三分之一（1280 实测 635 对 481）。**搜索页曾一度跟着雷达的轨道规则走**（卡片宽正好等于雷达卡），代价是面板站在一条卡宽轨道里、墙前空出 168px 死空档（1280），而且两页的面板宽度不一样；2026-10-11 用户按「两页一致」定案，回到这一条。 |
-| 8.8.15 | **右栏是一片卡片墙，没有「选中的那张」**：搜过的地址都在墙上，一张卡一个（最多 50 条，后端 `recent(limit=50)` 封顶）；左栏的 `链` / `排序` 筛和排的就是这片墙。 | 旧版是「左栏一张行列表 ＋ 右栏只画选中的那一张」，于是左栏的筛选筛的是行、右栏永远只有一张卡 —— 点链看着像没反应。有选中态还得记住「上次看的是哪一行」（`ch.lookcard`），而一片墙不需要记住任何东西。 |
-| 8.8.16 · 8.8.17 · 8.8.18 | **搜索的链接从这次读到的来，不从快照来**（一个没补齐过的 CA 在快照里没有行，读了就是空手）：`gather()` 多收一个「已知链接」参数。**只换起点，不换工序** —— 挖链、读页面、写作与轮次跑的是同一段代码，引擎照问、官方时间线照读。官网行来自**证明过的那一个**（只有 `own` 才算），落到卡片那份 metrics 的首位。**记录归读者管**：搜索管理抽屉可删一条或清空，两个写都带 `origin = 'search' AND kept = 0`，所以**收藏过的那行两边都不动**（它是书架上的卡）；抽屉里那几行画成灰的、按钮 `title` 写着为什么。 | 让搜索也去读快照 ＝ 回答「上一轮认为这个币是谁」；顺手让它少做一步 ＝ 同一个币两条路两套结论，而 8.8 整套就是在防这个。证明了官网却没落到那份 metrics 上，就是没人印。删除顺手把星也摘了，就是一次没人按过的取消收藏；禁掉整行却不写为什么，读者只会以为坏了。 |
-| 8.8.19 | **书架的两个控件站在卡片旁边的面板里**（2026-10-02，用户；2026-10-11 起搜索页共用这一条，见 8.8.13）：`来源`（全部 / 各链 / `搜索`）与 `排序`（收藏时间 / 生成时间 / 分数 / 名称），底下一段横线之下是**方向**（从新到旧 / 从旧到新、从高到低 / 从低到高、A–Z / Z–A）。方向永远两行、随选中的排序换词，所以面板不会跳高；**换排序就把方向回到该键的第一项**（时间与新→旧、分数与高→低、名称与 A–Z）。两个列表的**每一行都以自己的图标开头**（2026-10-02，用户）：`来源` 行穿那条链自己的 mark（与左栏同一张，两边共用 `components/chainMark.tsx`），`全部` / `搜索` 戴 `Layers` / `Search`；`排序` 行戴该键或该方向的箭头。图标 14px、描边 2.5 —— 与左栏同一条理由：实心链 mark 旁边 1.5px 是发丝。顶栏只剩 `展开卡片 / 收起卡片` ＋ `过滤 symbol / CA` ＋ `导出`。 | 下拉框把「还有别的排法」藏起来，四个键要一个个点开才知道；而 320px 的面板**在每个断点吃掉一列卡片**（1440 实测 3 列 370 → 2 列 395），这一列是买「八个组合一眼看全」付的钱。**盒子留在顶栏**：它和 `来源` 列表一样是过滤，但它边打边答，不是一列选项。**面板所在的第一条轨道写死 320px，不用 `.grid` 的 auto-fill**—— auto-fill 轨道地板 345 且会长，面板会站在比自己宽的轨道里，卡片前凭空留出 62px（1440）/ 173px（1280）的空槽。**没有分数的卡在「从低到高」里照样沉底**，不拿 0 分参与比较（8.8.2）。 |
-
-| 8.8.20 | **搜索页的左栏是那两个面板**（2026-10-11，用户）：`链`（全部 / 各链 / `其他`） ＋ `排序`（生成时间 / 名称） ＋ 方向（从新到旧 / 从旧到新、A–Z / Z–A），面板右边就是它们作用的**卡片墙**（8.8.15）。默认是 `全部` ＋ `生成时间 / 从新到旧` —— 正是后端交上来的顺序，所以默认等于这页什么都没要求。**没有 `分数` 这个键**（8.8.2）。`其他` 是唯一不是链 id 的一行，代表「本 App 没有雷达的链」（8.8.1：链由地址决定），**只在墙里真有这么一张时才出现**。**一次搜索落地后 `链` 自动回到 `全部`**：一张新卡自己带链（8.8.1），留在上一条链上就会把刚搜到的卡筛掉。**面板的宽度和书架的一模一样**（2026-10-11，用户）：320px 写死的第一条轨道，两页共用同一条规则（8.8.13）。 | 搜索页只有一个卡片栏 —— 旧版把结果画成左栏的行列表，筛选筛的是那张列表而不是卡片，于是「点链没反应」。链行按 `chains` 里 enabled 的顺序、永远都在，所以「这条链还没搜过」是一个答案而不是一个消失的按钮；`其他` 反过来只在有内容时出现 —— 还没有这种记录时按下它只能得到空，那是一个只能答空的控件。`链` / `排序` 是页面状态、**不落库也不记进 `prefs`**（8.8.19）。面板若改回跟雷达的轨道规则走（＝一条卡宽），它会比书架的面板宽出一截，墙前还会留一条死空档 —— 两页并排看就是两个宽度。 |
-
-## 8.9 系统设置（本机接线）
-
-左栏最下面那一行。它管的是**这台机器的接线**，不是任何一轮的口径 —— 所以它不属于任何链，也不是 8.2 那种设定。工作全在 `api/app/system_settings.py` ＋ `api/app/api/v1/system.py` ＋ `web/src/features/system/`。它也是全站唯一画**可编辑字符串行**的地方（`Widget` 的 `text` 与 `password`：网关地址、模型名、凭据框 —— 链那边全是数字、档位和勾选），以及唯一带**探测按钮**的地方（端点两个：获取模型 / 测试连接；X 会话一个：测试连接）。
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 8.9.1 | **一个文件两个面**：`config/system.yaml` 由 loader 灌进环境变量（读方一行没改），页面是它前面的一张表单，两边都走 `config.SYSTEM_KEYS` 那张键表 —— 页面**提不出一个没人读的旋钮**。键名去前缀、按块嵌套（`llm.base_url` / `x.auth_token` / `log_level`）。 | 页面另抄一份键名清单，改一处漏一处，就是「设了没反应」。 |
-| 8.9.2 | **真实环境变量永远优先**：操作系统已经给了值的那一行画成只读、dim 写「环境变量」；**来自文件的行不写 dim**，「环境变量」与「默认」才露头。 | 把文件写下去而进程仍在读另一个值，就是一次操作者看不出效果的保存；反过来，把正常情况也标出来，真正异常的那几行就淹掉了。 |
-| 8.9.3 | **空 ＝ 没配，不是空串**：`null` / 缺键 / 空框都不写进环境变量，代码自带默认接手。**唯一例外是密钥**：密文框空着 ＝ 保留已存值 —— 在那里「清空」与「不动」是同一次击键，而保留是唯一不赔掉一把可用 key 的解释。 | 写 `""` 会让 `float(os.environ.get(..., "180"))` 当场炸；密文框按「清空」处理，一次误删就得换 key。 |
-| 8.9.4 | **密钥页面只给两端，不给值**：写成 `已配置 · sk-liv…6789`（首 6 尾 4，短于 12 位只给尾），没配的写「未配置」，输入框本身是 password 框。日志那边仍旧只印 sha256 前 8 位（6.4.8）。 | 值进了 HTTP 响应，就等于进了浏览器缓存、截图和每一次复制；而两端已经够回答「用的是不是我记的那把」。 |
-| 8.9.5 | **写回是行级往返**：`ruamel.yaml` ＋ 临时文件 ＋ `os.replace`，没改的行逐字节相同（保注释、保引号、保 CRLF）。非法值（枚举写错 / 数字不是数字 / 不是 JSON / `NaN`）一律 422 且**文件不动**。 | 整份重写会吃掉注释与排版；先写坏再报错，就是把文件留在一个没人验过的状态。 |
-| 8.9.6 | **保存即生效**：写完重读环境变量，还调一次 `logging_setup.setup()`（幂等、不碰 uvicorn），所以日志等级**当场**换档；LLM 与 X 会话是**下次调用**换 —— 读方本来就是用时才读。 | 写完要重启才看得见，操作者会以为没存上。 |
-| 8.9.7 | **探测走草稿，不是文件**：`POST /system/models`（拉端点自己的 `/models`）与 `POST /system/test` 都带 draft，用 `effective()` 把草稿盖在文件上、走保存那一套同款校验 —— 一个存不进去的值在这里也是 422，而且**什么都没写**。**它也不是一轮**：`api_keys` 里**每一把各打一次**（最多 3 把）、不重试、60s 超时、**不写 `llm_calls`、不把任何一把 key 晾冷却**；网关的拒绝是**答案不是异常**，原话印在按钮旁边，表单一动不动。 | 要先保存才能测，操作者就得把一个错的端点写进文件才能发现它错；一次点错按钮就把真 key 晾 600 秒，比不打这个按钮还糟。备用 key 从没答过话，一轮只在主 key 被拒的那天才第一次用它 —— 那时才发现它也是坏的，代价是一整轮。超时要盖住真的 `/responses` 调用（实测 14-33s），20s 会把能用的模型报成不可达。 |
-| 8.9.8 | **测的是「能不能写」，不是「通不通」**：`/models` 只证明门开着，所以 `test` 每把各打一次**真的最小调用**（`max_tokens=256`，按配置发 `reasoning_effort`），把 `finish_reason` 与字数一起回报。 | 只看连通性，会把一个「200 + 空正文」的端点判成健康 —— 那正是 6.4.8 坑①。 |
-| 8.9.9 | **候选只往框里打字**：端点预设（`forms.SYSTEM_ENDPOINTS`）与端点回的模型列表都是 `Pick`，点一下写进旁边的输入框，**框还是框**。按钮与结果行由后端的 `ActionOut` 给，`id` 是这一页唯一认识的词，键名一个不认识。 | 做成纯下拉 = 自建 vLLM、或端点没列出的模型，都进不来。 |
-| 8.9.10 | **X 会话的「测试连接」问的是「这串 cookie 还是登录态吗」**：`POST /system/x` → `XEngine.probe()` 跑一次 `twitter whoami --json`，30s（`PROBE_TIMEOUT`，不是一轮的 120s）、不搜关键词、不记账、不碰冷却；拒绝的原话回页面，缺凭据 / 没装客户端 / 超时都各自成句而不是 500。 | X 没有 `/models` 那种「门开着」的免费探针；用一次真搜索来验会话，点错一次就花掉一轮要用的额度（429 会让币丢链接）。 |
-
-# 9. 运行与验证
-
-## 9.1 读路径
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 9.1.1 | 单次上链请求有硬地板（2–3s，与查什么无关），并发几乎免费，**批量省一次往返**。**一条链只有一个 RPC 端点，没有备份。** | 靠加并发把链上段从 30s 压到 5s 做不到。报效果只说轮间可比的请求数，别拿单次 A/B 的耗时下结论。 |
-| 9.1.2 | 提速只做「把本该同时问的一次问完」：`rpc_batch`（回包按 id 映射回顺序）、`nft_balances`、`contracts_of`、`_pool_logs` 的窗口并发、`decide.py` 的 `ENRICH_WORKERS`（6.2.9）。 | 并发不保序会回包错位，所以按 id 映射。 |
-| 9.1.4 | `eth_getLogs` 的调用次数**轮间不可比**：节点拒绝窗口宽度时对半递归，拒几个窗口由节点侧定（7.1.5）。 | 看整轮的 `ok=` 总数；波动全来自节点。 |
-| 9.1.5 | 30 次 / 轮里没有可去的重复调用（一轮内没有重复读同一个 CA）；要再压只能减少「哪些读是必需的」。 | **未擅自改，等拍板（10.7）。** |
-
-## 9.2 中止一轮
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 9.2.1 | 口径是**只在进程内存里立一面旗**（`api/app/cancel.py`）：`POST /runs/{id}/cancel` 立刻返回 —— 一轮跑在 `schedule.py` 的单线程 worker 上，HTTP 处理器够不到那个线程；轮次自己在下一个检查点读旗、抛 `RoundCancelled`。 | 旗按 run id 存、轮次结束就清 —— 写进数据库的话，重启后上一轮的停止请求还在，下一轮会继承。 |
-| 9.2.2 | 一轮没有回滚可做：落库只有最后一笔事务（`store_round` ＋ `store_reports`），停在哪就是停在哪，**报告一张也不写**。 | 搞一套「回滚」，复杂度全花在不需要的地方。 |
-| 9.2.3 | 检查点只用轮次本来就有的边界，**没为中止新增计时器或线程**：源之间、阶段边界、补齐与富集池里**每个币开跑之前**（`http.pmap` 的 `stop`）、`_gate` 的每个标的、每个币的词条之间、一次调用的前 / 后与读响应体的每一块之间。 | 加一个每秒轮询的计时器只会多一个线程、还让每轮变慢。`pmap` 在「下一个任务开跑前」问，**在途的那几个必须跑完才算停**（为什么见 9.2.6），所以响应时间是一个币的一次网络等待：秒级，X 搜索那一趟照它自己的 120s 子进程超时算。**不要承诺「点一下立刻停」**。 |
-| 9.2.4 | 在途的模型答案可以放弃，但**不能退化成 `LLMUnavailable`**：`client.stream` 按块查旗，命中就关连接抛 `RoundCancelled`；关键是 `complete()` 里单开 `except cancel.RoundCancelled: raise`。 | 退化的话，一轮会用「没写词条」的样子把报告发出去。 |
-| 9.2.6 | 旗只从 `cancel.check(run_id)` 进线程池，**不在任务函数里抛**。两个原因各占一半：在途的任务请求**已经发出去了**，线程从外面杀不掉，只能等它自己返回 —— 这就是 9.2.3 说的「在途必须跑完」；而任务里抛会被 `pmap` 读成「这个源什么都没答」（`None`），一轮就会带着半池数据继续跑。行里没有 run id 的调用（CA 搜索）拿到的是**空检查**，永远不停。 | 反过来写，一次中止会伪装成一次网络失败；给不是轮次的搜索也配一个能停的旗，界面就得给它一颗停不下来的「中止」。 |
-| 9.2.5 · 9.2.7 | 两个例外：排队中的那一轮没人开始跑就读不到旗，由路由直接落库（`run.stop_run`）；写库之后不再有检查点，停止请求晚到就照常发布。 | 只立旗的话队里那一轮永远不会停；在事务里插检查点，报告就会半写半不写 —— 已发布的报告不该被改写成「已中止」。 |
-| 9.2.8 · 9.2.9 | 前端把中止当跑完处理：`已中止 · 本轮`，步骤列表照常显示（已结束的有耗时，没走到的画 `—`）；**新状态 `cancelled`** 进 `states.TERMINAL`。按下确认后按钮**留在「正在中止」**直到这一行离开 live，**不跟着那次 POST 的 pending 走**（POST 毫秒级，轮次是秒级）；双击窗口 10 秒。顶栏开关的**收起那一半**退回**最近一轮有卡的批次**，**展开那一半永不挪动读者**，刷新同理。 | 记成 `failed` 会让「失败率」虚高；刷新后跳回那个没有结果的批次就是这么来的。POST 回来就把「中止」递回去，操作者会以为没生效而重复点，或以为停不下来。 |
-
-## 9.3 状态机
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 9.3.1 · 9.3.2 | 状态链 `pending → collected → scored → selected → written → researched`；任何在跑的状态都可以跳到 `cancelled` / `failed`；终态 ＝ `researched` / `cancelled` / `failed`。 | 在 `written` 之后再排一个异步阶段，报告已发布却还会被改写；把 `written` 也当终态，推送那一步没走完就停表。 |
-| 9.3.3 | 落库那笔事务之前，任何阶段失败都可以重跑；之后不再改写。卡住的一轮靠**状态机上的重试与补发**恢复。 | 另写一个 watchdog 扫库改状态，就是两个写者抢同一行。 |
-| 9.3.4 | **「正在跑」由执行器说了算，不翻 `runs` 表**：`schedule._live`（run id → 链 ＋ 配置）在 `submit` 时写入、future 完成时删掉；`busy_chains` / `live_configs` 只读它。 | 「任何非终态的行都算在跑」是有毒的：进程死在半路会永久留一条非终态行，于是每条链永远有一轮在跑、ticker 再也不发轮（实测两条链都 busy，11 小时零个排期轮）。生产是一个进程一个端口，本进程的轮次就是全部真相；要上多 worker 就得换成带心跳的租约。 |
-| 9.3.5 | 开机收尾（`recover()`）：`pending` 重交，**其余非终态一律收尾** —— 存过 `reports` 的收成 `researched`，没存过的收成 `failed` 并写明原因。 | 不收尾，页面就永远显示「正在运行」并一直走表。收尾只在开机跑一次、在任何 worker 之前，所以不违反 9.3.3；状态机不认识的旧状态（`sent`）直接写库收尾。 |
-
-## 9.4 工作方式（和这个用户合作）
-
-| 编号 | 规则 | 说明 |
-| --- | --- | --- |
-| 9.4.1 | 他说「我们先讨论」时，只出判断和方案，**不动代码** | 没让改的别改。 |
-| 9.4.2 · 9.4.3 | 一次只动该动的；不 `git commit`、不建分支，除非他明确要求 | 不顺手重构、不修无关的 bug（可以在汇报里提一句，由他决定）；也不要自动提交一版「阶段性成果」。 |
-| 9.4.4 | 改动贴现有风格 | 直角（例外只有 8.4.5 登记的那一个）、颜色只从 `tokens.css` 取、文案口径跟 `settings/forms` 走（2.3.3）。 |
-| 9.4.5 | 汇报短，先结论后数据 | 先说结论，再给实测数字与 `文件:行`；UI 改动附截图，改完复述「改了什么 ＋ 实测多少」；别按时间顺序写成流水账。 |
-| 9.4.6 | 用中文沟通 | 代码注释按现有习惯（注释英文、文案中文）。 |
-
-## 9.5 还没接的部分（别当成 bug）
-
-| 编号 | 事项 | 说明 |
-| --- | --- | --- |
-| 9.5.1 | TG 推送 | `api/app/out/` 是占位模块（`out.configured()` 返回 `False`），一轮跑到那步写「未配置（跳过推送，报告已落库）」并正常收尾，**不阻塞**；顶栏「推送 TG」与「导出」都带 `disabled`。推送是落库之后的可选动作，将来接出口改的就是 `configured()`，流程不动。 |
-| 9.5.2 | 一键重算 | `POST /settings/recompute` 返回 501（一轮的 universe 没落库）；前端以为它可用就会点了没反应。 |
-| 9.5.3 | 搜索没配 cookie | `config/system.yaml` 的 X 会话段空着时 X 搜索整层静默失效，卡片只用本轮登记的链接，**不阻塞流程**（6.4.3）。 |
-| 9.5.4 · 9.5.5 | 两条「看起来没接、其实是有意的」 | 链下调研没回来的标的本轮不参与排名（不是 0 分，6.3.4 / 6.5.11）；`holders_max` 默认 `null` 就是不设上限（6.1.7 / 10.4）。 |
-
-## 9.6 进度与完成态
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 9.6.1 | 进度条只有五段（`progress.py` 的 `PHASES`，与 2.4 那九个时间线键是两套粒度），**五段不等长** —— 额度是两条链实测墙钟的加权占比（pull 19 / topup 11 / gate 21 / draft 45），段内按**实际完成的工作量**填充。额度按**阶段走的顺序**排，所以柱子本来就只会向前走。 | 按段均分会先躺二十分钟再跳一格；改阶段就得回来改下面那张表。 |
-| 9.6.2 | 进度只增不减：`_set_progress` 落库用 `MAX(progress, ?)`；`percent` 单调，`progress_label` 仍如实跟着阶段变。 | 段内额度是估的，回跳比走得慢更伤信任；测试 `test_the_bar_never_walks_backwards` 守这一条。 |
-| 9.6.3 | `sharpen` 与 `write` 不占额度、只记日志（每轮一行 `round <id> phase timings: ...`）。 | 为一两秒的阶段切一条进度带，只会让已有的五段更窄；**数据库只留结论、不留耗时**，日志是唯一能复核这些额度的地方。 |
-
-| 进度段 | 额度 | 段内单位 |
-| --- | --- | --- |
-| `pull` | 0–19 | 每个扫描源拉完一次 |
-| `topup` | 19–30 | 每补一个候选的链上数据 |
-| `gate` | 30–51 | 每判完一个候选 |
-| `draft` | 51–96 | 每调研并写完一个币的词条 |
-| `score` | 96–100 | 一次 |
-
-## 9.7 数值显示
-
-| 编号 | 规则 | 说明 / 反例 |
-| --- | --- | --- |
-| 9.7.1 | 分数只印整数：库里和接口里带一位小数（打分条要用这个小数画长度），**页面印出来的一律四舍五入到整数**，出口只有 `web/src/format.ts` 的 `whole()`。**四舍五入是半进位**：Python 的 `round()` 是半偶进位，两边不许混用，所以 Python 侧写 `math.floor(x + 0.5)`。 | `toFixed(1)` 是反例 —— 同一个分数的两种写法出现在一屏里，就不像同一套数。 |
-
-# 10. 待决（都没擅自改）
-
-**想动这里面的任何一条，先问用户。**
-
-| 编号 | 待决 | 现状与可走的路 |
-| --- | --- | --- |
-| 10.1 | 硬过滤的松紧 | 现值见 6.1.5 – 6.1.7（比参考实现紧，它的下限是 0）。两头一起收窄是为了同时挡住「微市值 ＋ 零数据」和「涨上去的老盘」；代价是少掉两头的新面孔 —— 松紧随时可在设定页改，所以这不算错，只是没拍板。 |
-| 10.2 | 同一行快照里 `market_cap_usd` 与 `price_usd × 供应` 对不上 | 两个端点各缓存、TTL 不同步，一行拼了两个时刻的数。影响只在「距高回撤」的读数（判定逻辑不受影响，6.1.13）：①源高点与②库记录高点都以 `market_cap_usd` 当 `now`，刻度不自洽会让跌幅偏深或偏浅。三条路 —— 改用 `price_usd` 当序列 / 把市值那列的 TTL 与价格对齐 / 先修自洽再谈阈值。 |
-| 10.3 | `num` ＋ `enabled_key` 行的 `开启` 标签折成两行 | `.chk` 被 `flex:0 1 auto` 压扁，与复选框长相无关。三条路 —— `.chk{white-space:nowrap}` / `开启` 缩成 `开` / 该列不可收缩。 |
-| 10.4 | 持有人上限默认留空（＝ 不设上限，6.1.7） | 给一个数就等于凭空开始砍币，而「市值 1–20 万的币持有人能到多少」在 Arc 上没实测过。 |
-| 10.5 | worker 线程卡住（进程还活着）时，那一轮和「正在跑」长得一样 | 「进程死在半路」这一半已修（9.3.4 / 9.3.5）；剩下的是进程活着、线程卡在某个不返回的网络上，现在没有任何超时能发现它。要修得给轮次加心跳（`_live` 里带时间戳），代价是每个阶段都得写一次。 |
-| 10.6 | 深色主题的状态边框对比度不达标 | 要达标就把 `--ok-border` / `--warn-border` / `--danger-border` 各提一档。 |
-| 10.7 | 链上读路径要再压，只能减少「哪些读是必需的」 | 30 次 / 轮里没有可去的重复调用（9.1.5）。 |
-| 10.8 | 链下调研五项的边界 | **第 4 项的定义已定**（2026-10-06，6.5.13）：判「在不在本链主线上」，判据是链 yaml 的 `thesis:` 一句话。**仍是待决的**：第 2 项与第 4 项的界线、其余四项的判定细则、粗筛条件、`per_round` 取值、链下调研块的其他参数（8.2.9）。**权重已定**，不在待决里：五项各有百分比旋钮、出厂等权 20%。 |
-| 10.9 | 分位分母是混口径的 | 只有被逐币补齐的那批行带市场口径（DexScreener），池子里其余行还是粗筛口径 —— 同一个分位里两种口径混着，流动性分位会随「这行补没补」漂移。三条路 —— ① 缺筹码的行也补一遍 DexScreener 行情（`MARKET_ENRICH` 把 gmgn 也带上，全池走会把 GMGN 那半边也拉到全池，要只买行情得给 `_top_up` 单开一条只带 dexscreener 的路）；② 按口径切开各算各的分位（分母变小，可比性反而更差）；③ 认了它并写进文档（现状）。**动它要重跑一轮对比，别顺手改。** |
-| 10.10 | 一轮接管搜索记录后那一行两页都看不见 —— **已按 ① 处理** | `db.favorite_refresh` 原来把 `origin` 一起改写成 `'round'`：读者**没收藏过**它（`kept = 0`）时，这一行既不在书架也不在最近搜索，两页都看不到，直到再搜一次。现在那条 UPDATE **不写 `origin`**：被接管后它仍是搜索行（正文 / run / config / rank / score 都换成轮次的），所以留在最近搜索里；同一个 CA 收藏过的话两页同时有它。`kept` 两边都不动。**遗留**：被旧代码写坏过的行不会自己回来，要么再搜一次，要么手工改回。接管后 `rank` / `score` 是轮次的，但搜索页给 `Card` 传 `listed={false}`、页脚也不再画 `配置`，所以照旧不画序号 / 分数条 / 池内排名（8.8.2）。 |
-
-# 11. 附录：为什么这么定
-
-每条规则都是被某个具体的错纠出来的。只留最贵的那些「曾经怎么错」，**现行口径看后面那列**。实测数字与几何不留台账 —— 需要复核就查提交历史与代码注释（`文件:行`）。
-
-| 曾经的错 | 现在写在哪 |
-| --- | --- |
-| 距高回撤要求三个读数**一致**才淘汰 → 169 个已跌够的币一个没淘汰；库记录高点从不回写 → 那一半永远只是下界；池面读数读失败时静默放行而不是记未判定 | 6.1.13 |
-| 短名单排序键曾用成交额 / `min(流动性, 成交额)` → 刷量的浅池把深池挤掉 | 6.1.11 |
-| gate 曾自己买池面读数（不进卡片、不进分）→ 被 GeckoTerminal 打限流，gate 54s 涨到 242s | 6.2.10 |
-| 设定 patch 在两层嵌套组上做浅合并 → 同一次保存改两个权重只留下最后一个 | 8.2.1 |
-| DexScreener 的四个市场数在 `FIELD_PRIORITY` 里一个都没列 → 一轮又一轮地花钱问、问完丢掉 | 6.1.3 ｜ 6.2.1 |
-| `f_narrative` 判「和这条链什么关系」→ 每张卡答的都是官方有没有背书，要答的「在不在主线上」只提过一次、没定义；三条链官方都在讲 RWA 与稳定币，卡上分不出谁踩中主线 | 6.5.13 |
-| GMGN 榜单的 `volume` / `price_change_percent` 跟着查询窗口走，下游一律当 24h 记 → 5m 榜的 $47 被当成「一天成交 $47」淘汰 | 6.1.9 |
-| 安全判定曾只判按流动性取的前 20 个候选 → 深而脏的行吃光名额，健康币从未被问；进度五段的额度也还是那会儿的墙钟定的 | 6.2.8 ｜ 9.6.1 |
-| 官网候选只吃引擎的 web 命中，或只认挣到 `own` 的账号页 → 项目写在自己 X 主页（bio 或正文）里的官网从来不是候选，卡片没有官网行 | 6.4.9 ｜ 8.8.17 |
-| 链下调研的外链只从 `snapshots` 读 → 一个从没被补齐过的 CA 必然判「没有可读的外链」，写作整段不跑 | 8.8.16 |
-| 卡片曾一边显示「LP 已锁」一边在词条里写「三项全部未判定」；词条看不到安全块 → 永远写「安全块三项全部未判定」 | 6.5.2 ｜ 6.5.8 |
-| 设定页挂着一组四个「提醒」开关（改名次数 / 建币数量 / 同名合约 / 官网漏收录），没有任何代码读它，勾不勾一轮跑出来完全相同 | 8.2.10 |
-| 「空壳淘汰」与「零数据淘汰」共用一个 `missing_data` → 面板每轮把 85 条（Robinhood）/ 399 条（Arc）空壳行印成「零数据淘汰」，而真·零数据淘汰近 8 轮一条都没有（Robinhood 实测 0，Arc 未逐条复核） → 两者已拆开，且三个注册表适配器在拉取侧就跳过空行 | 6.1.4 |
-| 中止只在阶段边界读旗 → 补齐那一段（逐币补全池，Solana 实测是整段里最长的一段）一个检查点都没有，点中止看起来没反应，最坏要等它跑完 | 9.2.3 ｜ 9.2.6 |
-| 「正在中止」曾跟着那次 POST 的 pending 走 → POST 毫秒级就回来了，按钮立刻变回「中止」而轮次还在跑，操作者以为没生效而重复点 | 9.2.8 · 9.2.9 |
+| 新增或修改一个数据源 | `api/app/sources/README.md` 与该链 `SOURCES.md` | 通用源 `api/app/sources/`，链专属源 `api/app/sources/<chain>/`；新源必须同时进入 `registry.ALL`、`FIELD_PRIORITY` 与 `DEFAULT_PRIORITY` |
+| 调整硬过滤默认值 | `api/app/pipeline/README.md` · 硬过滤 | `config/chains/*.example.yaml`；本机那份是同名 `*.yaml`，保存后以 `settings_versions` 为准 |
+| 修改评分权重或因子 | `api/app/pipeline/README.md` · 打分 | `core/scoring.py` 与 `config/chains/*.example.yaml` |
+| 修改卡片展示内容 | `web/src/features/README.md` · 报告卡 | `api/app/report/cards.py` |
+| 修改卡片文案或结论写法 | `api/app/report/README.md` · 词条文字 | `api/app/report/prompts/research.md` 与 `report/schema.py` |
+| 修改设定页字段或说明文案 | `api/app/api/v1/README.md` · 设定页 | `api/app/api/v1/forms.py` 与 `web/src/features/settings/` |
+| 新增或删除一套配置 | `api/app/api/v1/README.md` · 设定页 | `api/app/api/v1/chains.py`、`config/chains/*.yaml` 与 `settings/ConfigManager.tsx` |
+| 修改视觉 | `web/src/styles/README.md` | `web/src/styles/tokens.css`（先改此处，再动 `proto.css` 与 `app.css`） |
+| 修改一轮的阶段或顺序 | 本文件第 3 节（一轮流水线）与 `api/app/pipeline/README.md` | `api/app/pipeline/decide.py`、`progress.py` 与运行面板的 `STAGE_PHASES` |
+| 新增或修改数据表 | `api/app/store/README.md` | `api/app/store/schema.sql` 与 `store/db.py` |
+| 修改收藏页 | `web/src/features/README.md` · 收藏页 | `api/app/api/v1/favorites.py`、`report/assemble.py` 与 `web/src/features/favorites/` |
+| 修改 CA 搜索 | `web/src/features/README.md` · CA 搜索 | `api/app/lookup.py`、`api/app/api/v1/lookup.py` 与 `web/src/features/lookup/` |
+| 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py` 与 `web/src/features/system/` |
+| 第 7 节（边界与待决）中的待决事项 | 先与用户确认 | 第 7 节 |
+
+# 7. 边界与待决
+
+尚未接入的部分（不是缺陷）：
+
+- TG 推送：`api/app/out/` 是占位模块，一轮执行到该步时写入「未配置（跳过推送，报告已落库）」并正常收尾；顶栏「推送 TG」与「导出」均带 `disabled`。
+- 一键重算：`POST /settings/recompute` 返回 501。
+- 搜索未配置 cookie：X 搜索整层静默失效，卡片只使用本轮登记的链接，不阻塞流程。
+- 两项「看似未接入、实为有意如此」：链下调研未完成的标的本轮不参与排名（不是 0 分）；`holders_max` 默认 `null` 即不设上限。
+
+待决事项（改动前须先与用户确认）：
+
+- 硬过滤的松紧；同一快照内 `market_cap_usd` 与 `price_usd × 供应` 对不上；设定页 `开启` 标签折行；持有人上限默认留空。
+- worker 线程卡住（进程仍存活）时，该轮与「正在跑」状态无法区分；深色主题的状态边框对比度不达标。
+- 链上读路径已无可去除的重复调用；链下调研五项的边界；分位分母为混口径（补齐过的行是市场口径，其余仍是粗筛口径），改动需要重跑一轮对比。
+
+# 8. 设计取舍
+
+- 缺值只会是「未知」，不会变成放行：把未判定当作通过，上千条发射台自报的行会直接进池；反之把「对方回答没有」当作失败，Arc 上多数代币每轮都需重新查询。
+- 一个静默的空开关比缺少一个旋钮更糟：设定页上无人读取的开关，勾选与否结果完全相同，会让用户误认为它已生效：要么接通行为，要么删除该动作。
+- 事实只写一处：同一件事在两处各写一份，两边就会漂移；落地即冻结的三张表（`settings_versions`、`snapshots`、`reports`）就是这条规则的机器化实现。
+- 先付费再裁决：需要读取单个代币才能确定的数，判决只能在补齐之后作出；反之，粗筛行即可确定的数不应等待付费环节。
+- 排序键应选择「各来源答案一致」的那个：以未校准的读数作主键时，改动一个阈值就会整体重排池子。
+- 不可观测即不可复核：日志是唯一可复核阶段耗时与进度的出处，数据库只保留结论。
+
+# 9. 文档约定
+
+- 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
+- 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md`。
+- 规则不编号：定位一条规则用模块文档的小节名，`rg` 搜小节名或规则里的关键词即可；跨文档引用写「见 `<模块>/README.md` · 小节名」，同文档内写「见本文件 · 小节名」。
+- 模块引用用短名：`sources/` 到 `api/v1/` 在 `api/app/` 下，`features/` 与 `styles/` 在 `web/src/` 下。
+- 维护范围：分层、契约、运行方式、数据模型、视觉规则发生变化时更新本文件；改动代码的那一次同步修改对应模块文档；口径变化时直接改写原条目，不追加「某天起改为…」。
+- 唯一出处：视觉为 `web/src/styles/`，数据模型为 `api/app/store/schema.sql`，出厂设定为 `config/chains/*.example.yaml`。
