@@ -201,7 +201,7 @@ cd web; npm run build                       # 生产：tsc -b + vite build，然
 
 | 用途 | 源 |
 | --- | --- |
-| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank（非 EVM，没有发射台专用源，所以榜单是唯一的全链枚举口） |
+| 全链扫描（`scan_sources`） | Arc：gmgn / radardex / tolly / geckoterminal；Robinhood：gmgn / geckoterminal / coinbarrel / pez / peeps / pons / dexscreener_rank；Solana：gmgn / geckoterminal / dexscreener_rank / launchlab / pumpfun |
 | 安全与源码 | goplus（貔貅、税、危险权限、`dex[]` / `holders[]` / `lp_holders[]`）/ sourcify（源码验证） |
 | 补链接 ＋ 校准行情（`registry.ENRICH_ONLY`） | dexscreener：填 `symbol` / `socials` / `websites` / `description`，**并在补齐那一遍领跑市值 / 流动性 / 24h 成交 / 价格 / `price_change_24h_pct`**；同一个站点的批量那一半是 `dexscreener_rank`（榜单，见上一行），它**进 `sources:` 当扫描源**，不是 ENRICH_ONLY |
 | 挖链找页面（在 `app/search/`，不在 `sources/`） | X 高级搜索（cookie 子进程，不吃 token）＋ `identify` 读页面互证；只交出候选链接，tier 由 `identify` 挣 |

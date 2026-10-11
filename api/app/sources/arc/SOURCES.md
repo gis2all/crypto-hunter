@@ -24,6 +24,8 @@
 
 未采用：`/networks/arc/tokens`（列表形式）返回 404 —— Arc 没有 token 级列表端点，universe 只能从池聚合出来。
 
+发射台这件事上 Arc 是另一头：**没有发射台专用源，也不需要**。RadarDEX 的整链行里 `launchpad` 字段全是 `None`，而 GMGN / GeckoTerminal / RadarDEX 三个排序的并集已经把发射台发出来的币枚举进来了 —— 所以 `scan_sources` 里不加发射台源，加了只是重复。
+
 ## 关键结论
 
 1. **GMGN 必须走 `curl_cffi`（`impersonate="chrome"`）。** httpx / urllib 一律 403，返回的是 Cloudflare 挑战页（`text/html`），不是限频。依赖已固化为 `curl-cffi`，代码走 `sources/http.py` 的 `TRANSPORT = "browser"`。

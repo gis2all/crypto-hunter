@@ -45,24 +45,29 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # ordinary Uniswap pool, not a launchpad launch), while the launchpad the token did
     # come from keeps its own spelling when it has one.
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-               "coinbarrel", "pez", "peeps", "dexscreener", "dexscreener_rank"),
+               "coinbarrel", "pez", "peeps", "pons", "launchlab", "pumpfun",
+               "dexscreener", "dexscreener_rank"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
     "market_cap_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
-                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                       "pons", "launchlab", "pumpfun"),
     # The token own high. Three sources report one and they are the same kind of reading - a
     # record of the token own high-water mark: GMGN ships `history_highest_market_cap`,
     # CoinBarrel `peak_fdv_usd`, Peeps `athMarketCap`. None of them is interchangeable with
     # the pool history below it: GeckoTerminal answers the same question in a price, and no
     # merge can convert one into the other. Listed explicitly so a future source cannot
     # quietly outrank the ones that measured it.
-    "high_market_cap_usd": ("gmgn", "coinbarrel", "peeps"),
+    "high_market_cap_usd": ("gmgn", "coinbarrel", "peeps", "pumpfun"),
     "liquidity_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
-                      "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
+                      "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                      "pons", "launchlab", "pumpfun"),
     "volume_24h_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
-                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps"),
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                       "pons", "launchlab", "pumpfun"),
     "price_usd": ("dexscreener", "dexscreener_rank", "gmgn", "radardex", "tolly",
-                  "geckoterminal", "blockscout", "coinbarrel", "pez", "peeps"),
+                  "geckoterminal", "blockscout", "coinbarrel", "pez", "peeps",
+                  "pons", "launchlab", "pumpfun"),
     # GMGN answers this with the *ranking window's* change, not the 24-hour one:
     # `price_change_percent` read -0.22% on the 5m board and +0.35% on the 24h board for
     # the same token (measured 2026-09-29). The adapter gates it on the window, and the
@@ -70,7 +75,8 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # feeds - sit behind it. Listed explicitly so the default order cannot let a
     # wrong-window reading win by accident.
     "price_change_24h_pct": ("gmgn", "dexscreener_rank", "radardex", "tolly", "geckoterminal",
-                            "blockscout", "coinbarrel", "pez", "peeps"),
+                            "blockscout", "coinbarrel", "pez", "peeps",
+                            "pons", "launchlab", "pumpfun"),
     "holders": ("gmgn", "radardex", "blockscout", "goplus", "coinbarrel", "pez", "peeps"),
     "top10_pct": ("gmgn", "radardex", "goplus"),
     "bundling_pct": ("gmgn", "radardex"),
@@ -104,15 +110,18 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "total_supply": ("gmgn", "goplus", "coinbarrel"),
     "circulating_supply": ("gmgn", "goplus"),
     "max_supply": ("gmgn", "goplus"),
-    "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps"),
-    "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps"),
+    "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps",
+                  "pons", "launchlab", "pumpfun"),
+    "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
+                "pons", "launchlab", "pumpfun"),
     "renames": ("gmgn",),
     # The card's mark. DexScreener owns it - it is where a project registers one - and the
     # pool feed stands behind it for the tokens that host has never been given a logo for
     # (CASINO on Robinhood, 2026-10-02: not one of its eleven pairs carried an info.imageUrl).
     # GMGN publishes one too, but its CDN refuses the request a page makes - measured in a
     # browser: that image loads from nowhere but gmgn.ai, so it is not a field we can print.
-    "logo_url": ("dexscreener", "dexscreener_rank", "geckoterminal"),
+    "logo_url": ("dexscreener", "dexscreener_rank", "geckoterminal", "pons", "launchlab",
+                 "pumpfun"),
     "dex_pair": ("geckoterminal",),
     # Only the pool history answers these two, and it is the only reading that can fail to -
     # see `filters.check_drawdown`.
@@ -121,18 +130,22 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "main_pool": ("geckoterminal", "tolly"),
     "pools": ("geckoterminal", "radardex"),
     "price_series": ("geckoterminal",),
-    "created_at": ("radardex", "tolly", "geckoterminal", "coinbarrel", "pez", "peeps"),
-    # The project’s own blurb. Only the per-token link read has one (see
-    # `sources/dexscreener.py`), so an empty 项目自述 line means no source carried it -
-    # which is worth printing rather than leaving out.
-    "description": ("dexscreener",),
+    "created_at": ("radardex", "tolly", "geckoterminal", "coinbarrel", "pez", "peeps",
+                   "pons", "launchlab", "pumpfun"),
+    # The project's own blurb. The per-token link read is what answers it on every chain,
+    # and since 2026-10-11 so do the launchpad feeds that ship their launches' own copy
+    # (PONS / LaunchLab / pump.fun) - a launch's description is the same kind of fact. An
+    # empty 项目自述 line still means no source carried one - which is worth printing
+    # rather than leaving out.
+    "description": ("dexscreener", "pons", "launchlab", "pumpfun"),
 }
 #: The order the two stages fall back on when a field has no entry of its own above.
 #: The chain-specific sources sit last: they are absent from a chain whose config does
 #: not list them, so the tail is a fallback on the one chain that has them and never an
-#: override on the others. `sources/arc/` and `sources/robinhood/` are where they live.
+#: override on the others. `sources/arc/`, `sources/robinhood/` and `sources/solana/` are where they live.
 DEFAULT_PRIORITY = ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout", "goplus", "sourcify",
-                    "dexscreener", "dexscreener_rank", "coinbarrel", "pez", "peeps")
+                    "dexscreener", "dexscreener_rank", "coinbarrel", "pez", "peeps",
+                    "pons", "launchlab", "pumpfun")
 
 #: Per-token pages on the trackers a card links to. One place, so a URL shape cannot drift
 #: between the sources that write it. DexScreener answers a token at the same path shape it

@@ -78,6 +78,9 @@ const SOURCE_SHORT: Record<string, string> = {
   coinbarrel: "CoinBarrel",
   pez: "PEZ",
   peeps: "Peeps",
+  pons: "PONS",
+  launchlab: "LaunchLab",
+  pumpfun: "pump.fun",
   geckoterminal: "GeckoTerminal",
 };
 

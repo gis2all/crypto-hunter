@@ -371,7 +371,7 @@ def test_scan_rows_list_scanners_only(client):
 
     robinhood = _fields(client.get(f"/api/v1/chains/{ROBINHOOD}/settings/form").json())
     assert [c["value"] for c in robinhood["pipeline.scan_sources"]["checks"]] == [
-        "gmgn", "coinbarrel", "pez", "peeps", "geckoterminal", "dexscreener_rank",
+        "gmgn", "coinbarrel", "pez", "peeps", "pons", "geckoterminal", "dexscreener_rank",
     ]
 
 

@@ -16,14 +16,17 @@ configs:
     label: 默认配置
     enabled: true
     locked: true
-    # 这是第一条非 EVM 链，能跑的只有通用源：GMGN 给换手榜、GeckoTerminal 给池子枚举，
-    # DexScreener 按 CA 逐币补齐（它是 ENRICH_ONLY，不写在这里）。
+    # 源分两层。通用源：GMGN 给换手榜、GeckoTerminal 给池子枚举、DexScreener 榜单给池面，
+    # 逐币补齐也走 DexScreener（它是 ENRICH_ONLY，不写在这里）。
+    # 两个发射台自己的枚举口（2026-10-11 接上，都在 sources/solana/ 下）：
+    # launchlab 是 Raydium LaunchLab —— bonk.fun 不是第二个站，它是这个程序的一个 platformId，
+    # 同一个端点就把它一起捞回来了；pumpfun 是 pump.fun 自己的列表。
+    # 这两个口子之前没接，刚发出来的币大部分既没上榜单也没有池子，所以池子一直偏小。
     # solana_mint 是这条链自己的一个逐币读：mint 账户里的铸造权与冻结权（sources/solana/mint.py），
     # 它没有全链列表，所以只在「扫描源」之外挂着，不进 scan_sources。
     # 另外四个源跟不上，不是漏配：goplus / sourcify 的 chain id 表是 EVM 的，
     # blockscout 要一个 Blockscout 实例，onchain.py 的余额、bytecode 与 LP 读法整块是 EVM 的。
-    # DexScreener 榜单（dexscreener_rank）给全链池面：没有发射台可枚举时，只有它认得这条链上正在交易的币。
-    sources: [geckoterminal, gmgn, dexscreener_rank, solana_mint]
+    sources: [geckoterminal, gmgn, dexscreener_rank, launchlab, pumpfun, solana_mint]
     schedule:
       interval_hours: 3
       start_hour: 2
@@ -32,7 +35,7 @@ configs:
     pipeline:
       scan_limit: 5000
       universe_holders_floor: 50
-      scan_sources: [gmgn, geckoterminal, dexscreener_rank]
+      scan_sources: [gmgn, geckoterminal, dexscreener_rank, launchlab, pumpfun]
       # 判定跑整个幸存者池（0 = 全池）；链下调研另有 research_limit（0 = 全部调研）。
       gate_limit: 0
       research_limit: 20

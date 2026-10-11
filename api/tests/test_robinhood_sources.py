@@ -1,6 +1,6 @@
 """The Robinhood launchpad feeds: the columns that need reading before they are used.
 
-Each of these three ships a number that is not the number it looks like, and every one of
+Each of these four ships a number that is not the number it looks like, and every one of
 them was measured before it was coded:
 
 - CoinBarrel leaves `market_cap_usd` unset on every row (0/50) and publishes the market cap
@@ -15,7 +15,7 @@ The rows below are real captured answers, trimmed. Nothing here reaches the netw
 
 import pytest
 
-from app.sources.robinhood import coinbarrel, peeps, pez
+from app.sources.robinhood import coinbarrel, peeps, pez, pons
 
 CB_ROW = {
     "mint": "0xA90bDf0F4F72F3f58bc262Ab8DF7fE28e1959813",
@@ -69,7 +69,7 @@ PEEPS_ROW = {
 
 
 def test_each_one_only_claims_the_chain_it_indexes():
-    for source in (coinbarrel.CoinBarrel(), pez.Pez(), peeps.Peeps()):
+    for source in (coinbarrel.CoinBarrel(), pez.Pez(), peeps.Peeps(), pons.Pons()):
         assert source.chains == ("robinhood",)
 
 

@@ -86,6 +86,13 @@ MIN_INTERVAL: dict[str, float] = {
     "coinbarrel.com": 0.5,
     "api.pez.family": 0.5,
     "peeps.wtf": 0.5,
+    # The fourth Robinhood launchpad, and the two Solana ones. PONS pages 40 rows at a time
+    # and keeps its band rows deep in both orders, so its sweep is this chain's longest run
+    # of requests; the Solana pair answer a page apiece, and the cadence there is to keep two
+    # rounds from stacking rather than because either feed asked for it.
+    "ponsfamily.com": 0.5,
+    "launch-mint-v1.raydium.io": 0.3,
+    "frontend-api-v3.pump.fun": 0.3,
 }
 DEFAULT_INTERVAL = 0.2
 

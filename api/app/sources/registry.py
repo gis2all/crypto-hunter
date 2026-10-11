@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from . import blockscout, dexscreener, dexscreener_rank, geckoterminal, gmgn, goplus, sourcify
 from .arc import radardex, tolly
-from .robinhood import coinbarrel, peeps, pez
-from .solana import mint
+from .robinhood import coinbarrel, peeps, pez, pons
+from .solana import launchlab, mint, pumpfun
 
 ALL = {
     s.name: s
@@ -27,6 +27,9 @@ ALL = {
         coinbarrel.CoinBarrel(),
         pez.Pez(),
         peeps.Peeps(),
+        pons.Pons(),
+        launchlab.LaunchLab(),
+        pumpfun.PumpFun(),
         mint.SolanaMint(),
     )
 }

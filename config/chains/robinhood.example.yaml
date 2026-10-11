@@ -16,11 +16,13 @@ configs:
     label: 默认配置
     enabled: true
     locked: true
-    # 三个发射台各给一份整链清单（coinbarrel / pez / peeps 只索引这条链，住在
+    # 四个发射台各给一份整链清单（coinbarrel / pez / peeps / pons 只索引这条链，住在
     # sources/robinhood/ 下），GMGN 给换手榜，GeckoTerminal 给池子枚举，
     # GoPlus 与 Sourcify 只判安全、不扫链。
-    # DexScreener 榜单（dexscreener_rank）给全链池面：三个发射台没索引到的池子只有它枚举得出来。
-    sources: [geckoterminal, coinbarrel, pez, peeps, gmgn, dexscreener_rank, goplus, sourcify]
+    # DexScreener 榜单（dexscreener_rank）给全链池面：四个发射台没索引到的池子只有它枚举得出来。
+    # PONS（sources/robinhood/pons.py）是这条链上最大的发射台，只扫 graduated：曲线段的币
+    # 还没有池子，流动性读不到，也不能和已经毕业的币放在一起排。
+    sources: [geckoterminal, coinbarrel, pez, peeps, pons, gmgn, dexscreener_rank, goplus, sourcify]
     schedule:
       interval_hours: 3
       start_hour: 2
@@ -29,7 +31,7 @@ configs:
     pipeline:
       scan_limit: 5000
       universe_holders_floor: 50
-      scan_sources: [gmgn, coinbarrel, pez, peeps, geckoterminal, dexscreener_rank]
+      scan_sources: [gmgn, coinbarrel, pez, peeps, pons, geckoterminal, dexscreener_rank]
       # 判定跑整个幸存者池（0 = 全池）。只判前 N 个等于把名额交给最深的那批，而深水里恰好
       # 是 LP 未锁 / 陷阱超标 / 深跌的币最多（2026-09-30 实测：前 20 个里 17 个死在这三
       # 条），健康的币排在后面就永远没被问过。先读完、再用规则裁，规则才拦得住。
@@ -42,7 +44,7 @@ configs:
         # 毕业线在 3.5-4 万 U（CoinBarrel 报 40,000、Peeps 报 35,000）；GMGN 换手榜上
         # 1 万-20 万这一段有 40 个币，24h 成交 70 万-130 万 U。下限沿用 1 万，掉的是
         # 曲线段那一批没起步的，留的是换手榜上真在动的。
-        # 上限 20 万还有一个作用：这条链上有代币化股票（NVDA 1,900 万、PONS 5.3 亿），
+        # 上限 20 万还有一个作用：这条链上有代币化股票（NVDA 1,900 万）和发射台自己的币 PONS（5.3 亿），
         # 它们天然落在这条线之外，不会挤进榜单。
         market_cap_min_usd: 10000
         market_cap_max_usd: 200000

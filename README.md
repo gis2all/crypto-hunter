@@ -57,7 +57,7 @@ log_level: INFO                      # DEBUG / INFO / WARNING / ERROR
 | `web/` | React 19 + TS(strict) + Vite + TanStack Query，无 UI 组件库。`src/styles/` 是视觉的唯一真相（tokens → proto → app） |
 | `config/` | `chains/*.example.yaml` 出厂默认设定模板（一条链一个文件，文件里的 `configs` 是一套套设定，各有一套报告库，保存后以 `settings_versions` 表为准；页面上可增删改名，只有一套生效）；同名的 `chains/*.yaml` 是本机那份（首次读时从模板播种，页面的写入都落它，不入库）；`system.yaml` 本机私密接线（LLM 网关 / X 会话 / 日志等级；配 `.example` 模板，页面上是「系统设置」） |
 | `data/` | `crypto-hunter.db` + `raw/`（每轮原始响应与 HTTP 缓存）。不入库 |
-| `api/app/sources/<链>/SOURCES.md` | 逐源端点、传输方式、实测结论（数据源口径），含 X 搜索挖链层。链专属源放 `sources/<链>/`，通用源在 `sources/` 根目录；目前只有 `arc/` 那份（Robinhood 待补） |
+| `api/app/sources/<链>/SOURCES.md` | 逐源端点、传输方式、实测结论（数据源口径），含 X 搜索挖链层。链专属源放 `sources/<链>/`，通用源在 `sources/` 根目录；三条链各一份（`arc/` / `robinhood/` / `solana/`） |
 
 ## 测试
 
@@ -70,7 +70,7 @@ cd web; npm run build               # 类型不过就构建不过
 
 | 用途 | 源 |
 | --- | --- |
-| 全链扫描 | Arc：GMGN / RadarDEX / Tolly；Robinhood：GMGN / CoinBarrel / PEZ / Peeps；GeckoTerminal 两链都算 |
+| 全链扫描 | Arc：GMGN / RadarDEX / Tolly；Robinhood：GMGN / CoinBarrel / PEZ / Peeps / PONS；Solana：GMGN / DexScreener 榜单 / Raydium LaunchLab / pump.fun；GeckoTerminal 三条链都算 |
 | 安全与源码 | GoPlus（貔貅判定、税、危险权限、LP 持有人表）/ Sourcify（源码验证） |
 | 市场口径与链接 | DexScreener（`market_cap_usd` / `liquidity_usd` / `volume_24h_usd` / `price_usd` 的第一优先源，同时补社媒 / 官网 / 描述） |
 | 挖链找页面 | X 高级搜索（`app/search/`，一次 subprocess 不吃 token）+ 读页面互证 |
@@ -78,7 +78,7 @@ cd web; npm run build               # 类型不过就构建不过
 
 ## 现状与限制
 
-- 已接 **Arc** 与 **Robinhood**（`bsc.yaml` 出厂是关闭的）：左栏只渲染 `config/chains/*.yaml` 里 `enabled: true` 的链。
+- 已接 **Arc** / **Robinhood** / **Solana**（`bsc.yaml` 出厂是关闭的）：左栏只渲染 `config/chains/*.yaml` 里 `enabled: true` 的链。
 - **导出与 TG 推送都按不动**：两个按钮都带 `disabled`（`web/src/features/report/TopBar.tsx`）。导出已经把下载接上了（`web/src/App.tsx` 的 `onExport`），只是按钮还锁着；TG 推送完全没接，一轮跑到那步会写「未配置（跳过推送，报告已落库）」并正常收尾，不阻塞。
 - 一键重算返回 501（一轮的 universe 没落库）。
 - 每轮默认 5 张卡，设定页可改；「距高回撤」读三个高点估计（源高点 / 库记录高点 / 池面全历史），任一跌够 70% 就不再上榜。
