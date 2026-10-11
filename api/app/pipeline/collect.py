@@ -46,7 +46,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # come from keeps its own spelling when it has one.
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
                "coinbarrel", "pez", "peeps", "pons", "launchlab", "pumpfun",
-               "dexscreener", "dexscreener_rank"),
+               "fourmeme", "dexscreener", "dexscreener_rank"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
     "market_cap_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
@@ -111,9 +111,9 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "circulating_supply": ("gmgn", "goplus"),
     "max_supply": ("gmgn", "goplus"),
     "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps",
-                  "pons", "launchlab", "pumpfun"),
+                  "pons", "launchlab", "pumpfun", "fourmeme"),
     "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
-                "pons", "launchlab", "pumpfun"),
+                "pons", "launchlab", "pumpfun", "fourmeme"),
     "renames": ("gmgn",),
     # The card's mark. DexScreener owns it - it is where a project registers one - and the
     # pool feed stands behind it for the tokens that host has never been given a logo for
@@ -121,7 +121,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # GMGN publishes one too, but its CDN refuses the request a page makes - measured in a
     # browser: that image loads from nowhere but gmgn.ai, so it is not a field we can print.
     "logo_url": ("dexscreener", "dexscreener_rank", "geckoterminal", "pons", "launchlab",
-                 "pumpfun"),
+                 "pumpfun", "fourmeme"),
     "dex_pair": ("geckoterminal",),
     # Only the pool history answers these two, and it is the only reading that can fail to -
     # see `filters.check_drawdown`.
@@ -131,7 +131,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "pools": ("geckoterminal", "radardex"),
     "price_series": ("geckoterminal",),
     "created_at": ("radardex", "tolly", "geckoterminal", "coinbarrel", "pez", "peeps",
-                   "pons", "launchlab", "pumpfun"),
+                   "pons", "launchlab", "pumpfun", "fourmeme"),
     # The project's own blurb. The per-token link read is what answers it on every chain,
     # and since 2026-10-11 so do the launchpad feeds that ship their launches' own copy
     # (PONS / LaunchLab / pump.fun) - a launch's description is the same kind of fact. An
@@ -145,7 +145,7 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
 #: override on the others. `sources/arc/`, `sources/robinhood/` and `sources/solana/` are where they live.
 DEFAULT_PRIORITY = ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout", "goplus", "sourcify",
                     "dexscreener", "dexscreener_rank", "coinbarrel", "pez", "peeps",
-                    "pons", "launchlab", "pumpfun")
+                    "pons", "launchlab", "pumpfun", "fourmeme")
 
 #: Per-token pages on the trackers a card links to. One place, so a URL shape cannot drift
 #: between the sources that write it. DexScreener answers a token at the same path shape it
