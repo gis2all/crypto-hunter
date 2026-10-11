@@ -18,7 +18,7 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
-from .http import SourceError, explorer_headers, get, json_get, pacer, pmap, tally
+from .http import SourceError, explorer_headers, json_get, pacer, pmap, tally
 
 #: ERC-20 Transfer, and the two Uniswap-v3 pool events that name an LP position owner.
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -33,20 +33,6 @@ POSITION_MANAGERS: dict[str, dict[str, str]] = {
         "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b": "v4",
     },
 }
-
-#: Function selectors that mean "the owner can hurt a holder". Presence in bytecode is
-#: evidence of capability, not of intent - the report says "链上有控制函数", not "危险".
-DANGEROUS_SELECTORS: tuple[tuple[str, str], ...] = (
-    ("mint", "40c10f19"),
-    ("blacklist", "f9f92be4"),
-    ("pause", "8456cb59"),
-    ("setMaxTxAmount", "ec28438a"),
-    ("transferOwnership", "f2fde38b"),
-    ("setTaxFee", "3a472ed2"),
-)
-
-#: EIP-1167 minimal-proxy preamble: a launchpad template, not a hand-written contract.
-CLONE_PREFIX = "0x363d3d373d3d3d363d73"
 
 _BLOCK_LOOKBACK = 150_000
 
@@ -138,10 +124,6 @@ def rpc_url(chain: dict) -> str:
 
 def explorer_url(chain: dict) -> str:
     return _own_address(chain, "explorer", "the explorer (launch path, pool history)")
-
-
-def decimals(chain: dict) -> int:
-    return int(chain.get("decimals") or 18)
 
 
 def rpc(chain: dict, method: str, params: list, tries: int = 3) -> Any | None:
@@ -306,32 +288,6 @@ def contracts_of(chain: dict, addresses: list[str]) -> dict[str, bool | None]:
     return out
 
 
-def call(chain: dict, to: str, data: str) -> str | None:
-    result = rpc(chain, "eth_call", [{"to": to, "data": data}, "latest"])
-    return result if isinstance(result, str) else None
-
-
-def _balance_of(chain: dict, token: str, who: str) -> float | None:
-    data = "0x70a08231" + who.lower()[2:].rjust(64, "0")
-    raw = call(chain, token, data)
-    try:
-        return int(raw, 16) / float(10 ** decimals(chain))
-    except (TypeError, ValueError):
-        return None
-
-
-def supply(chain: dict, ca: str) -> float | None:
-    raw = call(chain, ca, "0x18160ddd")
-    try:
-        return int(raw, 16) / float(10 ** decimals(chain))
-    except (TypeError, ValueError):
-        return None
-
-
-def dev_balance(chain: dict, ca: str, creator: str) -> float | None:
-    return _balance_of(chain, ca, creator) if creator else None
-
-
 def nft_balances(chain: dict, managers: dict[str, str], who: str | None) -> dict[str, int | None]:
     """How many position NFTs each manager holds for `who`, in one round trip.
 
@@ -352,20 +308,6 @@ def nft_balances(chain: dict, managers: dict[str, str], who: str | None) -> dict
         except (TypeError, ValueError):
             out[managers[address]] = None
     return out
-
-
-def proxy_kind(chain: dict, ca: str) -> str | None:
-    """`eip1167` for a launchpad clone, `direct` for a contract deployed as written."""
-    code = bytecode(chain, ca)
-    if not code:
-        return None
-    return "eip1167" if code.lower().startswith(CLONE_PREFIX) else "direct"
-
-
-def dangerous_selectors(code: str) -> list[str]:
-    """Which known-dangerous functions a token's bytecode actually contains."""
-    lowered = (code or "").lower()
-    return [name for name, selector in DANGEROUS_SELECTORS if selector in lowered]
 
 
 def _logs_in(chain: dict, pool: str, start: int, stop: int) -> list:
