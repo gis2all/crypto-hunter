@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   updated_at    TEXT NOT NULL
 );
 
--- One screening round. Immutable. run_key makes the cron tick idempotent.
+-- One screening round. Immutable. run_key makes the scheduled tick idempotent.
 CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
   run_key       TEXT NOT NULL UNIQUE,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS lexicon (
   f_completeness REAL,   -- 产品完成度
   f_substance    REAL,   -- 项目实质与亮点
   f_team         REAL,   -- 团队与 dev 可信度
-  f_narrative    REAL,   -- 叙事与官方关系
+  f_narrative    REAL,   -- 叙事与主线
   f_community    REAL,   -- 社区活跃度
   -- The card's prose, one field per judgement and named the way the card prints them:
   -- concl is the verdict at the top, the five below it are the 链下调研 fold. A judgement
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS lexicon (
   -- judgement is prose outside the rubric - the two lists move together.
   social         TEXT,   -- 社区活跃度
   concl          TEXT,   -- 结论：定位 / 实质 / 亮点 / 风险
-  narr_text      TEXT,   -- 叙事与官方关系
+  narr_text      TEXT,   -- 叙事与主线
   prod_text      TEXT,   -- 产品完成度
   substance_text TEXT,   -- 项目实质与亮点
   team_text      TEXT,   -- 团队与 dev 可信度

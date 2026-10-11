@@ -11,15 +11,15 @@ from ..core.models import SafetyFacts, TokenMetrics
 from .http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://sourcify.dev/server/v2"
-#: Sourcify identifies chains by EVM chain id too: Arc 5042, Robinhood 4663.
-CHAIN_IDS = {"arc": 5042, "robinhood": 4663}
+#: Sourcify identifies chains by EVM chain id too: Arc 5042, BSC 56, Robinhood 4663.
+CHAIN_IDS = {"arc": 5042, "bsc": 56, "robinhood": 4663}
 MATCHED = ("exact_match", "match")
 TTL = 24 * 3600
 
 
 class Sourcify:
     name = "sourcify"
-    chains = ("arc", "robinhood")
+    chains = ("arc", "bsc", "robinhood")
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
         """Sourcify is asked about a CA, one at a time; there is no chain listing."""

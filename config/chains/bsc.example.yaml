@@ -1,11 +1,13 @@
-# 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
+# 每条链的独立设定：节奏、过滤、评分、出口都属于链自己。
 # 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
 # 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
 id: bsc
-# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
+# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是左栏菜单上的名字。
 name: BSC
+# 这条链的主线，一句话。f_narrative 只判「在不在主线上」，判据就是这句话（写进 research.md 的 __THESIS__）。
+thesis: 超低费高吞吐的散户交易场：meme、美股代币化、稳定币支付
 label: BSC
-enabled: false
+enabled: true
 explorer: https://bscscan.com
 rpc: https://bsc-dataseed.binance.org
 configs:
@@ -13,15 +15,21 @@ configs:
     label: 默认配置
     enabled: true
     locked: true
-    sources: []
+    # 源分两层。通用源：GMGN 给换手榜、GeckoTerminal 给池子枚举、DexScreener 榜单给全链池面，
+    # 逐币补齐走 DexScreener（它是 ENRICH_ONLY，不写在这里）；GoPlus 与 Sourcify 只判安全、不扫链。
+    # fourmeme 是这条链自己的发射台（sources/bsc/fourmeme.py，2026-10-11 接上）：只扫「已毕业
+    # （上 PancakeSwap）」那一批 —— 曲线段的币还没有池子，流动性读不到，也不能和已毕业的放在一起排。
+    # 它只贡献身份（代号、部署者、创建时间、图）：市值与成交不读它 —— 同一行它报 27 亿而
+    # DexScreener 报 6.16 亿，两个口径的数不能当一条规则读。
+    sources: [geckoterminal, gmgn, dexscreener_rank, fourmeme, goplus, sourcify]
     schedule:
-      cron: ""
       interval_hours: 3
+      start_hour: 2
       timezone: Asia/Shanghai
       push_delay_minutes: 6
     pipeline:
-      scan_limit: 0
-      scan_sources: []
+      scan_limit: 5000
+      scan_sources: [gmgn, fourmeme, geckoterminal, dexscreener_rank]
       # 判定跑整个幸存者池（0 = 全池）；链下调研另有 research_limit（0 = 全部调研）。
       gate_limit: 0
       research_limit: 20
@@ -33,6 +41,11 @@ configs:
         holders_min: 150
         # 持有人上限，留空 = 不设上限。
         holders_max: null
+        # 空壳淘汰: 市值与流动性同时缺失的行直接淘汰。代码里本来就是默认开启的，写在这里
+        # 是让你在设定页看得见、关得掉（fourmeme 捞回来的行如果 DexScreener 也不认识，就该在这里掉）。
+        require_market_data: true
+        # 距高回撤：距历史最高点回撤 70% 以上即淘汰。
+        drawdown_max_pct: -70
         top10_max_pct: 40
         bundling_max_pct: 25
         forbid_honeypot: true
@@ -65,7 +78,6 @@ configs:
       per_round: 5
       push_target: telegram
       push_content: [cards, table]
-    alerts:
       rename_count_min: 2
       rename_count: true
       creator_token_count: true

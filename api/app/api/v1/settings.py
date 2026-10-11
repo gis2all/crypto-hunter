@@ -32,7 +32,7 @@ from .schemas import SettingsFormOut, SettingsOut
 
 router = APIRouter(prefix="/chains/{chain_id}/settings", tags=["settings"])
 
-SECTIONS = ("schedule", "pipeline", "report", "alerts", "sources")
+SECTIONS = ("schedule", "pipeline", "report", "sources")
 
 
 class SettingsIn(BaseModel):
@@ -260,8 +260,7 @@ def put_settings(chain_id: str, body: SettingsIn,
     # A version is the YAML plus every version saved before it, and a merge only ever
     # adds: a knob the config dropped would otherwise be copied forward for ever. The
     # shape this version claims to have is the YAML's, so the orphans stop here.
-    merged = config.sync_schedule(
-        config.prune_unknown(base, config.merge_patch(current, patch)))
+    merged = config.prune_unknown(base, config.merge_patch(current, patch))
     _validate(merged, labels)
     conn = db.connect()
     try:
@@ -417,7 +416,11 @@ def _run_status(run: dict | None, chain: dict) -> str:
     """What the scheduler is doing, told to the operator rather than configured by them."""
     if run and run.get("status") == "failed":
         return "最近一轮失败 · %s" % (run.get("error") or "未记录原因")
-    slots = forms.interval_slots(int((chain.get("schedule") or {}).get("interval_hours") or 3))
+    schedule = config.live_schedule(chain["id"], chain.get("config_id"))
+    slots = config.interval_slots(schedule.get("interval_hours") or 0,
+                                  schedule.get("start_hour") or config.DEFAULT_START_HOUR)
+    if not slots:
+        return "未排期 · 手动「运行」不受影响"
     now = datetime.now()
     upcoming = [h for h in slots if h > now.hour] or slots[:1]
     return "扫描器正常 · 下轮 %02d:00" % upcoming[0]

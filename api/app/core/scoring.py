@@ -38,7 +38,7 @@ FACTOR_FIELDS: dict[str, str] = {
 
 #: The off-chain half: what the research pass judged about the project, each 0-5, keyed
 #: exactly as the prompt asks for them. 产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 /
-#: 叙事与官方关系 / 社区活跃度. Weights ship even and live in
+#: 叙事与主线 / 社区活跃度. Weights ship even and live in
 #: `scoring.offchain_factor_weights`, and there is no "undetermined": 0 is the judgement
 #: that the search came back empty, which is itself a finding.
 OFFCHAIN_FIELDS: tuple[str, ...] = (

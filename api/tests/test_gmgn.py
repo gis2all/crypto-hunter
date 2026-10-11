@@ -4,6 +4,8 @@ The ranking row carries `buy_tax`, but it is a hard "0" for every Arc token (mea
 2026-09-25), which is why the tax fields are read from `token_security_evm` alone.
 """
 
+import pytest
+
 from app.sources.gmgn import _tax_pct
 
 
@@ -161,3 +163,62 @@ def test_rank_rows_hands_on_the_window_that_answered(monkeypatch):
     assert list(rows) == ["0xaa"]
     assert rows["0xaa"]["_window"] == "24h"
     assert rows["0xaa"]["volume"] == "9386"
+
+
+def test_a_board_that_never_answered_is_a_failure_not_an_empty_chain(monkeypatch):
+    """The rank is the only place a token no launchpad adapter knows is found at all.
+
+    A rate limit answered as `[]` left the source reporting `ok=True, n=0` - the same report
+    an empty chain gives - and the round ran on to the end on an empty universe. Every board
+    unreadable raises instead, so `collect` files it as `ok=False` with the reason. A board
+    that answered and was empty is still an empty chain, and neither answer is remembered:
+    `cached` keeps no exception and no empty dict.
+    """
+    from app.sources import gmgn
+    from app.sources.http import SourceError
+
+    source = gmgn.GmGn()
+    monkeypatch.setattr(gmgn, "cached", lambda _key, _ttl, produce: produce())
+
+    def dead(chain_id, period, page):
+        raise SourceError("HTTP 429")
+
+    monkeypatch.setattr(source, "_rank_page", dead)
+    with pytest.raises(SourceError):
+        source.rank_rows("solana")
+
+    monkeypatch.setattr(source, "_rank_page", lambda chain_id, period, page: [])
+    assert source.rank_rows("solana") == {}
+
+
+def test_the_solana_sheet_only_counts_a_lock_when_it_is_true(monkeypatch):
+    """`token_security_sol` is the same panel under a different path, and on Solana its
+    `is_locked` is not the same claim the EVM sheet makes.
+
+    Measured 2026-10-11 over ten Solana tokens: `lock_percent` "0" and `lock_tags` null every
+    time, and `false` for BONK and WIF, which nobody would call unlocked. A `false` is a hard
+    drop (`core/filters.py`), so this chain keeps the positive and files the negative as
+    未判定, with the reading printed on the card.
+    """
+    from app.sources import gmgn
+
+    urls: list[str] = []
+    sheet = {"data": {"lock_summary": {"is_locked": False, "lock_percent": "0"}}}
+
+    def fake_json_get(url, *_args, **_kwargs):
+        urls.append(url)
+        return sheet if "/token_security_sol/" in url else {"data": {}}
+
+    monkeypatch.setattr(gmgn, "json_get", fake_json_get)
+    monkeypatch.setattr(gmgn, "cached", lambda _key, _ttl, produce: produce())
+    ca = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+
+    _metrics, facts = gmgn.GmGn().fetch_token("solana", ca)
+    assert any("token_security_sol" in url for url in urls), "the EVM path answers nothing here"
+    assert facts.lp_locked is None and facts.lp_source is None
+    assert "未见锁仓记录" in (facts.lp_note or "")
+
+    sheet["data"] = {"lock_summary": {"is_locked": True, "lock_percent": "0"}}
+    _metrics, facts = gmgn.GmGn().fetch_token("solana", ca)
+    assert facts.lp_locked is True and facts.lp_source == "gmgn"
+    assert facts.lp_note == "GMGN：LP 已锁", "no percentage is reported on this chain"

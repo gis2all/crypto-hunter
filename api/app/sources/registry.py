@@ -8,14 +8,17 @@ without caring which kind it is asking for.
 
 from __future__ import annotations
 
-from . import blockscout, dexscreener, geckoterminal, gmgn, goplus, sourcify
+from . import blockscout, dexscreener, dexscreener_rank, geckoterminal, gmgn, goplus, sourcify
 from .arc import radardex, tolly
-from .robinhood import coinbarrel, peeps, pez
+from .bsc import fourmeme
+from .robinhood import coinbarrel, peeps, pez, pons
+from .solana import launchlab, mint, pumpfun
 
 ALL = {
     s.name: s
     for s in (
         blockscout.Blockscout(),
+        dexscreener_rank.DexScreenerRank(),
         geckoterminal.GeckoTerminal(),
         radardex.RadarDEX(),
         gmgn.GmGn(),
@@ -25,6 +28,11 @@ ALL = {
         coinbarrel.CoinBarrel(),
         pez.Pez(),
         peeps.Peeps(),
+        pons.Pons(),
+        fourmeme.FourMeme(),
+        launchlab.LaunchLab(),
+        pumpfun.PumpFun(),
+        mint.SolanaMint(),
     )
 }
 
@@ -33,6 +41,8 @@ ALL = {
 #: chain-wide list to sweep. `decide.Engine` asks them in the per-token enrich pass, so they
 #: are absent from `sources:` in the chain config on purpose - a source that returns nothing
 #: from a sweep is a source that shows up in the credential row with a zero next to it.
+#: `dexscreener_rank` reads the same host and is *not* one of these: the board it reads is a
+#: chain-wide list, so it is listed in `sources:` and `scan_sources:` like any other scanner.
 ENRICH_ONLY = (dexscreener.DexScreener(),)
 
 

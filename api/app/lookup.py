@@ -32,7 +32,7 @@ from typing import Callable
 from uuid import uuid4
 
 from . import config
-from .core.models import SafetyFacts, TokenMetrics
+from .core.models import SafetyFacts, TokenMetrics, ca_key
 from .pipeline import collect, decide
 from .report import assemble, cards as card_builder, lexicon, research
 from .sources import dexscreener, http, registry
@@ -43,6 +43,8 @@ log = logging.getLogger(__name__)
 #: The two shapes an address arrives in. Deliberately coarse and chain-agnostic: the chain is
 #: not known yet, so the shape cannot be checked against it, and the real test is whether the
 #: feed has ever seen the address (`identify`). This only keeps a symbol or a word out.
+#: Hex is matched folded and base58 is matched as typed: the two shapes cannot share one
+#: rule, for the reason written down at `models.ca_key`.
 EVM_CA = re.compile(r"^0x[0-9a-f]{40}$")
 BASE58_CA = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
@@ -68,10 +70,10 @@ def _address(ca: str) -> str:
     Checked before anything is queued: a word or a symbol never becomes a job, because there
     is no work to watch - it is answered on the spot, by the endpoint that asked.
     """
-    cleaned = str(ca or "").strip().lower()
-    if not (EVM_CA.match(cleaned) or BASE58_CA.match(cleaned)):
+    cleaned = str(ca or "").strip()
+    if not (EVM_CA.match(cleaned.lower()) or BASE58_CA.match(cleaned)):
         raise Refused("这不像一个合约地址：%s" % ca)
-    return cleaned
+    return ca_key(cleaned)
 
 
 def resolve(ca: str) -> tuple[str, dict | None]:
@@ -172,6 +174,7 @@ def run(ca: str, tell: Callable[[str], None] | None = None) -> dict:
         "ca": ca,
         "chain_id": chain_id,
         "chain_name": config.chain_name(chain),
+        "chain_thesis": config.chain_thesis(chain),
         "symbol": metrics.symbol,
         "run_id": "",
         "config_id": "",

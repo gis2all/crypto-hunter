@@ -22,6 +22,8 @@ CA = "0x" + "a" * 40
 CA2 = "0x" + "b" * 40
 CA3 = "0x" + "c" * 40
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
+#: The chain's own line, as a round hands it in: whatever it says has to reach the prompt.
+THESIS = "传统资产的链上交易入口"
 
 
 def _payload(**over) -> dict:
@@ -211,7 +213,7 @@ def test_the_report_payload_carries_the_five_blocks_in_card_order():
         [{"key": "市值", "value": "+0%"}],
     )
     assert list(payload["sections"]) == ["产品完成度", "项目实质与亮点", "团队与 dev 可信度",
-                                        "叙事与官方关系", "社区活跃度"]
+                                        "叙事与主线", "社区活跃度"]
     assert payload["verdict"] == "x" * 200
     assert payload["deltas"] == [{"key": "市值", "value": "+0%"}]
     assert payload["badges"] == {}, "no badge, no badge map"
@@ -219,7 +221,7 @@ def test_the_report_payload_carries_the_five_blocks_in_card_order():
 
 def test_a_badge_travels_beside_the_narrative_block():
     payload = lexicon.report_payload({"concl": "x", "badge": "官方背书"}, [])
-    assert payload["badges"] == {"叙事与官方关系": "官方背书"}
+    assert payload["badges"] == {"叙事与主线": "官方背书"}
 
 
 # ------------------------------------------------------------------ the reading pass
@@ -526,20 +528,38 @@ def test_the_card_reads_a_shell_page_with_a_browser_and_an_account_without_one(
     assert "rendered copy" in site["text"], "the shell was drawn and the drawing was read"
     assert account is None, "a shell that cannot be drawn out of an account is not evidence"
 def test_the_prompt_names_the_chain_the_round_is_about(isolated_db, monkeypatch):
-    """One prompt file serves every chain, so the name is substituted per call. An Arc
-    prompt asking a Robinhood token 「和 Arc 什么关系」 is the radar answering the wrong
-    question, and the model can only answer what it was asked (user, 2026-09-30)."""
+    """One prompt file serves every chain, so the name and the thesis are substituted per
+    call. An Arc prompt asking a Robinhood token 「和 Arc 什么关系」 is the radar answering
+    the wrong question, and `f_narrative` scored against a line this chain never registered
+    is the same mistake one step further in (user, 2026-10-06)."""
     _snapshot(CA, websites=["https://t.xyz"])
     _page(monkeypatch)
     seen: dict = {}
     _model_answering(monkeypatch, seen)
 
-    research.research_entries({"id": "robinhood", "name": "Robinhood"}, _targets([CA]),
-                              "run1")
+    research.research_entries({"id": "robinhood", "name": "Robinhood", "thesis": THESIS},
+                              _targets([CA]), "run1")
 
     assert "Robinhood" in seen["prompt"]
     assert "Arc" not in seen["prompt"], "the prompt is one file for every chain"
     assert research.CHAIN_TOKEN not in seen["prompt"], "the placeholder is filled in"
+    assert research.THESIS_TOKEN not in seen["prompt"], "the line is substituted too"
+    assert THESIS in seen["prompt"], "the round is judged against this chain's own line"
+
+
+def test_a_chain_with_no_thesis_is_told_so_rather_than_left_blank(isolated_db, monkeypatch):
+    """`f_narrative` needs a target. A prompt showing an empty line where the chain's own
+    line should be is a question with nothing to answer, so the placeholder is replaced by
+    the fact that nothing was registered - the chain yaml is where it gets written."""
+    _snapshot(CA, websites=["https://t.xyz"])
+    _page(monkeypatch)
+    seen: dict = {}
+    _model_answering(monkeypatch, seen)
+
+    research.research_entries({"id": "arc", "name": "Arc"}, _targets([CA]), "run1")
+
+    assert research.THESIS_TOKEN not in seen["prompt"]
+    assert research.NO_THESIS in seen["prompt"]
 
 
 def test_the_site_the_search_proved_lands_on_the_rounds_own_metrics(isolated_db, monkeypatch):

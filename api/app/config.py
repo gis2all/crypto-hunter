@@ -28,10 +28,22 @@ ROOT = Path(__file__).resolve().parents[2]
 #: One file per chain under `config/chains/`. Adding a chain is adding a file there: there
 #: is no shared list to edit and no way for two chains to disagree about the file's shape.
 CHAINS_DIR = Path(os.environ.get("CH_CHAINS_DIR", str(ROOT / "config" / "chains")))
+
+#: What marks the tracked template in that directory: `robinhood.example.yaml` is the factory
+#: default and the only one in git, `robinhood.yaml` is this install's copy of it. The app
+#: writes the second and never the first, which is what keeps switching the live set - or adding
+#: one - out of every diff. Same directory rather than a subdirectory so the two can be diffed
+#: against each other by eye.
+EXAMPLE_MARK = ".example."
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 DB_PATH = Path(os.environ.get("CH_DB", str(DATA_DIR / "crypto-hunter.db")))
 WEB_DIST = ROOT / "web" / "dist"
+
+#: The hour a schedule starts from when a config file names none. The shipped files all
+#: belong to the 02/05/08... grid, so the fallback is the hour they already use: an anchor
+#: that changed by itself would move a schedule nobody asked to move.
+DEFAULT_START_HOUR = 2
 
 HOST = os.environ.get("CH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CH_PORT", "8787"))
@@ -64,6 +76,13 @@ SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
     ("x.cli", "CH_X_CLI", "text"),
     ("log_level", "CH_LOG_LEVEL", "choice:DEBUG|INFO|WARNING|ERROR"),
 )
+
+#: Keys the file accepts and the page deliberately does not show: the page would invite the
+#: operator to write by hand what the client already sends for the gateway (6.4.8), while the
+#: file keeps taking them, because an install may already have written one and needing the
+#: exception should not wait for a release. The test that pairs rows with keys reads this - a
+#: key is either a row or file-only, never both.
+FILE_ONLY_KEYS: frozenset[str] = frozenset({"llm.extra_headers"})
 
 #: What the file put in the environment, and what it put there. A value that is still exactly
 #: this is still the file's to withdraw; anything else means somebody else owns the variable
@@ -158,7 +177,26 @@ def load_env_file(path: Path | None = None) -> int:
 load_env_file()
 
 
-@functools.lru_cache(maxsize=1)
+def _chains_signature() -> tuple:
+    """What the chain directory looks like right now: each yaml name, size and stamp.
+
+    Hand-editing a file, or dropping a new one in, is a change the page never makes, so
+    nothing calls `reload()` for it - and while the parse was remembered for the life of
+    the process, a chain added that way only appeared after a restart. This is what the
+    cache is keyed on instead, at one `stat` per file per read.
+    """
+    entries = []
+    for path in _all_files():
+        try:
+            stat = path.stat()
+        except OSError:
+            # Gone between the glob and the stat: a change like any other.
+            entries.append((path.name, -1, -1))
+            continue
+        entries.append((path.name, stat.st_mtime_ns, stat.st_size))
+    return tuple(entries)
+
+
 def load_chains() -> dict[str, dict]:
     """Every chain on disk, keyed by its id.
 
@@ -166,7 +204,17 @@ def load_chains() -> dict[str, dict]:
     for it - and a `configs` list: one entry per set of settings. Each entry screens the
     same chain under its own口径 and keeps its own report library, so two entries on one
     chain never blend into each other.
+
+    Re-read whenever the directory changes, templates written or a file hand-edited;
+    `_chains_signature` is what that costs.
     """
+    seed_chain_files()
+    return _load_chains(_chains_signature())
+
+
+@functools.lru_cache(maxsize=8)
+def _load_chains(signature: tuple) -> dict[str, dict]:
+    """The parse itself, remembered per directory state. `signature` is only the key."""
     chains: dict[str, dict] = {}
     for path in _chain_files():
         with open(path, encoding="utf-8") as fh:
@@ -188,9 +236,37 @@ def load_chains() -> dict[str, dict]:
     return chains
 
 
-def _chain_files() -> list[Path]:
-    """Every chain file on disk, in the order they are read in."""
+def _all_files() -> list[Path]:
+    """Every yaml in the chain directory, templates included, in the order they are read in."""
     return sorted(CHAINS_DIR.glob("*.yaml")) + sorted(CHAINS_DIR.glob("*.yml"))
+
+
+def _chain_files() -> list[Path]:
+    """The files an install runs on, in the order they are read in - the templates are not chains.
+
+    Reading a template here would give one chain id two entries, and the same set of settings
+    twice on the rail.
+    """
+    return [path for path in _all_files() if EXAMPLE_MARK not in path.name]
+
+
+def seed_chain_files() -> int:
+    """Give every chain the live file this install has not got yet, from the tracked template.
+
+    Only the template is in git; the live file is this install's, and it is what the page writes
+    - switching the live set, adding one, renaming it - so keeping the two apart is what keeps
+    that out of every diff. The same shape `system.yaml` already has. It copies rather than
+    aliases, so an install that deletes its file is handed the factory one again on the next
+    read, and it runs on the read path because every way in - the API, the ticker, a test - has
+    to find a chain this machine has never started.
+    """
+    made = 0
+    for example in (path for path in _all_files() if EXAMPLE_MARK in path.name):
+        live = example.with_name(example.name.replace(EXAMPLE_MARK, ".", 1))
+        if not live.exists():
+            live.write_bytes(example.read_bytes())
+            made += 1
+    return made
 
 
 def _chain_id_of(raw: dict, path: Path) -> str:
@@ -228,13 +304,20 @@ def _config_entry(cfg: dict | None) -> dict:
     entry["label"] = str(entry.get("label") or entry["id"])
     entry.setdefault("enabled", True)
     entry["locked"] = bool(entry.get("locked")) or entry["id"] == "default"
+    # Filled in rather than demanded: the page refuses a patch aimed at a knob the config
+    # does not have, and 0 hours apart is the value that means "never" - so a file that
+    # names neither is a chain the ticker leaves alone, which is what the page then shows.
+    schedule = entry.get("schedule")
+    if isinstance(schedule, dict):
+        schedule.setdefault("interval_hours", 0)
+        schedule.setdefault("start_hour", DEFAULT_START_HOUR)
     return entry
 
 
 def chain(chain_id: str, config_id: str | None = None) -> dict:
     """One chain read through one of its sets of settings.
 
-    The five settings sections come from the named config; everything else is the chain's
+    The four settings sections come from the named config; everything else is the chain's
     own. `id` stays the chain's id even under a second set of settings - both sets screen
     the same tokens on the same node, and that id is what says so.
     """
@@ -265,6 +348,19 @@ def chain_name(chain: Mapping[str, Any] | None) -> str:
         if text:
             return text
     return ""
+
+
+def chain_thesis(chain: Mapping[str, Any] | None) -> str:
+    """这句话就是这条链的主线，也是 `f_narrative` 唯一的判据。
+
+    It belongs to the chain and not to a set of settings: two configs on one chain screen
+    the same tokens, and a thesis that moved with the settings would score one project two
+    ways depending on which set happened to be live. A file that never registered one reads
+    as empty here, and the prompt says so rather than showing a blank - a blank is a
+    question with no target, and the chain yaml is where the line gets written.
+    """
+    chain = chain or {}
+    return str(chain.get("thesis") or "").strip()
 
 
 def chain_entry(chain_id: str) -> dict:
@@ -315,12 +411,14 @@ def enabled_configs() -> list[dict]:
     for entry in enabled_chains():
         for cfg in entry.get("configs") or []:
             if cfg.get("enabled", True):
-                rounds.append(chain(entry["id"], cfg["id"]))
+                live = chain(entry["id"], cfg["id"])
+                live["schedule"] = live_schedule(entry["id"], cfg["id"])
+                rounds.append(live)
     return rounds
 
 
 def reload() -> None:
-    load_chains.cache_clear()
+    _load_chains.cache_clear()
 
 #: One writer at a time. Four requests edit the very files the ticker reads a round out
 #: of, and the read half of a write that has not finished is a chain that is briefly not
@@ -515,7 +613,7 @@ def create_config(chain_id: str, mode: str = "new", from_config_id: str | None =
                   label: Any = None) -> dict:
     """Add a set of settings: a fresh one seeded from `default`, or a copy of a named one.
 
-    The new entry gets the base's five sections and nothing else. A report library is what
+    The new entry gets the base's four sections and nothing else. A report library is what
     a set of settings has earned, so a new one starts empty - handing it somebody else's
     rounds would point "上一轮" at a round it never ran. It also starts switched off: only
     one set per chain runs (`set_active_config`), and a set nobody has saved yet is not the
@@ -663,9 +761,9 @@ def forget_library(chain_id: str, config_id: str) -> dict[str, int]:
         shutil.rmtree(RAW_DIR / run_id, ignore_errors=True)
     return sizes
 
-#: The five sections that make up "a chain's settings". Everything a round does is
+#: The four sections that make up "a chain's settings". Everything a round does is
 #: decided inside these, which is why a settings version can be replayed later.
-SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "alerts", "sources")
+SETTINGS_SECTIONS = ("schedule", "pipeline", "report", "sources")
 
 
 def settings_payload(chain_id: str, version_id: int | None = None,
@@ -699,6 +797,19 @@ def settings_payload(chain_id: str, version_id: int | None = None,
     # reaching a round (and the archive) as if it were still a setting.
     return merge_patch(payload, prune_unknown(payload, json.loads(row["payload_json"])))
 
+
+
+def live_schedule(chain_id: str, config_id: str | None = None) -> dict:
+    """The schedule the ticker obeys: the saved one, not the file's.
+
+    The page's two knobs are saved as a version, while the file keeps the defaults it
+    shipped with. Reading the file here instead would mean the hours an operator picks never
+    fire - the ticker would keep starting rounds at the ones they replaced - so this is what
+    the ticker reads, and everything that describes the file keeps reading the file.
+    """
+    payload = settings_payload(chain_id, latest_settings_version(chain_id, config_id),
+                              config_id)
+    return dict(payload.get("schedule") or {})
 
 
 def latest_settings_version(chain_id: str, config_id: str | None = None) -> int | None:
@@ -840,19 +951,18 @@ def prune_unknown(base: dict, payload: dict) -> dict:
     return out
 
 
-def sync_schedule(payload: dict) -> dict:
-    """Keep `schedule.cron` in step with `schedule.interval_hours`.
+def interval_slots(hours: int, start_hour: int = DEFAULT_START_HOUR) -> list[int]:
+    """The trigger hours an interval produces, walked forward from its anchor.
 
-    The interval is what a human edits; the cron expression is what the ticker reads.
-    Deriving one from the other here means the two can never disagree.
+    The interval says how many, the anchor says which: three hours from 02:00 is
+    02/05/08/11/14/17/20/23, and the same interval from 05:00 is a different eight hours.
+    Zero hours apart is how a chain says "never" - it is the value the page offers as
+    不排期 - and an interval that does not divide the day walks the shipped three-hour grid
+    from the anchor rather than inventing a short last gap; the page only offers divisors.
     """
-    schedule = dict(payload.get("schedule") or {})
-    hours = schedule.get("interval_hours")
-    if hours:
-        from .api.v1.forms import interval_slots
-
-        slots = interval_slots(int(hours))
-        schedule["cron"] = "0 %s * * *" % ",".join("%d" % s for s in slots)
-    payload = dict(payload)
-    payload["schedule"] = schedule
-    return payload
+    hours = int(hours)
+    if hours <= 0:
+        return []
+    start = int(start_hour) % 24
+    step = hours if not 24 % hours else 3
+    return [(start + h) % 24 for h in range(0, 24, step)]

@@ -26,6 +26,11 @@ class DropReason(str, Enum):
     SOURCE_UNVERIFIED = "source_unverified"
     LP_UNLOCKED = "lp_unlocked"
     DANGEROUS_PERM = "dangerous_perm"
+    #: A row the pull carried as an address and nothing else: neither a market cap nor a
+    #: reserve. Its own reason, not MISSING_DATA: the panel prints the two under different
+    #: rows (空壳币 / 零数据淘汰), and this one is decided in the free half - before the
+    #: five factors the other one counts exist.
+    EMPTY_SHELL = "empty_shell"
     MISSING_DATA = "missing_data"
 
 
@@ -43,6 +48,37 @@ class RunStatus(str, Enum):
     #: a page that teaches the reader to ignore failures.
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+def ca_key(ca: object) -> str:
+    """One token identity, spelled the one way that makes two references the same token.
+
+    An EVM address is hex, and hex is case-insensitive: folding it to lower case gives the
+    same address, and that happens to be the spelling every EVM source answers with and the
+    one every key, table and lexicon in this app has always held. Everything else is 32 bytes
+    of base58 - Solana, and anything else shaped like it - and base58 is case-*sensitive*:
+    folding it does not produce a sloppier spelling of the same address, it produces a
+    different address, which the feed answers with "unknown" instead of with a correction.
+    Left unfolded on purpose, so the two chains need one rule rather than two.
+    """
+    text = str(ca or "").strip()
+    return text.lower() if text[:2].lower() == "0x" else text
+
+
+#: The address GeckoTerminal and DexScreener both spell a chain's own coin with - no token is
+#: behind it. GeckoTerminal answers it as the base token of a native pool it cannot resolve,
+#: and DexScreener answers it with the native pairs of every chain at once.
+ZERO_ADDRESS = "0x" + "0" * 40
+
+
+def is_placeholder_ca(ca: object) -> bool:
+    """True for a chain's own coin written as an address, which is not a token.
+
+    Read as one it is the worst row a round can carry: its market cap is a blank, so every
+    market-cap floor waves it through unjudged, and its liquidity is the whole chain's, so it
+    heads any ranking it enters.
+    """
+    return ca_key(ca) == ZERO_ADDRESS
 
 
 class TokenMetrics(BaseModel):

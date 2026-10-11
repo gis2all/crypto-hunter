@@ -15,13 +15,17 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ..core.models import SafetyFacts, TokenMetrics
+from ..core.models import SafetyFacts, TokenMetrics, ca_key, is_placeholder_ca
 from .base import web_url
 from .http import NEGATIVE, SourceError, UA_JSON, cached, json_get
 
 BASE = "https://api.geckoterminal.com/api/v2"
 ROUTINE_PAGES = 3
-FULL_PAGES = 12
+#: Page 10 is the last one GeckoTerminal answers - 11 and up come back 401 on both
+#: chains (probed 2026-10-06). The two pages this used to ask for were dead on
+#: arrival, and a dead request burns its own retry cycle, so the fix drops two
+#: doomed fetches from every sweep and adds no row.
+FULL_PAGES = 10
 #: Pool list changes slowly; a new pool still shows up on page 1 of `new_pools` first.
 FULL_SWEEP_TTL = 6 * 3600
 POOLS_TTL = 12 * 3600
@@ -65,10 +69,15 @@ def _split_id(identifier: str | None, chain_id: str) -> str:
     The network is the same slug the endpoint is addressed by, so the prefix is the chain
     rather than a constant: a hardcoded `arc_` answered "" for every other chain's ids,
     which reads downstream as "this pool has no address" instead of "wrong prefix".
+
+    Returned in whatever case the feed spelled it, not folded to lower: on an EVM chain
+    that is the same address either way, and on Solana it is the only address there is.
+    Folding belongs in `models.ca_key`, where it is decided from the shape of the address,
+    rather than here, where it would be every source guessing on its own.
     """
     text = str(identifier or "")
     prefix = "%s_" % chain_id
-    return text[len(prefix):].lower() if text.startswith(prefix) else ""
+    return text[len(prefix):] if text.startswith(prefix) else ""
 
 
 def base_symbol(name: str | None) -> str | None:
@@ -113,7 +122,7 @@ def pool_row(item: dict, chain_id: str) -> dict:
 
 class GeckoTerminal:
     name = "geckoterminal"
-    chains = ("arc", "robinhood")
+    chains = ("arc", "bsc", "robinhood", "solana")
 
     # ---------------------------------------------------------------- universe
 
@@ -122,6 +131,7 @@ class GeckoTerminal:
         urls += ["%s/networks/%s/%s?page=1" % (BASE, chain_id, kind) for kind in extra]
         rows: list[dict] = []
         empty = 0
+        read = 0
         for url in urls:
             try:
                 payload = json_get(url, UA_JSON, tries=3, sleep=10.0, timeout=30.0)
@@ -130,6 +140,7 @@ class GeckoTerminal:
                 if empty >= 2:
                     break
                 continue
+            read += 1
             data = payload.get("data") if isinstance(payload, dict) else None
             if not data:
                 empty += 1
@@ -137,6 +148,12 @@ class GeckoTerminal:
                     break
                 continue
             rows.extend(pool_row(item, chain_id) for item in data)
+        # A URL that never answered is not a chain with no pools. With nothing read at all,
+        # saying `[]` files a rate limit as an empty chain - this is the enumerator for
+        # Solana, so the round would then report `ok=True, n=0` and look like a quiet market.
+        # One page read, even an empty one, is what tells the two apart.
+        if urls and not read:
+            raise SourceError("geckoterminal: no pool page readable for %s" % chain_id)
         return rows
 
     def universe_pools(self, chain_id: str) -> list[dict]:
@@ -147,7 +164,7 @@ class GeckoTerminal:
             cold = self._pages(
                 chain_id,
                 list(range(ROUTINE_PAGES + 1, FULL_PAGES + 1)),
-                ["new_pools", "trending_pools"],
+                [],
             )
             return cold or None
 
@@ -155,7 +172,11 @@ class GeckoTerminal:
         best: dict[str, dict] = {}
         for row in list(cold) + hot:
             base = row.get("base")
-            if not base:
+            # The zero address is a chain's own coin, not a token: GeckoTerminal spells the base
+            # of every native pool with it, and one such row carries the chain's whole native
+            # liquidity into the ranking with no market cap to be judged against. The cold half
+            # arrives as rows the cache already built, so the check cannot live in the builder.
+            if not base or is_placeholder_ca(base):
                 continue
             if base not in best or (_num(row.get("liq")) or 0) > (_num(best[base].get("liq")) or 0):
                 best[base] = row
@@ -264,7 +285,7 @@ class GeckoTerminal:
             mark = None
             for item in payload.get("included") or []:
                 attributes = item.get("attributes") or {}
-                if str(attributes.get("address") or "").lower() != ca.lower():
+                if ca_key(attributes.get("address")) != ca_key(ca):
                     continue
                 mark = web_url(attributes.get("image_url"))
                 break

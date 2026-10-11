@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .. import cancel
-from ..core.models import TokenMetrics
+from ..core.models import TokenMetrics, ca_key
 from ..sources.base import SourceReport
 from ..sources.http import archive
 
@@ -31,6 +31,13 @@ from ..sources.http import archive
 #: 24-hour figure, where GMGN's rank row answers in the window it happened to rank in. It
 #: has no bulk sweep (`fetch_universe` returns nothing), so it can only ever win the
 #: enrich merge - the pull never has an opinion for it to override.
+#:
+#: `dexscreener_rank` is the same host's bulk half - the board that page renders, unioned
+#: over a few orders - so it sits immediately behind `dexscreener` on every market number:
+#: same caliber, same units, one reading per pair. Like `dexscreener` it sits *behind* the
+#: launchpad feeds for `symbol`, so a launch remembered by the place that launched it keeps
+#: its own spelling. On the two chains that list it, it is not a fallback for a thin sweep;
+#: it is usually the source that produced the row in the first place.
 FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # The name the card is titled with. DexScreener sits last rather than with the other
     # feed-wide sources at the top of this table: it answers for every token on the chain
@@ -38,31 +45,38 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     # ordinary Uniswap pool, not a launchpad launch), while the launchpad the token did
     # come from keeps its own spelling when it has one.
     "symbol": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-               "coinbarrel", "pez", "peeps", "dexscreener"),
+               "coinbarrel", "pez", "peeps", "pons", "launchlab", "pumpfun",
+               "fourmeme", "dexscreener", "dexscreener_rank"),
     "gmgn_url": ("gmgn", "geckoterminal", "radardex"),
     "debot_url": ("gmgn", "geckoterminal", "radardex"),
-    "market_cap_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                       "blockscout", "coinbarrel", "pez", "peeps"),
+    "market_cap_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                       "pons", "launchlab", "pumpfun"),
     # The token own high. Three sources report one and they are the same kind of reading - a
     # record of the token own high-water mark: GMGN ships `history_highest_market_cap`,
     # CoinBarrel `peak_fdv_usd`, Peeps `athMarketCap`. None of them is interchangeable with
     # the pool history below it: GeckoTerminal answers the same question in a price, and no
     # merge can convert one into the other. Listed explicitly so a future source cannot
     # quietly outrank the ones that measured it.
-    "high_market_cap_usd": ("gmgn", "coinbarrel", "peeps"),
-    "liquidity_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                      "blockscout", "coinbarrel", "pez", "peeps"),
-    "volume_24h_usd": ("dexscreener", "gmgn", "geckoterminal", "radardex", "tolly",
-                       "blockscout", "coinbarrel", "pez", "peeps"),
-    "price_usd": ("dexscreener", "gmgn", "radardex", "tolly", "geckoterminal",
-                  "blockscout", "coinbarrel", "pez", "peeps"),
+    "high_market_cap_usd": ("gmgn", "coinbarrel", "peeps", "pumpfun"),
+    "liquidity_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                      "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                      "pons", "launchlab", "pumpfun"),
+    "volume_24h_usd": ("dexscreener", "dexscreener_rank", "gmgn", "geckoterminal",
+                       "radardex", "tolly", "blockscout", "coinbarrel", "pez", "peeps",
+                       "pons", "launchlab", "pumpfun"),
+    "price_usd": ("dexscreener", "dexscreener_rank", "gmgn", "radardex", "tolly",
+                  "geckoterminal", "blockscout", "coinbarrel", "pez", "peeps",
+                  "pons", "launchlab", "pumpfun"),
     # GMGN answers this with the *ranking window's* change, not the 24-hour one:
     # `price_change_percent` read -0.22% on the 5m board and +0.35% on the 24h board for
     # the same token (measured 2026-09-29). The adapter gates it on the window, and the
-    # two sources that ship a real `change24h` sit behind it. Listed explicitly so the
-    # default order cannot let a wrong-window reading win by accident.
-    "price_change_24h_pct": ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout",
-                            "coinbarrel", "pez", "peeps"),
+    # sources that ship a real `h24` - `dexscreener_rank`'s board row, then the launchpad
+    # feeds - sit behind it. Listed explicitly so the default order cannot let a
+    # wrong-window reading win by accident.
+    "price_change_24h_pct": ("gmgn", "dexscreener_rank", "radardex", "tolly", "geckoterminal",
+                            "blockscout", "coinbarrel", "pez", "peeps",
+                            "pons", "launchlab", "pumpfun"),
     "holders": ("gmgn", "radardex", "blockscout", "goplus", "coinbarrel", "pez", "peeps"),
     "top10_pct": ("gmgn", "radardex", "goplus"),
     "bundling_pct": ("gmgn", "radardex"),
@@ -96,15 +110,18 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "total_supply": ("gmgn", "goplus", "coinbarrel"),
     "circulating_supply": ("gmgn", "goplus"),
     "max_supply": ("gmgn", "goplus"),
-    "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps"),
-    "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps"),
+    "launchpad": ("gmgn", "radardex", "tolly", "blockscout", "pez", "peeps",
+                  "pons", "launchlab", "pumpfun", "fourmeme"),
+    "creator": ("gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
+                "pons", "launchlab", "pumpfun", "fourmeme"),
     "renames": ("gmgn",),
     # The card's mark. DexScreener owns it - it is where a project registers one - and the
     # pool feed stands behind it for the tokens that host has never been given a logo for
     # (CASINO on Robinhood, 2026-10-02: not one of its eleven pairs carried an info.imageUrl).
     # GMGN publishes one too, but its CDN refuses the request a page makes - measured in a
     # browser: that image loads from nowhere but gmgn.ai, so it is not a field we can print.
-    "logo_url": ("dexscreener", "geckoterminal"),
+    "logo_url": ("dexscreener", "dexscreener_rank", "geckoterminal", "pons", "launchlab",
+                 "pumpfun", "fourmeme"),
     "dex_pair": ("geckoterminal",),
     # Only the pool history answers these two, and it is the only reading that can fail to -
     # see `filters.check_drawdown`.
@@ -113,18 +130,22 @@ FIELD_PRIORITY: dict[str, tuple[str, ...]] = {
     "main_pool": ("geckoterminal", "tolly"),
     "pools": ("geckoterminal", "radardex"),
     "price_series": ("geckoterminal",),
-    "created_at": ("radardex", "tolly", "geckoterminal", "coinbarrel", "pez", "peeps"),
-    # The project’s own blurb. Only the per-token link read has one (see
-    # `sources/dexscreener.py`), so an empty 项目自述 line means no source carried it -
-    # which is worth printing rather than leaving out.
-    "description": ("dexscreener",),
+    "created_at": ("radardex", "tolly", "geckoterminal", "coinbarrel", "pez", "peeps",
+                   "pons", "launchlab", "pumpfun", "fourmeme"),
+    # The project's own blurb. The per-token link read is what answers it on every chain,
+    # and since 2026-10-11 so do the launchpad feeds that ship their launches' own copy
+    # (PONS / LaunchLab / pump.fun) - a launch's description is the same kind of fact. An
+    # empty 项目自述 line still means no source carried one - which is worth printing
+    # rather than leaving out.
+    "description": ("dexscreener", "pons", "launchlab", "pumpfun"),
 }
 #: The order the two stages fall back on when a field has no entry of its own above.
 #: The chain-specific sources sit last: they are absent from a chain whose config does
 #: not list them, so the tail is a fallback on the one chain that has them and never an
-#: override on the others. `sources/arc/` and `sources/robinhood/` are where they live.
+#: override on the others. `sources/arc/`, `sources/robinhood/` and `sources/solana/` are where they live.
 DEFAULT_PRIORITY = ("gmgn", "radardex", "tolly", "geckoterminal", "blockscout", "goplus", "sourcify",
-                    "dexscreener", "coinbarrel", "pez", "peeps")
+                    "dexscreener", "dexscreener_rank", "coinbarrel", "pez", "peeps",
+                    "pons", "launchlab", "pumpfun", "fourmeme")
 
 #: Per-token pages on the trackers a card links to. One place, so a URL shape cannot drift
 #: between the sources that write it. DexScreener answers a token at the same path shape it
@@ -138,8 +159,18 @@ TOKEN_URLS = {
 }
 
 
+#: The trackers that spell a chain differently from this app. Only GMGN does so far: its
+#: namespace for Solana is `sol`, while the chain id is `solana` - the spelling DexScreener
+#: and GeckoTerminal answer to, so one id cannot be both. A wrong segment here does not 404,
+#: it opens a live page about nothing, which is worse; so it gets a table rather than a
+#: guess. The measurement behind it, and the request half of the same fact, are in
+#: `sources/gmgn.py` (`CHAIN_SLUGS`). A pair that is absent means the chain id is already
+#: the name that tracker uses.
+TRACKER_CHAINS: dict[tuple[str, str], str] = {("gmgn", "solana"): "sol"}
+
+
 def token_url(tracker: str, chain_id: str, ca: str) -> str:
-    return TOKEN_URLS[tracker] % (chain_id, ca)
+    return TOKEN_URLS[tracker] % (TRACKER_CHAINS.get((tracker, chain_id), chain_id), ca)
 
 
 def stamp_trackers(row: TokenMetrics, chain_id: str, ca: str) -> None:
@@ -304,6 +335,32 @@ def set_scan_floor(sources: list, floor: float | int | str | None) -> None:
         if hasattr(source, "market_cap_floor"):
             source.market_cap_floor = value
 
+
+def set_scan_band(sources: list, prefilter: dict) -> None:
+    """Tell a source that filters its own board where this round's box is.
+
+    `set_scan_floor` hands over the one line a scanner stops below. A source that filters
+    server-side - `dexscreener_rank` reads the site's own board, which takes market cap and
+    liquidity as query parameters - can be told the whole box instead: the same three
+    numbers this round's prefilter is about to enforce, so the hundred rows a page holds are
+    rows this round could keep. Zero means no line, and a value that will not read as a
+    number becomes zero: an unusable knob reads everything, never nothing. A source without
+    the knob ignores this.
+    """
+    band: dict[str, float] = {}
+    for attribute, key in (("market_cap_floor", "market_cap_min_usd"),
+                           ("market_cap_ceiling", "market_cap_max_usd"),
+                           ("liquidity_floor", "liquidity_min_usd")):
+        try:
+            band[attribute] = max(0.0, float(prefilter.get(key) or 0))
+        except (TypeError, ValueError):
+            band[attribute] = 0.0
+    for source in sources:
+        for attribute, value in band.items():
+            if hasattr(source, attribute):
+                setattr(source, attribute, value)
+
+
 def collect(chain: dict, run_id: str, sources: list,
             on_source: Callable[[int, int], None] | None = None,
             on_pulled: Callable[[], None] | None = None) -> Universe:
@@ -329,7 +386,7 @@ def collect(chain: dict, run_id: str, sources: list,
             error = None
         except Exception as exc:
             rows, error = [], repr(exc)[:200]
-        collected[source.name] = {row.ca.lower(): row for row in (rows or [])}
+        collected[source.name] = {ca_key(row.ca): row for row in (rows or [])}
         per_source[source.name] = len(collected[source.name])
         reports.append(
             SourceReport(source=source.name, ok=error is None, records=len(collected[source.name]), error=error)
@@ -352,7 +409,7 @@ def collect(chain: dict, run_id: str, sources: list,
         "universe",
         {
             name: [
-                {"ca": row.ca, "symbol": row.symbol, "market_cap_usd": row.market_cap_usd,
+                {"ca": ca_key(row.ca), "symbol": row.symbol, "market_cap_usd": row.market_cap_usd,
                  "liquidity_usd": row.liquidity_usd, "volume_24h_usd": row.volume_24h_usd}
                 for row in sorted(collected[name].values(), key=lambda r: -(r.volume_24h_usd or 0))[:400]
             ]

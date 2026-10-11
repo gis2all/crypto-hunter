@@ -1,6 +1,6 @@
 """The Robinhood launchpad feeds: the columns that need reading before they are used.
 
-Each of these three ships a number that is not the number it looks like, and every one of
+Each of these four ships a number that is not the number it looks like, and every one of
 them was measured before it was coded:
 
 - CoinBarrel leaves `market_cap_usd` unset on every row (0/50) and publishes the market cap
@@ -15,7 +15,7 @@ The rows below are real captured answers, trimmed. Nothing here reaches the netw
 
 import pytest
 
-from app.sources.robinhood import coinbarrel, peeps, pez
+from app.sources.robinhood import coinbarrel, peeps, pez, pons
 
 CB_ROW = {
     "mint": "0xA90bDf0F4F72F3f58bc262Ab8DF7fE28e1959813",
@@ -69,7 +69,7 @@ PEEPS_ROW = {
 
 
 def test_each_one_only_claims_the_chain_it_indexes():
-    for source in (coinbarrel.CoinBarrel(), pez.Pez(), peeps.Peeps()):
+    for source in (coinbarrel.CoinBarrel(), pez.Pez(), peeps.Peeps(), pons.Pons()):
         assert source.chains == ("robinhood",)
 
 
@@ -106,6 +106,18 @@ def test_coinbarrel_publishes_the_token_high_in_token_units():
     assert metrics.high_market_cap_usd == pytest.approx(9999.503953685717)
     assert metrics.total_supply == pytest.approx(1_000_000_000)
     assert metrics.creator == "0x68aD419DB7ee5D4748C484005c48125eA3FF139e"
+
+
+def test_coinbarrel_leaves_out_a_row_that_is_only_an_address(monkeypatch):
+    """A row with neither a market cap nor a reserve is a shell: the free half drops that
+    shape anyway, and on 2026-10-06 all 85 of them were the whole of one panel reading.
+    Either number answering keeps the row - the same predicate the rule uses."""
+    shell = {**CB_ROW, "fdv_usd": None, "peak_fdv_usd": None,
+             "pool_total_liquidity_native": None, "liquidity_primary_usd": None}
+    rows = {"0xshell": shell, "0xreal": CB_ROW}
+    monkeypatch.setattr(coinbarrel.CoinBarrel, "rows", lambda self, chain_id: rows)
+    out = coinbarrel.CoinBarrel().fetch_universe("robinhood", 0)
+    assert [m.ca for m in out] == ["0xreal"]
 
 
 def test_pez_converts_a_quote_denominated_volume_into_dollars():

@@ -19,7 +19,7 @@ import sqlite3
 from uuid import uuid4
 
 from .. import cancel, config
-from ..core.models import RunStatus
+from ..core.models import RunStatus, ca_key
 from ..sources import http
 from ..report import assemble as report_assemble, lexicon, research
 from ..store import db
@@ -170,7 +170,7 @@ def close_abandoned(run_id: str) -> str:
 
 
 def scheduled_run(chain_id: str, config_id: str, slot: str) -> dict | None:
-    """The round for one cron slot under one set of settings, or None when it has one."""
+    """The round for one scheduled slot under one set of settings, or None when it has one."""
     conn = db.connect()
     try:
         seen = conn.execute(
@@ -241,7 +241,7 @@ def _roster_symbols(conn, cas: list[str]) -> dict[str, str]:
         "SELECT ca, symbol FROM tokens WHERE ca IN (%s) AND symbol IS NOT NULL" % marks,
         cas,
     ).fetchall()
-    return {str(row["ca"]).lower(): row["symbol"] for row in rows}
+    return {ca_key(row["ca"]): row["symbol"] for row in rows}
 
 
 def peak_market_caps(chain_id: str) -> dict[str, float]:
@@ -261,7 +261,7 @@ def peak_market_caps(chain_id: str) -> dict[str, float]:
         ).fetchall()
     finally:
         conn.close()
-    return {str(row["ca"]).lower(): float(row["peak_market_cap_usd"]) for row in rows}
+    return {ca_key(row["ca"]): float(row["peak_market_cap_usd"]) for row in rows}
 
 
 def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> list[dict]:
@@ -285,7 +285,7 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
         rows = conn.execute(
             "SELECT ca FROM reports WHERE run_id = ? ORDER BY rank", (last["id"],)
         ).fetchall()
-        names = _roster_symbols(conn, [str(row["ca"]).lower() for row in rows])
+        names = _roster_symbols(conn, [ca_key(row["ca"]) for row in rows])
         for item in rows:
             snap = conn.execute(
                 "SELECT metrics_json FROM snapshots WHERE run_id = ? AND ca = ?",
@@ -294,8 +294,8 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
             metrics = json.loads(snap["metrics_json"]) if snap is not None else {}
             out.append(
                 {
-                    "ca": str(item["ca"]).lower(),
-                    "symbol": metrics.get("symbol") or names.get(str(item["ca"]).lower()),
+                    "ca": ca_key(item["ca"]),
+                    "symbol": metrics.get("symbol") or names.get(ca_key(item["ca"])),
                     **{key: metrics.get(key) for key in PREVIOUS_FIELDS},
                 }
             )
@@ -342,7 +342,7 @@ def stop_run(run_id: str) -> dict:
 def fail_run(run_id: str, error: str) -> None:
     """Put a round that never got going into a terminal state.
 
-    A run created for a cron slot and then not driven looks exactly like a run that is
+    A run created for a scheduled slot and then not driven looks exactly like a run that is
     still working, and an operator cannot tell the two apart from the page. Whoever
     fails to start a round owns saying so.
     """

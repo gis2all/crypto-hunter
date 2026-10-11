@@ -1,7 +1,7 @@
 """The round ticker: one worker, one round at a time.
 
 A round starts two ways. The operator presses 运行, which POSTs a run and hands the id to
-`submit`; or the cron in the chain's own settings comes round, which the ticker checks
+`submit`; or a scheduled hour comes round, which the ticker checks
 every 30 seconds. Both go through the same single-threaded executor, so a manual round
 and a scheduled one never overlap - a round that runs long delays the next, it does not
 race it.
@@ -119,61 +119,21 @@ def _work(chain_id: str, run_id: str, config_id: str | None = None) -> dict:
         raise
 
 
-def parse_slots(cron: str) -> tuple[set[int], set[int]] | None:
-    """The (minutes, hours) of an `m h * * *` expression, or None when it is another shape.
-
-    Only the subset the settings page itself generates is understood: `*`, a list, and
-    `start-end/step`. Anything else returns None and the chain simply has no scheduled
-    rounds - a cron half-understood is worse than no cron, because it fires at times
-    nobody asked for.
-    """
-    fields = cron.split()
-    if len(fields) != 5 or fields[2:] != ["*", "*", "*"]:
-        return None
-    minutes = _field(fields[0], 60)
-    hours = _field(fields[1], 24)
-    if minutes is None or hours is None:
-        return None
-    return minutes, hours
-
-
-def _field(field: str, limit: int) -> set[int] | None:
-    values: set[int] = set()
-    for part in field.split(","):
-        step = 1
-        if "/" in part:
-            part, _, raw_step = part.partition("/")
-            if not raw_step.isdigit() or int(raw_step) <= 0:
-                return None
-            step = int(raw_step)
-        if part == "*":
-            start, end = 0, limit - 1
-        elif "-" in part:
-            low, _, high = part.partition("-")
-            if not (low.isdigit() and high.isdigit()):
-                return None
-            start, end = int(low), int(high)
-        elif part.isdigit():
-            start = end = int(part)
-        else:
-            return None
-        if start > end or end >= limit:
-            return None
-        values.update(range(start, end + 1, step))
-    return values or None
-
 
 def due_slot(chain: dict, now: datetime | None = None) -> str | None:
     """The slot `now` stands in, or None. Slots are hour-aligned, so a round's run_key
     says which slot it belongs to and not which second the ticker noticed it."""
     now = now or datetime.now().astimezone()
     schedule = chain.get("schedule") or {}
-    slots = parse_slots(str(schedule.get("cron") or ""))
-    if not slots:
+    # The hours come out of the same pair the page edits, read here rather than decoded from
+    # anything: an interval of 0 is a chain with no scheduled rounds, and there is no third
+    # place for the two to disagree in.
+    hours = config.interval_slots(schedule.get("interval_hours") or 0,
+                                 schedule.get("start_hour") or config.DEFAULT_START_HOUR)
+    if not hours:
         return None
-    minutes, hours = slots
     local = now.astimezone(ZoneInfo(str(schedule.get("timezone") or "UTC")))
-    if local.minute not in minutes or local.hour not in hours:
+    if local.minute or local.hour not in hours:
         return None
     return local.replace(minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
 

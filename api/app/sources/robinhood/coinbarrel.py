@@ -29,7 +29,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ...core.models import SafetyFacts, TokenMetrics
+from ...core.filters import is_empty_shell
+from ...core.models import SafetyFacts, TokenMetrics, ca_key
 from ..http import SourceError, UA_JSON, cached, json_get
 
 BASE = "https://coinbarrel.com/market/api/v1"
@@ -94,7 +95,7 @@ class CoinBarrel:
                 if not items:
                     break
                 for row in items:
-                    ca = str(row.get("mint") or "").lower()
+                    ca = ca_key(row.get("mint"))
                     if ca and ca not in merged:
                         merged[ca] = row
                 if not (isinstance(payload, dict) and payload.get("has_more")):
@@ -104,16 +105,30 @@ class CoinBarrel:
         return cached("cb:tokens:%s" % chain_id, UNIVERSE_TTL, produce) or {}
 
     def fetch_universe(self, chain_id: str, limit: int) -> list[TokenMetrics]:
-        out = [self._metrics(ca, row) for ca, row in self.rows(chain_id).items()]
+        """Every row the index lists, minus the ones carrying nothing to measure.
+
+        A row with neither a market cap nor a reserve is an address with a symbol on it,
+        and the free half drops exactly that shape a moment later as 空壳淘汰 (measured
+        2026-10-06: 85 of the 302 rows this feed lists, against 0 from every other source
+        on the chain). Leaving them in the pull spends funnel rows on tokens no rule can
+        judge. Either number answering keeps the row: the predicate is
+        `filters.is_empty_shell`, the same one the 空壳淘汰 rule reads.
+        """
+        out: list[TokenMetrics] = []
+        for ca, row in self.rows(chain_id).items():
+            metrics = self._metrics(ca, row)
+            if is_empty_shell(metrics):
+                continue
+            out.append(metrics)
         return out[:limit] if limit else out
 
     def fetch_token(self, chain_id: str, ca: str) -> tuple[TokenMetrics, SafetyFacts]:
         """The bulk row, which is already cached, re-read as a per-token answer: it carries
         the deployer, and that is what the LP question is asked about."""
-        row = self.rows(chain_id).get(ca.lower())
+        row = self.rows(chain_id).get(ca_key(ca))
         if not row:
             return TokenMetrics(ca=ca), SafetyFacts()
-        return self._metrics(ca.lower(), row), SafetyFacts()
+        return self._metrics(ca_key(ca), row), SafetyFacts()
 
     def _metrics(self, ca: str, row: dict) -> TokenMetrics:
         rate = _rate(row)

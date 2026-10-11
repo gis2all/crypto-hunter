@@ -239,18 +239,18 @@ html{scrollbar-gutter:stable}
    so a head with no mark is the same head with nothing in that box - not a card of a
    different height. The ring is the accent at 2px: a hairline in --border was invisible in the
    light theme, where an empty box is white on a near-white card, so it is drawn at the weight
-   of a thing you are meant to notice rather than of a thing meant to disappear. The 6px
-   radius is the second !important exception to 8.4.5 after .cfg-dot (2026-10-01, user), and
-   the box clips its own picture (overflow) so a mark cannot paint out of the corners the ring
-   draws.
+   of a thing you are meant to notice rather than of a thing meant to disappear. The corners are
+   square (2026-10-06, user): the box carried a 6px radius for a while, which made it the
+   second !important exception to 8.4.5 after .cfg-dot, and that exception is gone - the run
+   dot is the only one left. The box still clips its own picture (overflow) so a mark cannot
+   paint outside the ring.
 
-   The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the
-   two lines it stands beside, and 19px in a 最近搜索 row - inside the 19.4px that row's own
-   text line already stands at, so the mark rides in the row instead of setting its height and
-   the list keeps its 33.4px. Everything else about the box is this one rule, so the two sizes
-   cannot drift apart. */
+   The size belongs to the caller (2026-10-02, user): 40px on a card head, the height of the two
+   lines it stands beside. 19px left with the 搜索 page's row list (2026-10-11) - 19 was the
+   largest whole number under that row's own 19.4px text line, so the mark rode in the row
+   instead of setting its height. Everything else about the box is this one rule. */
 .logo{flex:0 0 auto;align-self:center;background:var(--logo-empty);
-  border:2px solid var(--accent);border-radius:6px!important;overflow:hidden}
+  border:2px solid var(--accent);overflow:hidden}
 .logo img{display:block;width:100%;height:100%;object-fit:cover}
 
 /* Equal cards, approved 2026-09-26 - the 结论 box, and it now says when it is cut.
@@ -322,8 +322,8 @@ html{scrollbar-gutter:stable}
 /* Every reading sits at the right edge of its column (2026-09-26, user). proto.css right-
    aligns a row's field only in groups that have no drop cell at all
    (`.pgroup:not(:has(.drop-n)):not(:has(.drop-x)) .prow .field`), so 硬过滤 / 安全门槛 /
-   两个评分口径 already read label-left, value-right - while 产出与节奏 / 提醒 /
-   推送与依赖, three groups whose rows carry a drop hint (先发后研, 直接复用), left their
+   两个评分口径 already read label-left, value-right - while 产出与节奏 / 推送与依赖, the two
+   groups whose rows carry a drop hint (先发后研, 直接复用), left their
    readings against the label and the rest of the row empty. Measured at 1726: a reading at
    x=797 in a column running to 1129, 每轮报告数's at 449 in a row running to 869, 数据源凭据's
    at 1486 in a row running to 1682. The hint is a note about the value, not a second value,
@@ -361,12 +361,12 @@ html{scrollbar-gutter:stable}
    `.drop:empty{display:none}` (proto.css) was written for the rows that have nothing to put
    in it - but that selector never matches the `<em class="drop">` cell those groups render: the
    cell has a child, and the child is `display:none` until the row is dirty. So every clean row
-   in 产出与节奏 / 提醒 / 推送与依赖 held 54px for a hint that was not on screen,
+   in 产出与节奏 / 推送与依赖 held 54px for a hint that was not on screen,
    and the readings stopped 62px short of the edge the rule above right-aligns them to.
    Measured at 1726 before: one reading ended at 1129 in a column running to 1191,
    每轮报告数's at 869 in a row running to 931.
 
-   It is not only air. 提醒's `X 改名次数` row is 389px of content in a 342px row (label 120
+   It is not only air. A dense checkbox row is 389px of content in a 342px row (label 120
    + gap 8 + field 175 + gap 8 + drop 54 + padding 24), and the 54px is the whole difference:
    with the cell gone the field gets 182 for 175 of content and 开启 stays on one line instead
    of breaking between its two characters.
@@ -376,8 +376,8 @@ html{scrollbar-gutter:stable}
 .prow:not(.dirty)>.drop:not(:has(>.drop-n)){display:none}
 
 /* A checkbox never breaks its own label (2026-09-26). `.chk` is a flex item of `.field`
-   like the number box beside it, so a row that is over budget shrinks it - 提醒's
-   `X 改名次数` while it is dirty and the 54px cell is back squeezes the box to 30px and
+   like the number box beside it, so a row that is over budget shrinks it - a dense checkbox
+   row while it is dirty and the 54px cell is back squeezes the box to 30px and
    paints 开启 on two lines. `flex:0 0 auto` holds the box at its own width and lets the
    row overflow into the label's empty tail instead, which is the one place in the row with
    slack: measured, the box stays 40px and the `≥` lands at 1051 against a label whose
@@ -603,9 +603,12 @@ html{scrollbar-gutter:stable}
       in reading order. Below the gate the `.pcol` divs stack back into one column in that
       same order and the frozen `auto-fit` widths come back.
 
-   1620px is measured, not picked: 运行's ratios give 提醒 (the 1fr column) 1/4.05 of the
-   content, and 提醒 needs 330px before `X 改名次数` runs out of room. At 1620 the content
-   area is 1376px, which is 334px. Everything below that is the frozen layout.
+   1668px is measured, not picked. While 提醒 was in the block it was the run block's 1fr
+   column that set it (that column needed 330px to keep its widest row on one line); 运行
+   is down to two groups now, and the column the fr layout squeezes hardest is 评分口径 -
+   硬过滤 and 安全门槛's floors (680 / 416) are absolute, so everything over them lands on
+   it. At 1668 that column holds 241px with every row still on one line (measured
+   2026-10-11). Everything below that is the frozen layout.
 
    The rail went 212 -> 260 the same day, which takes those 48px off the content area at
    every viewport, so the gate moves with it: 1668 is the same measurement as 1620 was. */
@@ -651,18 +654,35 @@ div.pgroup>.pset{margin-top:auto}
      which is the widest field on the screen. Without a floor the label column folds back
      into its text.
 
-     The last floor is 安全门槛's checkbox row: 无危险权限 plus its four boxes need 382 to
-     sit on the title's line (2026-09-26), and on the frs alone the column came out 358.
-     416 gives that row 10px of air and still leaves 评分口径 - whose widest row needs
-     238 - 309 at 1726 and 256 at the 1668 gate.
+     安全门槛's checkbox row is the third track's other claim, and since 2026-10-11 it is
+     one no floor can cover: Solana added 可增发（铸造权未放弃） and 可冻结（冻结权未放弃）,
+     twelve characters each, to a row that was 无危险权限 plus three boxes. It needs about
+     650 now against the 382 the 416 floor was written for, and a floor that size would
+     starve 评分口径 at the 1668 gate. So the third track carries weight instead of a floor:
+     1.18 beside 硬过滤's 1.15 puts the row on one line from about 2250 (measured
+     2026-10-11: 671 wide against a 649 need at 2250, 698 at 2300) - there 硬过滤 is on its
+     own 680 floor and 评分口径 reads 568, twice its widest row's 264. Below that the row
+     stacks, title on its own line and boxes packed right beneath it, which is the fallback
+     8.1.6 already describes; nothing overflows at 2048 or 1668.
 
      The tracks follow the order the API hands the groups over (2026-09-28): 评分口径
      moved to the left edge, so the floors travelled with the groups rather than the
      positions - the first track is the panel that needs the least, and both floors stay
      on the two groups that need them. */
-  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.3fr) minmax(416px,1fr)}
-  .blk-cols[data-blk="product"]{grid-template-columns:minmax(0,1fr) minmax(0,2.36fr)}
-  .blk-cols[data-blk="run"]{grid-template-columns:minmax(0,1.94fr) minmax(0,1fr) minmax(0,1.11fr)}
+  .blk-cols[data-blk="onchain"]{grid-template-columns:minmax(0,1fr) minmax(680px,1.15fr) minmax(416px,1.18fr)}
+  /* 运行 carries two groups since 369b703 took 提醒 out (8.2.11), but this template still spelled
+     three tracks: 提醒 was the 1fr middle, so 推送与依赖 moved up into it and the third
+     track - 1.11fr, the ratio 推送与依赖 held while 提醒 stood between them - was left with
+     nothing in it. That empty track is the 382px of air right of 推送与依赖 (measured at
+     1724 on 2026-10-11: tracks 667 / 344 / 382 in a 1417px block).
+
+     An even split is what the two groups ask for: their widest rows need 481px (产出与节奏's
+     扫描源 row) against 470px (推送与依赖's 数据源凭据, seven sources) - measured at 1724 on
+     2026-10-11, where 1fr apiece lands on 702px. The orphan's 27% is shared evenly.
+
+     offchain has no template of its own and does not want one: cols2's auto-fit already
+     hands its single group the whole row, and a fr pair would cut it back to a third. */
+  .blk-cols[data-blk="run"]{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .pgroup.split .prows{display:grid;grid-template-columns:1fr 1fr;column-gap:24px}
   .pgroup.split .prow>label{min-width:0}
   .pgroup.split .prow input.num{width:56px}
@@ -835,10 +855,13 @@ div.pgroup>.pset{margin-top:auto}
    delete-confirm field in the settings drawer - must not look like a value already in it. */
 .fav-search::placeholder{color:var(--muted)}
 .fav-search:focus{outline:none;border-color:var(--accent)}
-/* The shelf's two controls, in the panel beside its cards (features/favorites/FavoritesView
-   .tsx). It is the 搜索 page's shape: the body is the radar's own grid, the panel stands in
-   its first track and the cards take the rest - which is what keeps a card here the width the
-   same number of columns gives a card on a radar (see .look-body below).
+/* The shelf's and the wall's two controls, in the panel beside their cards (features/favorites
+   /FavoritesView.tsx and features/lookup/LookupView.tsx, 8.8.19 / 8.8.20). It is one rule for
+   both pages on purpose (2026-10-11, user): 收藏 and 搜索 are the two places that are not a
+   radar, so a reader who has learned one must not have to learn a second set of widths. The
+   搜索 page briefly rode the radar's own track rule instead - its cards came out exactly a
+   radar card's width, but its panel stood in a card-wide track and left a 168px dead gutter in
+   front of the wall (1280), and the two panels were different widths. Back to one rule.
 
    The cost is one column of cards at every width, measured at 1440: three tracks of 370 become
    two of 395, because the panel takes 320px of the 1133px this grid has in hand and three
@@ -848,20 +871,20 @@ div.pgroup>.pset{margin-top:auto}
    The first track is the panel's own width rather than an auto-fill track: those are floored at
    345 and grow, so the panel would stand in a track wider than itself and leave a dead gutter
    before the cards start - measured 62px at a 1440 window and 173 at 1280, against the 12px
-   the grid gap draws. Fixing the track hands that width to the cards.
+   the grid gap draws. Fixing the track hands that width to the cards, and it is what keeps the
+   two panels the same width at every window.
 
    Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
    and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
    row rather than a chip that has to fit inside the one above it. */
-#view-favorites .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+#view-favorites .fav-body,#view-lookup .look-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
 .fav-side{display:flex;flex-direction:column;width:320px}
 .fav-side .look-h{margin:10px 0 6px}
 .fav-cards{grid-column:2/-1;min-width:0}
 .fav-cards .grid{padding:0}
 .fav-opts{display:flex;flex-direction:column;gap:2px}
-/* An option row borrows the shape of a 最近搜索 row (.look-row): a box that appears on hover
-   and stays on the one in force, so the panel says what the shelf is ordered by without a
-   word of its own.
+/* An option row is a box that appears on hover and stays on the one in force, so the panel
+   says what the shelf - or the search wall - is ordered by without a word of its own.
 
    It is a row rather than a block now that each one opens with its glyph (2026-10-02, user):
    the glyph comes first, the word hangs off it at the 7px the rail opens an icon and a label
@@ -893,55 +916,29 @@ div.pgroup>.pset{margin-top:auto}
 
 /* ---------- CA search (features/lookup/LookupView.tsx) ----------
 
-   One address, one card, and the addresses already looked up beside it. The strip on top is
-   the shelf's own (above), so the two places that are not a radar read as one page with a
-   different list under it.
+   One address, one card, and every address already looked up walled beside it the way the
+   shelf walls its own. The strip on top is the shelf's own (above), so the two places that
+   are not a radar read as one page with a different set under it.
 
-   Two columns, and the left one is fixed: the list is what the page is for - a card is one
-   click away and costs nothing, because the row already carries it - so the list keeps its
-   width and the card takes what is left. */
+   Two columns, and the left one is the shelf's own: the same 320px panel and the same card
+   tracks, from the rule declared with `#view-favorites .fav-body` above (8.8.13). */
 
-/* The body IS the radar's grid (\`.grid\`) - the recent list stands in the first track and the
-   card section spans the rest.
-
-   That is what keeps the two cards the same width. An auto-fill track is (content - gutters)
-   / tracks wide, and a section spanning n-1 of those tracks, filled by the same rule,
-   re-derives exactly that width. A plain "320px + the rest" split did not: it had one track
-   where the radar had two, so the searched card came out a third wider than a round card -
-   measured at a 1280px window, 635 against 481. */
-.look-body{align-items:start}
-.look-list{display:flex;flex-direction:column;gap:2px;width:320px}
 .look-h{margin:0 0 6px;font-size:10.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;
   color:var(--muted)}
-/* A row is one line: the mark, the name, and the chain it is on. The address and the moment it
-   was read used to stand under it and came out again (2026-10-02, user) - the card beside the
-   list prints both, and a reader picks a row by name rather than by the address it is about.
-   The mark is the card's own box at 19px (2026-10-02, user): it rides inside the row's own
-   text line rather than setting the height, so the 33.4px row is unchanged. It is the one part
-   of a card a one-line row can carry, and it is what tells two rows with the same symbol
-   apart. */
-.look-row{display:flex;align-items:center;width:100%;padding:6px 9px;border:1px solid transparent;
-  background:none;color:var(--fg-2);font:inherit;text-align:left;cursor:pointer}
-.look-row:hover{background:var(--surface-warm)}
-.look-row.on{border-color:var(--border);background:var(--surface)}
-.look-top{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0}
-.look-top b{font-size:12.5px;font-weight:600;color:var(--fg)}
-.look-top i{margin-left:auto;font-style:normal;font-size:10.5px;color:var(--muted)}
 /* The one note bar on this page is the reader's answer to pressing 搜索, so it is inset like
    the columns under it rather than flush against the window. */
 #view-lookup>.note-bar{margin:12px 16px}
-/* The card the reader opened. It used to stand under a thin head of its own - the chain's
-   name and a worded 重新搜索 - and that head had no ground, no frame and no padding, so
-   8px over the card it read as a strip someone stopped drawing: every other thing on this
-   page is a framed box. Both halves were said twice anyway - the chain's name is in the
-   card's own foot, and the action belongs to the card - so the head is gone and 重新搜索
-   moved inside the card (Card.tsx). */
+/* The wall: one card per address this page has read, standing where a radar's own card
+   section stands. There is no head over the cards - it used to be a thin strip carrying the
+   chain's name and a worded 重新搜索, with no ground, no frame and no padding, so 8px over
+   the card it read as a strip someone stopped drawing. Both halves were said twice anyway
+   (the chain's name is in the card's own foot, and the action belongs to the card), so
+   重新搜索 moved inside the card (Card.tsx). */
 .look-card{grid-column:2/-1;min-width:0}
-/* The searched card rides the radar's own grid (proto.css .grid, floored at 345 on the line
-   above), so a searched card and a round card are the same width whatever stands beside
-   them - the complaint this answers was one card stretched to fill its column. The grid
-   brings the page's own padding and this column is already inset by .look-body, so the
-   padding is dropped here rather than doubled. */
+/* The wall rides the page's own `.grid`, so a searched card and a kept card are the same width
+   whatever stands beside them - the complaint this answers was one card stretched to fill its
+   column. The grid brings the page's own padding and this column is already inset by
+   .look-body, so the padding is dropped here rather than doubled. */
 .look-card .grid{padding:0}
 /* The cell the card fills: a column, so the card stacks under whatever ever stands over it
    again, and min-width:0 so a long address cannot blow the grid track open. */

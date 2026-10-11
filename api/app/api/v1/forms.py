@@ -21,7 +21,8 @@ from ...core import funnel
 # scanner that is not in a chain's config simply never appears on that chain's page.
 SOURCE_ORDER = [
     "gmgn", "radardex", "tolly", "coinbarrel", "pez", "peeps",
-    "geckoterminal", "blockscout", "goplus", "sourcify",
+    "pons", "launchlab", "pumpfun", "fourmeme",
+    "geckoterminal", "dexscreener_rank", "blockscout", "goplus", "sourcify",
 ]
 
 SOURCE_SHORT = {
@@ -31,7 +32,12 @@ SOURCE_SHORT = {
     "coinbarrel": "CoinBarrel",
     "pez": "PEZ",
     "peeps": "Peeps",
+    "pons": "PONS",
+    "launchlab": "LaunchLab",
+    "pumpfun": "pump.fun",
+    "fourmeme": "four.meme",
     "geckoterminal": "GT",
+    "dexscreener_rank": "DexScreener",
     "blockscout": "Blockscout",
     "goplus": "GoPlus",
     "sourcify": "Sourcify",
@@ -43,7 +49,12 @@ SOURCE_LABELS = {
     "coinbarrel": "CoinBarrel 全链榜",
     "pez": "PEZ 发射台",
     "peeps": "Peeps 发射台",
+    "pons": "PONS 发射台",
+    "launchlab": "Raydium LaunchLab 发射台",
+    "pumpfun": "pump.fun 发射台",
+    "fourmeme": "four.meme 发射台",
     "geckoterminal": "GeckoTerminal 池",
+    "dexscreener_rank": "DexScreener 榜单",
     "blockscout": "Blockscout 全链底表",
     "goplus": "GoPlus",
     "sourcify": "Sourcify",
@@ -72,21 +83,15 @@ INTERVAL_CHOICES = (1, 2, 3, 4, 6, 12, 24)
 #: The five 0-5 judgements the off-chain block is computed from, with the anchor each one
 #: is scored against. The anchors are 口径, not knobs: they ride in the group's 说明, and
 #: the weights that split the block live in `pipeline.scoring.offchain_factor_weights`.
-#: The narrative anchor names a chain, and the page must name its own: 「离开 Arc 跑不起来 = 5」
+#: The narrative anchor names a chain, and the page must name its own: 「核心业务就是 Arc 的主线 = 5」
 #: printed on the Robinhood page scores the wrong chain's question. Substituted per page from
 #: `config.chain_name` - the chain's own name, not the radar's label (user, 2026-09-30).
 OFFCHAIN_LABELS = {
     "f_completeness": ("产品完成度", "0–5 · 有界面 / 能交互 / 收费并迭代"),
     "f_substance": ("项目实质与亮点", "0–5 · 纯 meme 到机制+差异化+独家资源"),
     "f_team": ("团队与 dev 可信度", "0–5 · 只奖可追溯；批量建币一票降档"),
-    "f_narrative": ("叙事与官方关系", "0–5 · 离开 %s 跑不起来 = 5"),
+    "f_narrative": ("叙事与主线", "0–5 · 核心业务就是 %s 的主线 = 5"),
     "f_community": ("社区活跃度", "0–5 · 互动率与持续性，粉丝数无效"),
-}
-ALERT_LABELS = {
-    "rename_count": "X 改名次数",
-    "creator_token_count": "X 建币数量",
-    "duplicate_symbol": "同名合约并行",
-    "missing_socials": "官网漏收录 X/TG",
 }
 
 
@@ -161,9 +166,16 @@ def build(
     prefilter = pipeline.get("prefilter") or {}
     safety = pipeline.get("safety") or {}
     scoring = pipeline.get("scoring") or {}
+    # 可增发 / 可冻结 are answerable only where the mint read is configured
+    # (`sources/solana/mint.py`), so the two checkboxes are offered exactly there: a
+    # permission the chain cannot answer is a checkbox that can never fire. The EVM three
+    # stay on every chain, because GoPlus - the source that answers them - is on every chain.
+    solana_perms = (
+        ["mint_authority", "freeze_authority"]
+        if "solana_mint" in (chain.get("sources") or []) else []
+    )
     schedule = chain.get("schedule") or {}
     report = chain.get("report") or {}
-    alerts = chain.get("alerts") or {}
     factor_weights = scoring.get("onchain_factor_weights") or {}
     offchain_weights = scoring.get("offchain_factor_weights") or {}
 
@@ -214,6 +226,7 @@ def build(
         _field(
             "pipeline.prefilter.require_market_data", "空壳币", "bool",
             bool(prefilter.get("require_market_data")), check_label="无市值且无流动性即淘汰",
+            drop_count=drops("empty_shell"),
         ),
         _field(
             "pipeline.prefilter.min_scored_fields", "零数据淘汰", "num",
@@ -246,10 +259,15 @@ def build(
             "pipeline.safety.forbid_dangerous_perms", "无危险权限", "checks",
             list(safety.get("forbid_dangerous_perms") or []),
             checks=_checks(
-                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"],
+                ["hidden_owner", "owner_change_balance", "can_take_back_ownership"] + solana_perms,
                 {"hidden_owner": "隐藏所有者",
                  "owner_change_balance": "可改持有人余额",
-                 "can_take_back_ownership": "可夺回所有权"},
+                 "can_take_back_ownership": "可夺回所有权",
+                 # Solana 的两条读的是 mint 账户里的两个权限（sources/solana/mint.py），EVM 的
+                 # 三条读的是合约字节码。同一条规则、同一行，因为它们回答的是同一个问题：
+                 # 持有人之外，还有谁能动这个币。
+                 "mint_authority": "可增发（铸造权未放弃）",
+                 "freeze_authority": "可冻结（冻结权未放弃）"},
             ),
             # 提示项照常读、卡片上照常显示，只是不淘汰 —— 门槛只留真能卷走资产的三条。
             drop_count=drops("dangerous_perm"),
@@ -296,8 +314,10 @@ def build(
         for key, (label, _anchor) in _offchain_labels(chain).items()
     ]
 
-    interval = int(schedule.get("interval_hours") or 3)
-    slots = interval_slots(interval)
+    interval = int(schedule.get("interval_hours") or 0)
+    start = schedule.get("start_hour")
+    start = config.DEFAULT_START_HOUR if start is None else int(start)
+    slots = config.interval_slots(interval, start)
     scan_checks = _source_checks(pipeline.get("scan_sources") or [], totals.get("sources") or [])
     scan_reading = _scan_reading(scan_checks, totals.get("universe") or 0)
     for check in scan_checks:
@@ -312,10 +332,14 @@ def build(
                str(pipeline.get("research_limit", 20)), op="≤", unit="个",
                drop_x="下轮生效"),
         _field("schedule.interval_hours", "间隔", "select", str(interval),
-               options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]),
+               options=_options([(str(h), "%dh" % h) for h in INTERVAL_CHOICES]
+                                + [("0", "不排期")]),
                drop_x="下轮生效"),
-        _field("schedule.cron", "触发时刻", "derived", "/".join("%02d" % s for s in slots),
-               ),
+        _field("schedule.start_hour", "起始时刻", "select", str(start),
+               options=_options([(str(h), "%02d:00" % h) for h in range(24)]),
+               drop_x="下轮生效"),
+        _field("schedule.slots", "触发时刻", "derived",
+               "/".join("%02d" % s for s in slots) if slots else "不排期"),
         _field("schedule.push_delay_minutes", "推送延迟", "num",
                str(schedule.get("push_delay_minutes", 6)), op="+", unit="分钟",
                drop_x="下轮生效"),
@@ -323,21 +347,6 @@ def build(
                list(pipeline.get("scan_sources") or []),
                checks=scan_checks),
     ]
-
-    alert_fields = []
-    for key, label in ALERT_LABELS.items():
-        if key == "rename_count":
-            alert_fields.append(
-                _field("alerts.rename_count_min", label, "num",
-                       str(alerts.get("rename_count_min", 2)), op="≥", unit="次",
-                       dim=None, enabled_key="alerts.rename_count", drop_x="下轮生效",
-                       enabled=bool(alerts.get("rename_count", True)))
-            )
-        else:
-            alert_fields.append(
-                _field("alerts.%s" % key, label, "bool", bool(alerts.get(key, True)),
-                       check_label="开启", drop_x="下轮生效")
-            )
 
     push_fields = [
         _field("report.push_target", "发送目标", "select",
@@ -459,15 +468,10 @@ def build(
                         for line in (
                             scan_reading,
                             "判定候选数 0 = 判完整个幸存者池；调研上限按流动性取前 N 个过关候选做链下调研，0 = 全部调研。",
-                            "触发时刻由间隔生成；推送延迟 = 报告发布后等待的分钟数。",
+                            "触发时刻由起始时刻和间隔算出；推送延迟 = 报告发布后等待的分钟数。",
                         )
                         if line
                     ),
-                },
-                {
-                    "key": "alerts", "title": "提醒", "hint": "",
-                    "fields": alert_fields, "note": "",
-                    "detail": "只看阈值有没有踩线，不进分、也不淘汰。",
                 },
                 {
                     # The read-only banner below is a `sub` row inside push_fields, so this
@@ -503,13 +507,6 @@ def field_labels(chain: dict) -> dict[str, str]:
                 else:
                     labels[field["key"]] = field["label"]
     return labels
-
-
-def interval_slots(hours: int) -> list[int]:
-    """The trigger hours an interval produces, anchored at 02:00 like the live schedule."""
-    if hours <= 0 or 24 % hours:
-        return [2, 5, 8, 11, 14, 17, 20, 23]
-    return [h % 24 for h in range(2, 26, hours)]
 
 
 

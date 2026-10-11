@@ -25,11 +25,23 @@ const TERMINAL = new Set(["researched", "cancelled", "failed"]);
 
 /** Where the page keeps the reader's place. One key per thing remembered, all under the
  *  `ch.` prefix the theme already uses, so one search finds everything this app stores in
- *  a browser. See `prefs.ts`. */
+ *  a browser. See `prefs.ts`.
+ *
+ *  The set of settings being read, and the tab, are remembered **per radar**: they are that
+ *  radar's view, and a reader who leaves Arc · 报告 for Robinhood · 设定 has not asked Arc to
+ *  change tab. One shared key cannot do it - a config id is the backend's and unique to its
+ *  chain, so a set read on one chain reads as "this set was just deleted" on the other and the
+ *  correction below drops the reader onto the live set. That is how a set created and read
+ *  before it was made live came back as 默认配置 (user, 2026-10-06). Which radar and which
+ *  place stay single keys: the four places are not scoped by a chain. */
 const CHAIN_KEY = "ch.chain";
-const CONFIG_KEY = "ch.config";
-const VIEW_KEY = "ch.view";
 const PLACE_KEY = "ch.place";
+const configKey = (chainId: string) => `ch.config.${chainId}`;
+const viewKey = (chainId: string) => `ch.view.${chainId}`;
+/** What those two keys were before the memory went per radar. Read once as the fallback, so a
+ *  reader in the middle of a session keeps the set they had open; nothing writes them now. */
+const LEGACY_CONFIG_KEY = "ch.config";
+const LEGACY_VIEW_KEY = "ch.view";
 
 function download(batch: Batch) {
   const blob = new Blob([batchToMarkdown(batch)], { type: "text/markdown;charset=utf-8" });
@@ -47,13 +59,22 @@ export default function App() {
   // The page's own memory: which radar, which set of settings and which tab the reader was
   // on. A reload has to land where they left, not back on Arc · 报告. The round index is
   // deliberately not kept - see the note on `batchIndex` below.
-  const [chainId, setChainId] = useState(() => readPref(CHAIN_KEY) ?? "arc");
-  // Which set of settings the page is reading. Empty until the chain list answers: the id
-  // is the backend's and the list is the only place it is written, so the page never
+  // The radar the page opens on, read once: the two remembered values below are keyed by it,
+  // so they have to be read with the same id the states are created with.
+  const [startChain] = useState(() => readPref(CHAIN_KEY) ?? "arc");
+  const [chainId, setChainId] = useState(startChain);
+  // Which set of settings the page is reading - this radar's last one, or nothing, which the
+  // correction below turns into the live set once the list answers. Empty is not a choice: the
+  // id is the backend's and the list is the only place it is written, so the page never
   // invents one. Everything below the chain list is scoped by this as well as by the chain.
-  const [configId, setConfigId] = useState(() => readPref(CONFIG_KEY) ?? "");
+  const [configId, setConfigId] = useState(
+    () => readPref(configKey(startChain)) ?? readPref(LEGACY_CONFIG_KEY) ?? "",
+  );
   const [configMgrOpen, setConfigMgrOpen] = useState(false);
-  const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === "params" ? "params" : "report"));
+  const [view, setView] = useState<View>(() => {
+    const kept = readPref(viewKey(startChain)) ?? readPref(LEGACY_VIEW_KEY);
+    return kept === "params" ? "params" : "report";
+  });
   // 雷达, 收藏, 搜索 or 系统设置. All four are places, not tabs: the last three are scoped by
   // neither the selected chain nor a set of settings, so none of them can live under
   // 报告 / 设定 - see Rail's Place.
@@ -99,10 +120,25 @@ export default function App() {
     keep.mutate({ runId: run.id, ca: card.ca });
   };
 
+  // Entering a radar is a save and a load, not a drag: the set being read and the tab belong to
+  // the radar they were read on, so the outgoing one is written before the incoming one is read.
+  // Nothing else moves the radar - the rail and the correction below both come through here.
+  const openChain = (id: string) => {
+    if (configId) {
+      savePref(configKey(chainId), configId);
+    }
+    savePref(viewKey(chainId), view);
+    setChainId(id);
+    setConfigId(readPref(configKey(id)) ?? "");
+    const kept = readPref(viewKey(id));
+    setView(kept === "params" ? "params" : "report");
+  };
+
   // A remembered radar that is no longer on the rail - dropped from the list, or turned off -
   // is not a place the page can be: the rail draws only the enabled chains (8.3.1), so the
   // page would sit on a chain with no row lit. It falls back to the first enabled chain, which
-  // is where a first visit opens anyway.
+  // is where a first visit opens anyway, and it takes the same open as the rail so the radar
+  // being left keeps what it was reading.
   useEffect(() => {
     const list = chains.data;
     if (!list?.length || list.some((item) => item.id === chainId && item.enabled)) {
@@ -110,7 +146,7 @@ export default function App() {
     }
     const first = list.find((item) => item.enabled);
     if (first) {
-      setChainId(first.id);
+      openChain(first.id);
     }
   }, [chains.data, chainId]);
 
@@ -175,17 +211,23 @@ export default function App() {
     savePref(CHAIN_KEY, chainId);
   }, [chainId]);
 
+  // Each of the two is written under the radar it was read on. The pair and the chain move in
+  // one commit - `openChain` sets all three together, after writing the outgoing pair itself -
+  // so the chain here is the one the value belongs to, and this also seeds the per-radar key on
+  // the first render after a reload, from whichever key answered for it (the legacy one, on the
+  // way in).
+  //
   // An empty id is the page before the chain list has answered, not a choice: storing it
   // would overwrite the remembered one with nothing on the first render of every reload.
   useEffect(() => {
     if (configId) {
-      savePref(CONFIG_KEY, configId);
+      savePref(configKey(chainId), configId);
     }
-  }, [configId]);
+  }, [configId, chainId]);
 
   useEffect(() => {
-    savePref(VIEW_KEY, view);
-  }, [view]);
+    savePref(viewKey(chainId), view);
+  }, [view, chainId]);
 
   useEffect(() => {
     savePref(PLACE_KEY, place);
@@ -245,7 +287,7 @@ export default function App() {
         place={place}
         onSelectPlace={setPlace}
         onSelectChain={(id) => {
-          setChainId(id);
+          openChain(id);
           setPlace("radar");
         }}
         theme={theme}
@@ -292,7 +334,7 @@ export default function App() {
               running={live}
               open={runPanelOpen}
               batch={batch.data}
-              onCancel={() => run && cancel.mutate(run.id)}
+              onCancel={() => (run ? cancel.mutateAsync(run.id) : Promise.resolve())}
               cancelling={cancel.isPending}
             />
           ) : null}

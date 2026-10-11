@@ -1,10 +1,12 @@
-# 每条链的独立设定：节奏、过滤、评分、提醒、出口都属于链自己。
+# 每条链的独立设定：节奏、过滤、评分、出口都属于链自己。
 # 这个文件是「出厂默认」；「保存并生效」会写入 settings_versions 表，之后以表里的版本为准。
 # 口径（分位分母 = 本轮硬过滤幸存者、淘汰数按优先级累计）见 CLAUDE.md 第二部分。
 id: arc
-# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是「雷达」的名字。
+# 链自己的名字（写进报告文字、搜索词、设定页口径），与 `label` 分开：那个是左栏菜单上的名字。
 name: Arc
-label: Arc 雷达
+# 这条链的主线，一句话。f_narrative 只判「在不在主线上」，判据就是这句话（写进 research.md 的 __THESIS__）。
+thesis: 稳定币的支付与结算轨：用 USDC 结算、agent 付费、机构资产上链生息
+label: Arc
 enabled: true
 explorer: https://explorer.arc.io
 # The chain's own node: LP positions and dev balances are read here, not from an API.
@@ -16,8 +18,8 @@ configs:
     locked: true
     sources: [geckoterminal, radardex, tolly, gmgn, goplus, sourcify]
     schedule:
-      cron: "0 2,5,8,11,14,17,20,23 * * *"
       interval_hours: 3
+      start_hour: 2
       timezone: Asia/Shanghai
       push_delay_minutes: 6
     pipeline:
@@ -96,7 +98,6 @@ configs:
       per_round: 5
       push_target: telegram
       push_content: [cards, table]
-    alerts:
       rename_count_min: 2
       rename_count: true
       creator_token_count: true

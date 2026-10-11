@@ -24,6 +24,8 @@
 
 未采用：`/networks/arc/tokens`（列表形式）返回 404 —— Arc 没有 token 级列表端点，universe 只能从池聚合出来。
 
+发射台这件事上 Arc 是另一头：**没有发射台专用源，也不需要**。RadarDEX 的整链行里 `launchpad` 字段全是 `None`，而 GMGN / GeckoTerminal / RadarDEX 三个排序的并集已经把发射台发出来的币枚举进来了 —— 所以 `scan_sources` 里不加发射台源，加了只是重复。
+
 ## 关键结论
 
 1. **GMGN 必须走 `curl_cffi`（`impersonate="chrome"`）。** httpx / urllib 一律 403，返回的是 Cloudflare 挑战页（`text/html`），不是限频。依赖已固化为 `curl-cffi`，代码走 `sources/http.py` 的 `TRANSPORT = "browser"`。
@@ -59,7 +61,7 @@ sourcify note 404 = 「我这儿没有它的记录」，是答案不是失败：
 **它在轮内，不在发布之后。** 链下调研是打分里 45% 的输入（另 55% 是链上质量），
 所以顺序是 `gate → draft（调研 + 写作）→ score`：卡片上的话和卡片旁的分必须来自同一份证据，
 这个慢计入本轮耗时（`draft` 阶段）。一个标的的模型调用被校验拒了，会带着它自己的 JSON
-和校验器原话**再问一次**（`research.REPAIR_HEAD`，落库 `prompt_version = research.md@7+repair`）；
+和校验器原话**再问一次**（`research.REPAIR_HEAD`，落库 `prompt_version = research.md@9+repair`）；
 再失败才当作缺席 —— 那个币不进排名，本轮 note 里写明。
 
 ## 挖链：X 高级搜索（`app/search/`，登录态在 `config/system.yaml`）

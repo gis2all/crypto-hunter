@@ -1,8 +1,13 @@
 """The chain config is the source of the口径; mistakes here poison everything."""
 
+import json
 import os
 
+import pytest
+import yaml
+
 from app import config
+from app.store import db
 
 
 def test_the_file_is_the_install_step(tmp_path, monkeypatch):
@@ -64,19 +69,30 @@ def test_a_real_environment_variable_is_never_touched(tmp_path, monkeypatch):
 
 def test_every_chain_declared():
     chains = config.load_chains()
-    assert set(chains) == {"arc", "bsc", "robinhood"}
+    assert set(chains) == {"arc", "bsc", "robinhood", "solana"}
     assert chains["arc"]["enabled"] is True
-    assert chains["bsc"]["enabled"] is False
+    assert chains["bsc"]["enabled"] is True
     assert chains["robinhood"]["enabled"] is True
 
 
 def test_robinhood_scans_its_own_sources():
-    """The three launchpad feeds only exist for Robinhood, and the two Arc-only sources must
+    """`f_narrative` is judged against the chain's own line, so a chain that ships none
+    ships a prompt with no target. Every shipped chain carries one, and a file that leaves
+    it out reads as empty rather than as some other chain's line."""
+    for chain_id in ("arc", "bsc", "robinhood", "solana"):
+        assert config.chain_thesis(config.chain(chain_id)), chain_id
+    assert config.chain_thesis({"thesis": "  x  "}) == "x", "the line is trimmed"
+    assert config.chain_thesis({}) == ""
+
+
+    """The four launchpad feeds only exist for Robinhood, and the two Arc-only sources must
     not be in the list: RadarDEX and Tolly answer about Robinhood with the Arc rollout, so a
-    config that named them would fill the pool with another chain's tokens."""
+    config that named them would fill the pool with another chain's tokens. The DexScreener
+    board is the one scanner here that nobody had to be told about: it enumerates the chain
+    as the site lists it."""
     chain = config.chain("robinhood")
     assert set(chain["pipeline"]["scan_sources"]) == {
-        "gmgn", "geckoterminal", "coinbarrel", "pez", "peeps",
+        "gmgn", "geckoterminal", "coinbarrel", "pez", "peeps", "pons", "dexscreener_rank",
     }
     for arc_only in ("radardex", "tolly"):
         assert arc_only not in chain["sources"]
@@ -84,7 +100,8 @@ def test_robinhood_scans_its_own_sources():
 
 def test_arc_keeps_the_established_cadence():
     arc = config.chain("arc")
-    assert arc["schedule"]["cron"] == "0 2,5,8,11,14,17,20,23 * * *"
+    assert arc["schedule"]["interval_hours"] == 3
+    assert arc["schedule"]["start_hour"] == 2
     assert arc["schedule"]["push_delay_minutes"] == 6
     assert arc["report"]["per_round"] == 5
 
@@ -140,3 +157,126 @@ def test_prune_unknown_keeps_the_yaml_shape_and_nothing_else():
                "dropped_section": {"a": 1}}
     assert config.prune_unknown(base, payload) == {
         "pipeline": {"scoring": {"offchain_weight": 45}, "gate_limit": 20}}
+
+
+@pytest.fixture()
+def chains_dir(tmp_path, monkeypatch):
+    """A throwaway chain directory, with the loader's cache emptied on both sides of the test.
+
+    `load_chains()` is cached for the life of the process, so a test that points the loader at
+    its own directory has to clear it first - or whichever test read first answers - and again
+    on the way out, or this directory answers for the rest of the run.
+    """
+    monkeypatch.setattr(config, "CHAINS_DIR", tmp_path)
+    config.reload()
+    yield tmp_path
+    config.reload()
+
+
+def test_the_tracked_template_is_not_a_chain(chains_dir):
+    """The factory file is `<id>.example.yaml`; the live one is `<id>.yaml` beside it.
+
+    Both in one directory so a reader can diff what they have against what we ship, which only
+    holds if the loader skips the template - reading it would give one chain id two entries and
+    the same set of settings twice on the rail.
+    """
+    (chains_dir / "demo.example.yaml").write_text(
+        "id: demo\nenabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: 出厂默认\n"
+        "  - id: wide\n"
+        "    label: 宽口\n",
+        encoding="utf-8")
+    (chains_dir / "demo.yaml").write_text(
+        "id: demo\nenabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: 本机的默认配置\n"
+        "  - id: wide\n"
+        "    label: 宽口\n"
+        "  - id: tight\n"
+        "    label: 紧口\n",
+        encoding="utf-8")
+
+    chains = config.load_chains()
+    assert set(chains) == {"demo"}
+    assert [cfg["id"] for cfg in chains["demo"]["configs"]] == ["default", "wide", "tight"]
+    assert chains["demo"]["configs"][0]["label"] == "本机的默认配置"
+
+
+def test_a_machine_that_has_never_run_gets_the_file_from_the_template(chains_dir):
+    """A clone has the templates only; the first read writes the live file beside one.
+
+    That read is every way into the app - the API, the ticker, a test - so the seeding sits on
+    the loader rather than on a startup hook the tests would never run.
+    """
+    (chains_dir / "demo.example.yaml").write_text(
+        "id: demo\nenabled: true\nconfigs:\n  - id: default\n    label: 默认配置\n",
+        encoding="utf-8")
+
+    chains = config.load_chains()
+    assert set(chains) == {"demo"}
+    live = chains_dir / "demo.yaml"
+    assert live.exists()
+    assert live.read_bytes() == (chains_dir / "demo.example.yaml").read_bytes()
+
+
+def test_a_chain_file_added_by_hand_is_read_without_a_restart(chains_dir):
+    """Adding a chain is dropping a file in, and nothing calls `reload()` for that.
+
+    The parse was remembered for the life of the process, so a chain added this way only
+    appeared after a restart - the one way in that the page never takes. The cache is keyed
+    on the directory now (name, size, stamp), so the read after the write sees it, and a file
+    edited or deleted by hand lands the same way.
+    """
+    def write(name: str, label: str):
+        (chains_dir / name).write_text(yaml.safe_dump(
+            {"id": name[:-5], "enabled": True,
+             "configs": [{"id": "default", "label": label}]},
+            allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    write("one.yaml", "一号")
+    assert set(config.load_chains()) == {"one"}
+
+    write("two.yaml", "二号")
+    assert set(config.load_chains()) == {"one", "two"}
+
+    write("two.yaml", "二号改")
+    assert config.configs_of("two")[0]["label"] == "二号改"
+
+    (chains_dir / "two.yaml").unlink()
+    assert set(config.load_chains()) == {"one"}
+
+
+def test_the_ticker_obeys_the_schedule_the_page_saved_not_the_files(chains_dir, isolated_db):
+    """The two knobs are saved as a version, while the file keeps the factory ones.
+
+    Reading the file here would mean a schedule set on the page never fires: the ticker
+    would go on starting rounds at the hours the operator replaced.
+    """
+    (chains_dir / "demo.yaml").write_text(
+        "id: demo\n"
+        "enabled: true\n"
+        "configs:\n"
+        "  - id: default\n"
+        "    label: default\n"
+        "    schedule:\n"
+        "      interval_hours: 3\n"
+        "      start_hour: 2\n",
+        encoding="utf-8")
+    config.reload()
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO settings_versions (chain_id, config_id, version, payload_json,"
+            " note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("demo", "default", 1,
+             json.dumps({"schedule": {"interval_hours": 6, "start_hour": 5}}), None,
+             "2026-10-06T00:00:00+08:00"))
+    finally:
+        conn.close()
+
+    assert config.live_schedule("demo")["interval_hours"] == 6
+    assert config.enabled_configs()[0]["schedule"]["interval_hours"] == 6
+    assert config.enabled_configs()[0]["schedule"]["start_hour"] == 5

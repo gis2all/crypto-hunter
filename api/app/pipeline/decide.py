@@ -38,7 +38,7 @@ from typing import Callable
 
 from .. import cancel
 from ..core import filters, funnel, scoring
-from ..core.models import SafetyFacts, ScoreBreakdown, TokenMetrics
+from ..core.models import SafetyFacts, ScoreBreakdown, TokenMetrics, ca_key
 from ..sources import onchain, registry
 from ..sources.base import SourceReport
 from ..sources.http import pmap
@@ -311,7 +311,7 @@ class Engine:
         #: 距高回撤 reads its high from here: the highest market cap this project has seen
         #: for a CA. The pipeline hands it over, because a store read belongs to the caller
         #: and the engine stays offline for every test that does not want one.
-        self.peaks = {str(ca).lower(): float(value) for ca, value in (peaks or {}).items()}
+        self.peaks = {ca_key(ca): float(value) for ca, value in (peaks or {}).items()}
 
     # ------------------------------------------------------------------ the round
 
@@ -380,6 +380,9 @@ class Engine:
         # The pull is told the same floor the prefilter is about to enforce, so a scanner
         # that can stop early is never told to stop above the line the round draws.
         collector.set_scan_floor(self.sources, prefilter_cfg.get("market_cap_min_usd"))
+        # A source that filters its own board server-side takes the whole box, not just the
+        # line under it: the same three numbers the prefilter is about to enforce.
+        collector.set_scan_band(self.sources, prefilter_cfg)
         universe = collector.collect(
             self.chain, run_id, self.sources,
             on_source=told("pull"),
@@ -421,7 +424,7 @@ class Engine:
         # about by name *before* the rules that read it run. A blank at this point is a blank
         # the paid read could not fill either.
         cap = _gate_cap(cfg)
-        self._top_up(pool, universe, cap, told=told("topup"))
+        self._top_up(pool, universe, cap, told=told("topup"), run_id=run_id)
         pool.sort(key=_depth)      # the top-up may have corrected a row's depth
         clock.mark("topup")
 
@@ -564,7 +567,8 @@ class Engine:
         )
 
     def _top_up(self, pool: list[Candidate], universe: collector.Universe, cap: int,
-               told: Callable[[float, float], None] | None = None) -> None:
+               told: Callable[[float, float], None] | None = None,
+               run_id: str | None = None) -> None:
         """Buy the chip picture for the rows the bulk sweep left blank, before it is read.
 
         The chip rules can only reject a row whose number someone answered, and the bulk
@@ -603,7 +607,8 @@ class Engine:
             if told:
                 told(here, total)
 
-        self._enrich(wanted, universe, one_done, only=MARKET_ENRICH, light=True)
+        self._enrich(wanted, universe, one_done, only=MARKET_ENRICH, light=True,
+                     run_id=run_id)
 
     def _gate(self, survivors: list[Candidate], universe: collector.Universe, cfg: dict,
               batch: int, told: Callable[[float, float], None] | None = None,
@@ -669,7 +674,7 @@ class Engine:
             if cap and checked < cap:
                 end = min(end, cap)
             chunk = survivors[checked:end]
-            self._enrich(chunk, universe, judged, defer=DEFERRED_ENRICH)
+            self._enrich(chunk, universe, judged, defer=DEFERRED_ENRICH, run_id=run_id)
             for item in chunk:
                 cancel.raise_if(run_id)
                 # 距高回撤 is judged from what the row already carries: the high GMGN
@@ -716,7 +721,7 @@ class Engine:
             # The deferred read, spent on the picks alone - see `DEFERRED_ENRICH`. It runs
             # after the score on purpose: nothing it fills is scored, and the card is the
             # only reader that wants it.
-            self._enrich(batch, universe, only=DEFERRED_ENRICH)
+            self._enrich(batch, universe, only=DEFERRED_ENRICH, run_id=run_id)
             for item in batch:
                 verdict = filters.check_drawdown(item.metrics, prefilter, self.peaks.get(item.ca))
                 if verdict.passed:
@@ -735,7 +740,7 @@ class Engine:
     def _enrich(self, shortlist: list[Candidate], universe: collector.Universe,
                 done: Callable[[], None] | None = None, *,
                 defer: tuple[str, ...] = (), only: tuple[str, ...] = (),
-                light: bool = False) -> None:
+                light: bool = False, run_id: str | None = None) -> None:
         """Ask every source about every shortlisted token, then re-merge the token's view.
 
         Per token the sources are asked at the same time and each host paces itself, so five
@@ -750,6 +755,12 @@ class Engine:
         `light` asks each source's cheap entry instead (`fetch_chips`), for the passes that
         read one number off the answer - see `_top_up`. A source without one is still
         asked the full way.
+
+        `run_id` is this round's own id, and it is what makes the pass a stop boundary: the
+        token fan-out is handed the round's check (`pmap`), so a stop asked for while the
+        pool is being filled starts no further token. The ones already in flight are left to
+        finish - the price of a busy pool being seconds rather than the rest of it - and the
+        round ends at the next boundary instead of carrying a half-filled pool into the gate.
         The later pass adds
         its answers to the first pass's `views` rather than starting over, because
         re-merging from the bulk rows alone would replace a source's fresh per-token
@@ -815,7 +826,7 @@ class Engine:
             if done:
                 done()
 
-        pmap(one, shortlist, workers=ENRICH_WORKERS)
+        pmap(one, shortlist, workers=ENRICH_WORKERS, stop=cancel.check(run_id))
 
     def _lock_facts(self, item: Candidate) -> None:
         """Fill in the LP verdict for one candidate - see `lp_verdict`."""
@@ -849,7 +860,7 @@ class Engine:
 
     def _deltas(self, item: Candidate) -> list[dict]:
         """This token against its own last appearance: four numbers, in the card's units."""
-        before = next((row for row in self.previous if str(row.get("ca") or "").lower() == item.ca), None)
+        before = next((row for row in self.previous if ca_key(row.get("ca")) == ca_key(item.ca)), None)
         if not before:
             return []
         out: list[dict] = []
@@ -885,7 +896,7 @@ class Engine:
         """
         if not self.previous:
             return [{"kind": "首次运行", "direction": "in", "sym": "—", "detail": "首次运行，无对比基线"}]
-        before = {str(row.get("ca") or "").lower(): row for row in self.previous}
+        before = {ca_key(row.get("ca")): row for row in self.previous}
         now = {item.ca: item for item in picked}
         changes: list[dict] = []
         for item in picked:
@@ -1095,6 +1106,8 @@ def _rule_note(reason: str, metrics: TokenMetrics, prefilter: dict, safety: dict
         readings = filters.drawdown_readings(metrics, prefilter, peak_market_cap_usd)
         return _clause("距高回撤", min(readings) if readings else None,
                        prefilter.get("drawdown_max_pct"), formatter=_pct, wording="超过")
+    if reason == "empty_shell":
+        return "市值与流动性都没有（源只给到地址）"
     if reason == "missing_data":
         return "五个评分因子全无数据"
     if reason == "source_unverified":

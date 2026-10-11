@@ -33,7 +33,9 @@ It never raises for one token: a project that cannot be read or cannot be writte
 leaves that token without an entry, which keeps it out of the ranking rather than filling
 the gap with prose nobody decided. A rejected answer is not one of those cases yet: it
 is asked for once more, with its own rejection quoted back, because a missing judgement
-is a slip to correct rather than a token to drop. The round says so in its own note.
+is a slip to correct rather than a token to drop. The round says so in its own note. The
+stop is the one thing that is not a token's own failure: a round the operator ended ends
+here rather than being carried as "this token had no page to read" (`cancel.check`).
 """
 
 from __future__ import annotations
@@ -46,8 +48,10 @@ import time
 from html import unescape
 from typing import Any, Callable, Mapping, Sequence
 
+from .. import cancel
 from .. import llm
-from ..config import chain_name
+from ..config import chain_name, chain_thesis
+from ..core.models import ca_key
 from ..pipeline import collect
 from ..search.base import TweetRow
 from ..search.discover import Discovery, discover
@@ -67,7 +71,18 @@ log = logging.getLogger("crypto-hunter.pipeline")
 #: question (user, 2026-09-30).
 CHAIN_TOKEN = "__CHAIN__"
 
-PROMPT_VERSION = "research.md@8"
+#: The chain's own thesis - one line saying what this chain is for - spelled in the prompt as
+#: this token. `f_narrative` is judged against exactly that sentence, and nothing else, so
+#: the line travels with the chain and not with the settings: two configs on one chain
+#: screen the same tokens, and the same project must not score two ways because a different
+#: set happened to be live.
+THESIS_TOKEN = "__THESIS__"
+#: What the prompt shows when a chain never registered a thesis. Leaving the blank would
+#: leave the judgement with no target at all - saying so is at least a fact the model can
+#: read, and the chain yaml is where the line gets written.
+NO_THESIS = "（本链未登记主线）"
+
+PROMPT_VERSION = "research.md@9"
 
 #: What a rejected answer is told before it is asked again. Its own JSON goes back with it
 #: along with the finding that rejected it, because the validator is the one thing here
@@ -420,7 +435,7 @@ def talk_block(rows: Sequence[TweetRow], official: Sequence[str]) -> str:
 
 
 def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dict],
-        safety: Mapping[str, Any] | None = None, *, chain: str = "",
+        safety: Mapping[str, Any] | None = None, *, chain: str = "", thesis: str = "",
         timeline: Sequence[TweetRow] = (), talk: Sequence[TweetRow] = (),
         official: Sequence[str] = (), run_id: str = "") -> dict:
     """One model call: the pages and the posts in, the entry out, the same contract.
@@ -443,10 +458,11 @@ def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dic
         blocks.append(TALK_HEAD + "\n" + discussion)
     blocks.append(_facts_line(ca, symbol, metrics, safety))
     messages = [
-        # The prompt is one file for every chain; the chain name is substituted here so a
-        # Robinhood card is never asked what it has to do with Arc.
+        # The prompt is one file for every chain; the name and the thesis are substituted
+        # here, so a Robinhood card is never asked about Arc or judged against no line.
         {"role": "system", "content": lexicon.read_prompt("research.md")
-                                        .replace(CHAIN_TOKEN, chain or "本链")},
+                                        .replace(CHAIN_TOKEN, chain or "本链")
+                                        .replace(THESIS_TOKEN, thesis or NO_THESIS)},
         {"role": "user", "content": "\n\n".join(blocks)},
     ]
     raw = llm.complete_json(messages, purpose="research", prompt_version=PROMPT_VERSION,
@@ -469,7 +485,7 @@ def ask(ca: str, symbol: str | None, metrics: Mapping[str, Any], pages: list[dic
 
 def gather(row: Mapping[str, Any], *,
            known: Sequence[tuple[str, str]] | None = None) -> dict:
-    """The links one token will be read from, found and merged. Never raises.
+    """The links one token will be read from, found and merged. Raises nothing but the stop.
 
     Split out of `one` so it can run at its own width. Finding the links is a search and a
     handful of page reads; writing the card is a model call. The two have nothing to say to
@@ -491,8 +507,13 @@ def gather(row: Mapping[str, Any], *,
     page to read - it is the one address a card prints, and this pass is the only one that
     knows which candidate earned it, so it is handed on rather than looked up again.
     """
-    ca = str(row["ca"]).lower()
+    ca = ca_key(row["ca"])
     try:
+        # Before the search is spent rather than after it: a stop asked for while this token
+        # waited its turn must not cost the round a subprocess. The check reads the row,
+        # because the row already names the round it belongs to - a CA search carries none,
+        # and a check with no round behind it never stops.
+        cancel.raise_if(row.get("run_id"))
         # The numbers are still the newest snapshot's when the caller handed in none of its
         # own; only the links are replaced. A search passes both, so this read answers nothing
         # there - it is kept because `gathered` is also the answer for a caller that did not.
@@ -522,6 +543,10 @@ def gather(row: Mapping[str, Any], *,
                 "safety": safety, "timeline": list(found.timeline) if found else [],
                 "talk": list(found.tweets) if found else [],
                 "official": found.mine if found else [], "error": ""}
+    except cancel.RoundCancelled:
+        # A stop is not a token nobody could read: carried into the row's own error it would
+        # put "no readable links" on a card for a token the round never asked about.
+        raise
     except Exception as exc:
         log.info("links for %s unavailable: %r", ca, exc)
         return {"ca": ca, "links": [], "metrics": {}, "site": "", "safety": {},
@@ -532,7 +557,11 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
         metrics: Mapping[str, Any] | None = None,
         safety: Mapping[str, Any] | None = None, store: bool = True,
         known: Sequence[tuple[str, str]] | None = None) -> dict:
-    """Read, ask, write - for one entry. Raises; `research_entries` keeps it to itself.
+    """Read, ask, write - for one entry. Raises; `research_entries` keeps it to the token.
+
+    The stop is the one thing that does not stay here: a round the operator ended is not a
+    token nothing could be read from, and it unwinds the round instead.
+
 
     `gathered` is the earlier pass's answer for this token; without it this reads the links
     itself, which is what a caller driving one token wants.
@@ -550,7 +579,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     has no row in.
     """
     started = time.monotonic()
-    ca = str(row["ca"]).lower()
+    ca = ca_key(row["ca"])
     symbol = row.get("symbol")
     if gathered is None:
         gathered = gather(row, known=known)
@@ -563,6 +592,10 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     links = gathered["links"]
     if not links:
         raise SourceError("没有可读的外链（官网 / X / GitHub 都没有）")
+    # One page is another host's latency, and the model call after the reads is the expensive
+    # half, so the reads go through the pool with the same check: see `pmap`.
+    stop = cancel.check(row.get("run_id"))
+    stop()
     budget = max(1200, MAX_CHARS // len(links))
 
     def read_link(link: tuple[str, str]) -> dict | None:
@@ -571,11 +604,13 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     # The links go out together rather than one after another: they are different hosts, the
     # pacing in `sources/http.py` keeps each host serial on its own, and `pmap` keeps the
     # order - which is what both the prompt's page list and the stored evidence read.
-    pages = [page for page in http.pmap(read_link, links, workers=LINK_WORKERS) if page]
+    pages = [page for page in http.pmap(read_link, links, workers=LINK_WORKERS, stop=stop)
+             if page]
     if not pages:
         raise SourceError("外链都打不开或读不到正文")
     read_s = time.monotonic() - started
     raw = ask(ca, symbol, metrics, pages, safety, chain=str(row.get("chain_name") or ""),
+              thesis=str(row.get("chain_thesis") or ""),
               timeline=gathered.get("timeline") or (),
               talk=gathered.get("talk") or (),
               official=gathered.get("official") or (),
@@ -585,7 +620,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
     if issues:
         raise ValueError("research draft rejected: %s" % "; ".join(issues[:3]))
     draft = LexiconDraft.model_validate(raw)
-    entry = {key.lower(): value for key, value in draft.entries.items()}[ca]
+    entry = {ca_key(key): value for key, value in draft.entries.items()}[ca_key(ca)]
     payload = lexicon.entry_payload(entry, symbol)
     # The pages are stored before the text: evidence is worth keeping even when the write
     # that follows it is refused, and the card can then show what was read either way.
@@ -604,7 +639,7 @@ def one(row: Mapping[str, Any], gathered: Mapping[str, Any] | None = None, *,
 def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
                      notes: list[str] | None = None,
                      on_done: Callable[[float, float], None] | None = None) -> dict[str, dict]:
-    """This round's entry for every token it has to judge. Never raises.
+    """This round's entry for every token it has to judge. Never raises - bar the stop.
 
     `targets` is the judged pool - the tokens the gate cleared and the round is about to
     score. The answer is keyed by CA and holds only the tokens that produced an entry: a
@@ -621,8 +656,9 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     if not targets or not llm.configured():
         return {}
     config_id = str(chain.get("config_id") or "default")
-    rows = [{"ca": str(target["ca"]).lower(), "chain_id": str(chain["id"]),
+    rows = [{"ca": ca_key(target["ca"]), "chain_id": str(chain["id"]),
              "chain_name": chain_name(chain),
+             "chain_thesis": chain_thesis(chain),
              "config_id": config_id, "symbol": target.get("symbol"),
              "run_id": run_id} for target in targets]
     total = len(rows)
@@ -637,15 +673,20 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
     # The links first, and wider: this half is a subprocess and a few page reads, so throwing
     # it at the wall costs nothing and the model calls then have their whole input ready.
     gathered = {item["ca"]: item for item in
-                http.pmap(gather, rows, workers=min(SEARCH_WORKERS, total))}
+                http.pmap(gather, rows, workers=min(SEARCH_WORKERS, total),
+                          stop=cancel.check(run_id))}
 
     failed: list[str] = []
     # The round's own rows, by CA, and this is where the two halves of one token meet: the
     # pool decide is holding, and the site a search just proved for it.
-    targets_by_ca = {str(target.get("ca") or "").lower(): target for target in targets}
+    targets_by_ca = {ca_key(target.get("ca")): target for target in targets}
 
     def entry_for(row: dict) -> tuple[str, dict] | None:
-        """One token, and every way it can fail kept to itself. Raises nothing."""
+        """One token, and every way it can fail kept to itself.
+
+        Raises nothing but the stop: a token nobody could read is that token's own answer of
+        None, while a round the operator stopped has to end the round and not the token.
+        """
         ca = row["ca"]
         try:
             payload = one(row, gathered.get(ca))
@@ -656,6 +697,8 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
             collect.share_site((targets_by_ca.get(ca) or {}).get("metrics"),
                                (gathered.get(ca) or {}).get("site"))
             return ca, payload
+        except cancel.RoundCancelled:
+            raise
         except Exception as exc:
             reason = str(exc) or repr(exc)
             log.info("research on %s failed: %s", ca, reason)
@@ -665,7 +708,8 @@ def research_entries(chain: Mapping[str, Any], targets: list[dict], run_id: str,
             tell()
 
     entries: dict[str, dict] = {}
-    for result in http.pmap(entry_for, rows, workers=min(_workers(), total)):
+    stop = cancel.check(run_id)
+    for result in http.pmap(entry_for, rows, workers=min(_workers(), total), stop=stop):
         if result:
             ca, payload = result
             entries[ca] = payload

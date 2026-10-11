@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any, Callable, Iterable, TypeVar
 from urllib.parse import urlsplit
 
@@ -69,7 +69,17 @@ MIN_INTERVAL: dict[str, float] = {
     "api.gopluslabs.io": 0.3,
     "sourcify.dev": 0.3,
     "api.dexscreener.com": 0.25,
+    # The board pages `dexscreener_rank` reads, not the API: a sweep asks for six of them
+    # back to back, and they are the site's own HTML rather than a published feed.
+    "dexscreener.com": 0.5,
+    # The public Solana node, one call per token in the enrich pass. Its limit is not
+    # published, so this is deliberately slower than the default: a hundred-token pass that
+    # gets 429ed leaves every row "unread", which is worse than the seconds it saves.
+    "api.mainnet-beta.solana.com": 0.5,
     "rpc.arc-scan.org": 0.15,
+    # Four.meme's public list, read over POST. No published limit; this is a cadence its
+    # own site runs at, and a sweep is a handful of requests.
+    "four.meme": 0.5,
     "explorer.arc.io": 1.0,
     # Robinhood: its own node and explorer first, then the three launchpad feeds. The feeds
     # answer the whole chain in one or two pages, so the cadence only has to keep a second
@@ -79,6 +89,13 @@ MIN_INTERVAL: dict[str, float] = {
     "coinbarrel.com": 0.5,
     "api.pez.family": 0.5,
     "peeps.wtf": 0.5,
+    # The fourth Robinhood launchpad, and the two Solana ones. PONS pages 40 rows at a time
+    # and keeps its band rows deep in both orders, so its sweep is this chain's longest run
+    # of requests; the Solana pair answer a page apiece, and the cadence there is to keep two
+    # rounds from stacking rather than because either feed asked for it.
+    "ponsfamily.com": 0.5,
+    "launch-mint-v1.raydium.io": 0.3,
+    "frontend-api-v3.pump.fun": 0.3,
 }
 DEFAULT_INTERVAL = 0.2
 
@@ -248,6 +265,61 @@ def json_get(
         raise SourceError("%s -> not JSON: %s" % (url, repr(exc)[:80])) from exc
 
 
+def post(
+    url: str,
+    body: Any,
+    headers: dict | None = None,
+    *,
+    timeout: float = 30.0,
+    tries: int = 3,
+    sleep: float = 0.8,
+) -> str:
+    """POST a JSON body and return the text, retrying transient failures.
+
+    The same pacing, tallying and retry policy as `get`, because a POST is the same
+    request as far as the site is concerned: `four.meme` answers its token list over POST
+    and nothing about that makes a throttle, a timeout or a 5xx more final than it is on a
+    GET. There is no browser lane here - every endpoint this sends to has answered the
+    plain client.
+    """
+    last = "no attempt"
+    host = urlsplit(url).netloc or "?"
+    started = time.monotonic()
+    for attempt in range(max(1, tries)):
+        try:
+            pacer(url).wait()
+            response = _httpx_client().post(url, headers=headers or UA_JSON, json=body,
+                                            timeout=timeout)
+            if response.status_code == 200:
+                _tally(host, "ok", time.monotonic() - started)
+                return response.text
+            last = "HTTP %s" % response.status_code
+        except Exception as exc:  # network, TLS, timeout: all retryable
+            last = repr(exc)[:120]
+        _tally(host, "retry")
+        if attempt + 1 < tries:
+            time.sleep(sleep)
+    _tally(host, "fail", time.monotonic() - started)
+    raise SourceError("%s -> %s" % (url, last))
+
+
+def json_post(
+    url: str,
+    body: Any,
+    headers: dict | None = None,
+    *,
+    timeout: float = 30.0,
+    tries: int = 3,
+    sleep: float = 0.8,
+) -> Any:
+    """POST a JSON body and parse the answer. A body that is not JSON is a failure."""
+    text = post(url, body, headers, timeout=timeout, tries=tries, sleep=sleep)
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        raise SourceError("%s -> not JSON: %s" % (url, repr(exc)[:80])) from exc
+
+
 _cache: dict[str, dict] | None = None
 _cache_lock = threading.Lock()
 
@@ -331,22 +403,49 @@ def archive(run_id: str, name: str, payload: Any) -> None:
         pass
 
 
-def pmap(fn: Callable[[T], Any], items: Iterable[T], workers: int = 4) -> list[Any]:
+def pmap(fn: Callable[[T], Any], items: Iterable[T], workers: int = 4,
+         stop: Callable[[], None] | None = None) -> list[Any]:
     """Run `fn` over `items`, keeping order. A failure becomes None, never an exception.
 
     Pacing already serialises each host, so concurrency here buys latency across hosts
     without multiplying load on any one of them.
+
+    `stop` is a round's own stop check (`cancel.check(run_id)`), asked on this thread before
+    every task starts: a round that has been asked to stop starts no further work, and what
+    the check raises is what ends the pass (CLAUDE.md 9.2.6). It is asked out here rather than inside `fn`
+    because a task that raised it would be read as a source that answered nothing - the one
+    reading a stop must never be mistaken for. The tasks already in flight are left to
+    finish, which is why a stop costs seconds and not a fraction of one, and the slots never
+    started keep their None.
+
+    The pool is topped up as tasks finish instead of being handed its whole queue at once,
+    for the same reason: a queue submitted in one go has no "next task" left to stop at.
+    Concurrency is unchanged - `workers` tasks run at a time either way.
     """
     queue = list(items)
-    if len(queue) <= 1:
-        return [fn(item) for item in queue]
     out: list[Any] = [None] * len(queue)
+    if len(queue) <= 1:
+        if stop is not None:
+            stop()
+        for index, item in enumerate(queue):
+            out[index] = fn(item)
+        return out
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(fn, item): index for index, item in enumerate(queue)}
-        for future in as_completed(futures):
-            index = futures[future]
-            try:
-                out[index] = future.result()
-            except Exception:
-                out[index] = None
+        pending: dict[Any, int] = {}
+        cursor = 0
+        while cursor < len(queue) or pending:
+            while cursor < len(queue) and len(pending) < workers:
+                if stop is not None:
+                    stop()
+                pending[pool.submit(fn, queue[cursor])] = cursor
+                cursor += 1
+            if not pending:
+                break
+            finished, _ = wait(list(pending), return_when=FIRST_COMPLETED)
+            for future in finished:
+                position = pending.pop(future)
+                try:
+                    out[position] = future.result()
+                except Exception:
+                    out[position] = None
     return out

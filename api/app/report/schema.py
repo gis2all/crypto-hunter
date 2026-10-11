@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from ..core.models import ca_key
+
 log = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class NewTokenEntry(BaseModel):
     """The lexicon entry for one token: the five judgements and the prose beside them.
 
     The five `f_*` fields are the 0-5 judgements the off-chain block is computed from -
-    产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与官方关系 / 社区活跃度. They
+    产品完成度 / 项目实质与亮点 / 团队与 dev 可信度 / 叙事与主线 / 社区活跃度. They
     are required because an entry without them cannot enter the ranking, and a required
     field the model cannot skip is cheaper than a score that silently does not exist.
     There is no "undetermined": 0 is the judgement that the search found nothing.
@@ -92,9 +94,9 @@ def validate_lexicon(raw: dict, expected_cas: list[str], min_chars: int = 160) -
         return _schema_issues(exc)
 
     issues: list[str] = []
-    lowered = {key.lower(): entry for key, entry in draft.entries.items()}
+    entries = {ca_key(key): entry for key, entry in draft.entries.items()}
     for ca in expected_cas:
-        entry = lowered.get(ca.lower())
+        entry = entries.get(ca_key(ca))
         if entry is None:
             issues.append("missing entry: %s" % ca)
             continue
