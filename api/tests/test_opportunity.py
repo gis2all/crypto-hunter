@@ -1824,6 +1824,19 @@ def test_the_page_carries_the_user_state(isolated_db, client):
 
 # ------------------------------------------------------------------ 设定 / 历史 / 排队
 
+def test_minus_one_is_the_all_sentinel_not_a_clamped_value():
+    """`-1` = 全部/按需，`0` = 关闭；间隔这类没有哨兵的字段仍被夹回下限。"""
+    from app.opportunity import settings as opp_settings
+
+    declared = {field["key"]: field["default"] for field in opp_settings.FIELDS}
+    assert declared["sources_per_scan"] == -1
+    assert declared["calls_per_scan"] == -1
+    assert declared["sites_per_scan"] == -1
+    assert opp_settings._coerce({"default": -1, "min": -1, "max": 100}, -1) == -1
+    assert opp_settings._coerce({"default": 5, "min": 1, "max": 60}, -1) == 1, \
+        "调用间隔不接受哨兵"
+
+
 def test_the_settings_page_reads_every_knob_with_its_words(client):
     body = client.get("/api/v1/opportunity/settings").json()
     fields = body["fields"]
