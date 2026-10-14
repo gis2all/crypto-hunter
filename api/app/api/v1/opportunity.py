@@ -85,7 +85,7 @@ def _scan(row: dict | None) -> OpportunityScanOut | None:
     if row is None:
         return None
     return OpportunityScanOut(
-        id=row["id"], status=row["status"], stage=row.get("stage"),
+        id=row["id"], status=row["status"], trigger=row.get("trigger"), stage=row.get("stage"),
         stages=row.get("stages") or [], counters=row.get("counters") or {},
         error=row.get("error"), started_at=row["started_at"], finished_at=row.get("finished_at"),
     )

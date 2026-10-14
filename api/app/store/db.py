@@ -46,7 +46,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -274,7 +274,9 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunities", "dedup_at", "TEXT"),
                   #: 补链阶段已经问过这张卡了（搜到结果、但没有链也算问过）。NULL 表示还欠一次，
                   #: 网络失败也留 NULL，下一轮重试。
-                  ("opportunities", "ecosystem_checked_at", "TEXT"))
+                   ("opportunities", "ecosystem_checked_at", "TEXT"),
+                   #: 这一轮是怎么开始的：手动点「开始扫描」，还是自动运行到点（2026-10-28）。
+                   ("opportunity_scans", "trigger", "TEXT"))
 
 #: Columns an earlier shape carried. Nothing reads them, a fresh database never creates
 #: them, and leaving them behind on an old one is a table that lies about what the code
@@ -1804,12 +1806,13 @@ def opportunity_scan_put(job: dict) -> dict:
     try:
         conn.execute(
             "INSERT OR REPLACE INTO opportunity_scans"
-            " (id, status, stage, stages_json, counters_json, error, started_at, finished_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " (id, status, stage, stages_json, counters_json, error, trigger, started_at,"
+            "  finished_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (job["id"], job["status"], job.get("stage"),
              json.dumps(job.get("stages") or [], ensure_ascii=False),
              json.dumps(job.get("counters") or {}, ensure_ascii=False), job.get("error"),
-             job["started_at"], job.get("finished_at")),
+             job.get("trigger"), job["started_at"], job.get("finished_at")),
         )
     finally:
         conn.close()

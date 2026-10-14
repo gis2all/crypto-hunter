@@ -705,6 +705,7 @@ class OpportunityScanOut(BaseModel):
 
     id: str
     status: str
+    trigger: str | None = None
     stage: str | None = None
     stages: list["JobStageOut"] = []
     counters: dict = {}
@@ -746,9 +747,9 @@ class OpportunitySettingOut(BaseModel):
 
     key: str
     label: str
-    value: float
-    min: float
-    max: float
+    value: float | str
+    min: float | None = None
+    max: float | None = None
     hint: str
     kind: str
 

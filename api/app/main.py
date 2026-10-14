@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, config
 from .api.v1.router import api_router
+from .opportunity import schedule as opportunity_schedule
 from .opportunity import watchlist as opportunity_watchlist
 from .pipeline import schedule
 from .sources import browser
@@ -28,9 +29,11 @@ async def lifespan(app: FastAPI):
     # the table is the truth, deletions included (see `opportunity/watchlist.py`).
     opportunity_watchlist.ensure_seeded()
     schedule.start()
+    opportunity_schedule.start()
     try:
         yield
     finally:
+        opportunity_schedule.stop()
         schedule.stop()
         browser.shutdown()
 

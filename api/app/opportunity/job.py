@@ -59,7 +59,7 @@ def _blank_stages() -> list[dict]:
             for key, label in STAGES]
 
 
-def start() -> dict:
+def start(trigger: str = "manual") -> dict:
     """Queue one scan and answer with the row the page watches.
 
     Seeding happens inside the sources stage rather than here: the page should count the
@@ -68,6 +68,7 @@ def start() -> dict:
     job = {
         "id": uuid4().hex[:12],
         "status": "running",
+        "trigger": trigger,
         "stage": STAGES[0][0],
         "stages": _blank_stages(),
         "counters": {},

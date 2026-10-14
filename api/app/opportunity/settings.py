@@ -42,6 +42,14 @@ FIELDS = (
     {"key": "sites_per_scan", "label": "官网刷新数", "default": -1, "min": -1, "max": 100,
      "hint": "每轮读几个官网（按最久没刷过的先读），并发 4 个；-1 全部（51 个约 30 秒），"
              "0 关闭官网刷新。不花 X 调用；只有正文真的变了才写成材料。"},
+    {"key": "auto_interval_hours", "label": "间隔", "default": 8,
+     "min": 0, "max": 24,
+     "hint": "到点自动跑一轮，和 Arc 的定时同一套；0 = 关闭。手动跑过之后，这一格也算用掉。"},
+    {"key": "auto_start_hour", "label": "起始（时）", "default": 2, "min": 0, "max": 23,
+     "hint": "锚点小时（0-23，Asia/Shanghai）。8 小时间隔 + 02:30 = 02:30 / 10:30 / 18:30。"},
+    {"key": "auto_start_minute", "label": "起始（分）", "default": 30, "min": 0,
+     "max": 59,
+     "hint": "锚点分钟；和别的链的整点错开半格，撞上链的轮次时本轮让路、稍后再试。"},
     {"key": "classify_per_scan", "label": "分组帖子上限", "default": 1000, "min": 1, "max": 2000,
      "hint": "一次分组最多 N 条；完整正文不截断，超过上限直接报错，不拆批、不留下轮。"},
     {"key": "extract_per_scan", "label": "抽取项目上限", "default": 40, "min": 1, "max": 200,
@@ -75,6 +83,11 @@ BLOCKS = (
     {"key": "query", "title": "查询与闸", "columns": 1, "groups": (
         {"key": "timing", "title": "时间与闸门",
          "keys": ("window_hours", "slice_hours", "pass_score")},
+    )},
+    # 和 Arc 一样：节奏单独一块「运行」，排在分析与阈值之后，行名用短词。
+    {"key": "run", "title": "运行", "columns": 1, "groups": (
+        {"key": "rhythm", "title": "运行节奏",
+         "keys": ("auto_interval_hours", "auto_start_hour", "auto_start_minute", "auto_slots")},
     )},
 )
 
@@ -158,6 +171,11 @@ def form() -> dict:
                "min": field["min"], "max": field["max"], "hint": field["hint"],
                "kind": "float" if isinstance(field["default"], float) else "int"}
               for field in FIELDS]
+    # 触发时刻是算出来的，不是存下来的：和 Arc 的 schedule.slots 同一行意思，
+    # 只读，保存时被 write() 忽略（它不在 FIELDS 里）。
+    fields.append({"key": "auto_slots", "label": "触发时刻", "value": _slots_text(current),
+                   "min": None, "max": None, "kind": "text",
+                   "hint": "由间隔与起始算出；撞上链的轮次时本轮让路，实际会晚几分钟。"})
     by_key = {field["key"]: field for field in fields}
     blocks = [
         {"key": block["key"], "title": block["title"],
@@ -171,3 +189,15 @@ def form() -> dict:
     ]
     return {"fields": fields, "blocks": blocks,
             "dirty_hint": "保存并生效后，下一轮扫描使用新值。"}
+
+
+def _slots_text(current: dict) -> str:
+    """The times the next scans are due, as the settings page prints them."""
+    interval = int(current.get("auto_interval_hours") or 0)
+    if interval <= 0:
+        return "不排期"
+    hour = int(current.get("auto_start_hour") or 0)
+    minute = int(current.get("auto_start_minute") or 0)
+    steps = max(1, 24 // interval) if interval <= 24 else 1
+    return " / ".join("%02d:%02d" % ((hour + index * interval) % 24, minute)
+                      for index in range(steps))

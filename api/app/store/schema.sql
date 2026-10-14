@@ -369,6 +369,7 @@ CREATE TABLE IF NOT EXISTS opportunity_scans (
   stages_json   TEXT NOT NULL,              -- [{key, label, state, seconds}] in order
   counters_json TEXT,                       -- how much each stage found and spent
   error         TEXT,
+  trigger       TEXT,                       -- manual | auto (2026-10-28)
   started_at    TEXT NOT NULL,
   finished_at   TEXT
 );

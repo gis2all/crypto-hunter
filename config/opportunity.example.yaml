@@ -5,6 +5,9 @@ sources_per_scan: -1
 calls_per_scan: -1
 x_interval: 5.0
 sites_per_scan: -1
+auto_interval_hours: 8
+auto_start_hour: 2
+auto_start_minute: 30
 classify_per_scan: 1000
 extract_per_scan: 40
 traces_per_scan: 200
