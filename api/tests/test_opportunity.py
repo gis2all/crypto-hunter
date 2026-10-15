@@ -1843,12 +1843,17 @@ def test_the_settings_page_reads_every_knob_with_its_words(client):
     keys = {field["key"] for field in fields}
     assert {"sources_per_scan", "calls_per_scan", "classify_per_scan", "extract_per_scan",
             "traces_per_scan", "x_interval", "window_hours", "slice_hours",
-            "pass_score", "sites_per_scan"} == keys
+            "pass_score", "sites_per_scan", "auto_interval_hours", "auto_start_hour",
+            "auto_start_minute", "auto_slots"} == keys
     for field in fields:
         assert field["label"] and field["hint"], "每个旋钮都要说清它是什么、为什么"
-        assert field["min"] <= field["value"] <= field["max"]
+        if field["kind"] != "text":
+            assert field["min"] <= field["value"] <= field["max"]
     assert body["dirty_hint"]
-    assert [block["title"] for block in body["blocks"]] == ["采集", "分析", "查询与闸"]
+    assert [block["title"] for block in body["blocks"]] == ["采集", "分析", "查询与闸", "运行"]
+    derived = next(field for field in fields if field["key"] == "auto_slots")
+    assert derived["label"] == "触发时刻" and derived["kind"] == "text"
+    assert derived["value"] == "02:30 / 10:30 / 18:30"
 
 
 def test_saving_a_setting_reaches_the_modules(client):
@@ -2573,3 +2578,70 @@ def test_the_site_lane_stops_on_cancel(isolated_db):
     flag.set()
     with pytest.raises(RuntimeError):
         site.run("s1", cancel=flag, fetch=_fetch({"https://a.xyz/": _html("x")}))
+
+
+# ------------------------------------------------------------------ 自动运行（schedule）
+
+def _auto_settings(monkeypatch, clock, **over):
+    values = {"auto_interval_hours": 8, "auto_start_hour": 2, "auto_start_minute": 30}
+    values.update(over)
+    monkeypatch.setattr(clock.settings, "value",
+                        lambda key, default=None: values.get(key, default))
+
+
+def test_the_auto_slot_is_the_latest_start_plus_interval():
+    from app.opportunity import schedule as clock
+
+    def at(hour, minute=0):
+        return datetime(2026, 10, 28, hour, minute, tzinfo=clock.TZ)
+
+    assert clock.slot(at(1, 0), 2, 30, 8) == datetime(2026, 10, 27, 18, 30, tzinfo=clock.TZ), \
+        "还没到今天的锚点，最近的一格是昨天最后一格"
+    assert clock.slot(at(2, 29), 2, 30, 8) == datetime(2026, 10, 27, 18, 30, tzinfo=clock.TZ)
+    assert clock.slot(at(2, 30), 2, 30, 8) == at(2, 30)
+    assert clock.slot(at(10, 29), 2, 30, 8) == at(2, 30)
+    assert clock.slot(at(10, 30), 2, 30, 8) == at(10, 30)
+    assert clock.slot(at(23, 0), 2, 30, 8) == at(18, 30)
+    assert clock.slot(at(23, 0), 2, 30, 0) is None, "0 = 关闭"
+
+
+def test_a_slot_counts_as_used_once_any_scan_started(isolated_db, monkeypatch):
+    from app.opportunity import schedule as clock
+
+    _auto_settings(monkeypatch, clock)
+    now = datetime(2026, 10, 28, 10, 31, tzinfo=clock.TZ)
+    ready, at = clock.due(now)
+    assert ready and at == datetime(2026, 10, 28, 10, 30, tzinfo=clock.TZ)
+
+    db.opportunity_scan_put({"id": "s1", "status": "done", "stages": [], "counters": {},
+                             "started_at": now.isoformat()})
+    assert clock.due(now)[0] is False, "手动跑的也算这一格用掉了"
+
+
+def test_the_tick_yields_to_other_rounds(isolated_db, monkeypatch):
+    from app.opportunity import schedule as clock
+
+    _auto_settings(monkeypatch, clock)
+    now = datetime(2026, 10, 28, 10, 31, tzinfo=clock.TZ)
+    started: list[str] = []
+    monkeypatch.setattr(clock.job, "running", lambda: False)
+    monkeypatch.setattr(clock.job, "start",
+                        lambda trigger="manual": started.append(trigger) or {"id": "x"})
+    monkeypatch.setattr(clock.pipeline_schedule, "busy_chains", lambda: {"arc"})
+    assert clock.tick(now) is False and started == [], "链在跑就让路，不消耗这一格"
+
+    monkeypatch.setattr(clock.pipeline_schedule, "busy_chains", lambda: set())
+    assert clock.tick(now) is True and started == ["auto"]
+
+
+def test_the_tick_never_starts_beside_its_own_scan(isolated_db, monkeypatch):
+    from app.opportunity import schedule as clock
+
+    _auto_settings(monkeypatch, clock)
+    now = datetime(2026, 10, 28, 10, 31, tzinfo=clock.TZ)
+    started: list[str] = []
+    monkeypatch.setattr(clock.job, "running", lambda: True)
+    monkeypatch.setattr(clock.job, "start",
+                        lambda trigger="manual": started.append(trigger) or {"id": "x"})
+    monkeypatch.setattr(clock.pipeline_schedule, "busy_chains", lambda: set())
+    assert clock.tick(now) is False and started == []
