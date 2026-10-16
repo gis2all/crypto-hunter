@@ -1801,6 +1801,8 @@ export interface components {
             id: string;
             /** Status */
             status: string;
+            /** Trigger */
+            trigger?: string | null;
             /** Stage */
             stage?: string | null;
             /**
@@ -1882,11 +1884,11 @@ export interface components {
             /** Label */
             label: string;
             /** Value */
-            value: number;
+            value: number | string;
             /** Min */
-            min: number;
+            min?: number | null;
             /** Max */
-            max: number;
+            max?: number | null;
             /** Hint */
             hint: string;
             /** Kind */

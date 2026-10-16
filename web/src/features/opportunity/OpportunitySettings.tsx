@@ -3,7 +3,7 @@
  * 草稿与保存状态住在 `useOpportunitySettingsState`，因为 保存并生效 / 立即运行 在顶栏，
  * 不在页面底部。这里只负责画：脏条、错误、三块 ARC 风格的分组卡。
  */
-import { Activity, Boxes, Inbox, SlidersHorizontal } from "lucide-react";
+import { Activity, Boxes, Clock, Inbox, SlidersHorizontal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { errorText } from "../../api/client";
@@ -15,6 +15,7 @@ const BLOCK_ICON: Record<string, LucideIcon> = {
   collect: Inbox,
   analyze: Boxes,
   query: Activity,
+  run: Clock,
 };
 
 export function OpportunitySettings({ state }: { state: OpportunitySettingsState }) {
@@ -56,18 +57,26 @@ export function OpportunitySettings({ state }: { state: OpportunitySettingsState
                     <div className="prow" key={field.key}>
                       <label>{field.label}</label>
                       <span className="field">
-                        <input
-                          className="num"
-                          type="number"
-                          value={draft[field.key] ?? ""}
-                          min={field.min}
-                          max={field.max}
-                          step={field.kind === "float" ? "0.5" : "1"}
-                          onChange={(event) => setValue(field.key, event.target.value)}
-                        />
-                        <span className="unit">
-                          {field.min < 0 ? "−1 全部 · 0 关" : `${field.min}–${field.max}`}
-                        </span>
+                        {field.kind === "text" ? (
+                          <span className="derived">{String(field.value ?? "—")}</span>
+                        ) : (
+                          <>
+                            <input
+                              className="num"
+                              type="number"
+                              value={draft[field.key] ?? ""}
+                              min={field.min ?? undefined}
+                              max={field.max ?? undefined}
+                              step={field.kind === "float" ? "0.5" : "1"}
+                              onChange={(event) => setValue(field.key, event.target.value)}
+                            />
+                            <span className="unit">
+                              {(field.min ?? 0) < 0
+                                ? "−1 全部 · 0 关"
+                                : `${field.min}–${field.max}`}
+                            </span>
+                          </>
+                        )}
                       </span>
                     </div>
                   ))}

@@ -289,6 +289,7 @@ function ScanPanel({ scan, open, stopping, onCancel }: {
               : cancelled ? "已中止 · 本轮"
                 : running ? "正在扫描 · 本轮" : "扫描完成 · 本轮"}
         </b>
+        {scan?.trigger === "auto" ? <span className="rp-el">自动</span> : null}
         {scan ? (
           <span className="rp-el">{running ? "已用 " : "用时 "}{mmss(Math.round(seconds))}</span>
         ) : null}

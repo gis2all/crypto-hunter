@@ -11,6 +11,10 @@
    The full text stays reachable through the widget's `title` attribute. */
 
 .prow .field{min-width:0}
+/* 只读派生行（触发时刻）：和输入框同高、同一条右对齐线，但不可编辑 ——
+   与 Arc 的 schedule.slots 同一行读法（2026-10-28）。 */
+.prow .field .derived{font-family:var(--mono);font-size:11.5px;color:var(--fg-2);
+  white-space:nowrap}
 .blk-cols,.blk-col,.pgroup{min-width:0}
 
 /* Icons (lucide-react, rendered through components/Icon.tsx).

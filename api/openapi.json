@@ -4299,6 +4299,17 @@
       "type": "string",
       "title": "Status"
      },
+     "trigger": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trigger"
+     },
      "stage": {
       "anyOf": [
        {
@@ -4469,15 +4480,36 @@
       "title": "Label"
      },
      "value": {
-      "type": "number",
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "string"
+       }
+      ],
       "title": "Value"
      },
      "min": {
-      "type": "number",
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Min"
      },
      "max": {
-      "type": "number",
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Max"
      },
      "hint": {
@@ -4494,8 +4526,6 @@
      "key",
      "label",
      "value",
-     "min",
-     "max",
      "hint",
      "kind"
     ],
