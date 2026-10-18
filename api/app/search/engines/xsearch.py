@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 from urllib.parse import urlsplit
 
+from .. import x_sessions
 from ..base import EngineAnswer, SearchHit, TweetRow, kind_of, normalize_url
 
 #: The question carries both strings this engine needs, in the shape `discover.build_query`
@@ -197,11 +198,17 @@ class XEngine:
         nothing" from "X was never asked", and those are the two facts this whole layer is
         built to keep apart.
         """
-        token = self.token or os.environ.get('CH_X_AUTH_TOKEN', '').strip()
-        ct0 = self.ct0 or os.environ.get('CH_X_CT0', '').strip()
-        if not token or not ct0:
-            raise RuntimeError('x search needs CH_X_AUTH_TOKEN and CH_X_CT0'
-                               ' (see config/system.yaml.example)')
+        if self.token or self.ct0:
+            # 显式给的一半也是显式：缺另一半仍然要报出缺哪个，不能拿空 ct0 去跑。
+            if not (self.token and self.ct0):
+                raise RuntimeError('x search needs CH_X_AUTH_TOKEN and CH_X_CT0'
+                                   ' (see config/system.yaml.example)')
+            return self.token, self.ct0
+        session = x_sessions.pool().first()
+        if session is not None:
+            return session.token, session.ct0
+        raise RuntimeError('x search needs CH_X_AUTH_TOKEN and CH_X_CT0'
+                           ' (see config/system.yaml.example)')
         return token, ct0
 
     def _ask(self, text: str, product: str) -> list[dict]:
@@ -209,18 +216,49 @@ class XEngine:
         return self._run([self.cli, 'search', text, '-t', product, '--max', str(self.size),
                           '--json'])
 
-    def _exec(self, argv: list[str], timeout: float | None = None):
+    def _exec(self, argv: list[str], timeout: float | None = None, session=None,
+              mark: bool = True):
         """One subprocess with the session in its environment.
 
         The credentials and the environment are assembled here, once, because a search and the
         测试连接 probe have to spend the same cookie the same way; `_run` reads rows out of this
         call and `probe` reads its exit code and its payload.
         """
-        token, ct0 = self.credentials()
+        pool = x_sessions.pool()
+        current = session
+        owned = False
+        if self.token or self.ct0:
+            token, ct0 = self.credentials()
+        elif current is not None:
+            token, ct0 = current.token, current.ct0
+        else:
+            current = pool.acquire(priority=0)
+            owned = True
+            token, ct0 = current.token, current.ct0
         env = {**os.environ, 'TWITTER_AUTH_TOKEN': token, 'TWITTER_CT0': ct0}
-        return subprocess.run(argv, capture_output=True, text=True, encoding='utf-8',
-                              errors='replace', env=env,
-                              timeout=timeout if timeout is not None else self.timeout)
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, encoding='utf-8',
+                                  errors='replace', env=env,
+                                  timeout=timeout if timeout is not None else self.timeout)
+        except Exception:
+            if current is not None and mark:
+                pool.failed(current)
+            raise
+        finally:
+            if owned:
+                pool.release(current)
+        if current is not None and mark:
+            if proc.returncode != 0:
+                kind = x_sessions.classify(proc.stderr or '')
+                if kind == 'rate':
+                    pool.rate_limited(current)
+                elif kind == 'dead':
+                    pool.dead(current)
+                else:
+                    pool.failed(current)
+            else:
+                pool.ok(current)
+        return proc
 
     def _run(self, argv: list[str]) -> list[dict]:
         """One subprocess, as the rows the client printed.
@@ -256,8 +294,11 @@ class XEngine:
         """
         out: dict = {"ok": False, "note": "", "username": "", "latency_ms": 0}
         started = time.time()
+        # 一个按钮不是一轮：拿一条会话问一句，不记冷却、不记失败。
+        session = x_sessions.pool().first(allow_cooling=True)
         try:
-            proc = self._exec([self.cli, *PROBE_ARGV], timeout=PROBE_TIMEOUT)
+            proc = self._exec([self.cli, *PROBE_ARGV], timeout=PROBE_TIMEOUT,
+                              session=session, mark=False)
         except RuntimeError as exc:  # the credentials are missing, and it says which
             out["note"] = str(exc)
             return out

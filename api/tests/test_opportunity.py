@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.llm import client as llm
+from app import logging_setup
 from app.opportunity import (extract, group, heat, job, lifecycle, model, promote, rules,
                              scan, schema, trace, trust, watchlist, xread)
 from app.opportunity.schema import Entry, Step
@@ -400,6 +401,17 @@ def test_the_query_runner_normalises_the_clients_rows():
     assert rows[0].id == "1"
 
 
+def test_a_search_leaves_one_line_saying_which_session_spent_it():
+    """The line a round's lanes are read off: session, query, rows, milliseconds."""
+    logging_setup.setup()
+    seen = logging_setup.RING.recent(limit=0)
+    since = seen[-1]["id"] if seen else 0
+    xread.run("testnet is live", runner=lambda argv: _payload("1"))
+    lines = logging_setup.RING.recent(since=since, name="crypto-hunter.opportunity")
+    assert any("x: runner search" in item["message"] and "1 rows" in item["message"]
+               for item in lines)
+
+
 def test_a_retweet_is_not_material():
     """`rows_of` 会把转发剔掉：一次转发的互动属于原作者，不是这条材料的。"""
     payload = {"data": [{"id": "9", "text": "RT @x: airdrop", "isRetweet": True,
@@ -434,7 +446,9 @@ def test_the_query_runner_asks_for_latest_not_top(monkeypatch):
     assert argv[argv.index("--max") + 1] == str(xread.QUERY_MAX)
 
 
-def test_a_failed_slice_does_not_throw_away_the_others(monkeypatch):
+def test_a_failed_slice_is_retried_once_on_another_lane():
+    """A 429 costs one call, not the window: the pool marked the session, so the retry lands on
+    another one and the slice still answers."""
     calls = {"n": 0}
 
     def runner(argv):
@@ -444,7 +458,22 @@ def test_a_failed_slice_does_not_throw_away_the_others(monkeypatch):
         return _payload("2")
 
     out = xread.search_sliced("testnet", window_hours=8, slice_hours=4, runner=runner)
-    assert out["slices"] == 2 and len(out["rows"]) == 1 and len(out["failed"]) == 1
+    assert out["slices"] == 3 and len(out["rows"]) == 2 and not out["failed"]
+
+
+def test_a_slice_that_fails_twice_is_counted_and_the_others_go_on():
+    """The retry is the only second chance: after it, a slice is one failure and the query walks
+    on to the next slice."""
+    calls = {"n": 0}
+
+    def runner(argv):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("429")
+        return _payload("2")
+
+    out = xread.search_sliced("testnet", window_hours=8, slice_hours=4, runner=runner)
+    assert out["slices"] == 3 and len(out["rows"]) == 1 and len(out["failed"]) == 1
 
 
 def test_a_cancelled_scan_stops_asking(monkeypatch):
@@ -488,7 +517,8 @@ def test_the_scan_stops_when_the_call_budget_is_spent(isolated_db, monkeypatch):
 
     monkeypatch.setattr(scan, "search_sliced", fake_search)
     monkeypatch.setattr(scan, "timeline", lambda *a, **k: [])
-    monkeypatch.setattr(scan, "MAX_CALLS", 8)
+    monkeypatch.setattr(scan.settings, "value",
+                        lambda key, default=None: 8 if key == "calls_per_scan" else default)
     counters = scan.collect("s-budget", db.opportunity_sources_enabled())
     assert calls["n"] == 2, "两次调用就把配额用完了（每次四片）"
     # 9 = the fixture's own account (1) + two queries (4 + 4); the third never starts.
@@ -750,6 +780,8 @@ def _fake_llm(monkeypatch, *, verdict="activity", entries=None, fail=False):
         }]}
 
     monkeypatch.setattr(llm, "complete_json", fake)
+    # 没有网关也要能跑完六个阶段：`configured()` 读的是环境，测试不依赖这台机器配没配。
+    monkeypatch.setattr(llm, "configured", lambda: True)
     return calls
 
 
@@ -1490,6 +1522,10 @@ def test_a_c_lead_lands_in_the_pool_with_its_reason(isolated_db, monkeypatch):
     """C 级不进列表，但要留下「未找到官方来源」这个理由。"""
     _query_source()
     _classified_lead()
+    # 这一轮不读 X：帖子是直接写进库的，扫描只负责把它推过溯源与抽取。
+    monkeypatch.setattr(scan, "search_sliced",
+                        lambda *a, **k: {"rows": [], "slices": 0, "failed": []})
+    monkeypatch.setattr(scan, "timeline", lambda *a, **k: [])
     monkeypatch.setattr(trace, "trace_lead", lambda lead, **kw: {
         "level": "C", "trust": "unjudged", "account": "", "site": "",
         "basis": "未找到官方来源", "version": trace.TRACE_VERSION, "searched": True, "pages": []})
@@ -2578,6 +2614,68 @@ def test_the_site_lane_stops_on_cancel(isolated_db):
     flag.set()
     with pytest.raises(RuntimeError):
         site.run("s1", cancel=flag, fetch=_fetch({"https://a.xyz/": _html("x")}))
+
+
+# ------------------------------------------------------------------ X 会话池
+
+def test_sessions_come_from_one_flat_list():
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text(
+        "x:\n"
+        "  cookies:\n"
+        "    - label: one\n"
+        "      auth_token: t1\n"
+        "      ct0: c1\n"
+        "    - label: two\n"
+        "      auth_token: t2\n"
+        "      ct0: c2\n"
+        "    - label: dup\n"
+        "      auth_token: t2\n"
+        "      ct0: c2\n",
+        encoding="utf-8")
+    labels = [row["label"] for row in x_sessions.pool().snapshot()]
+    assert labels == ["one", "two"], "三条是平级的；同一个 cookie 出现两次只算一条 lane"
+
+
+def test_a_legacy_pair_still_reads_as_one_session():
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text("x:\n  auth_token: t\n  ct0: c\n", encoding="utf-8")
+    assert [row["label"] for row in x_sessions.pool().snapshot()] == ["main"]
+
+
+def test_a_429_rests_a_session_and_a_401_retires_it():
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text("x:\n  auth_token: t\n  ct0: c\n", encoding="utf-8")
+    pool = x_sessions.pool()
+    session = pool.acquire(priority=1, timeout=1)
+    pool.release(session)
+    pool.rate_limited(session)
+    assert pool.snapshot()[0]["cooling"] is True
+    pool.dead(session)
+    assert pool.snapshot()[0]["enabled"] is False
+    with pytest.raises(RuntimeError):
+        pool.acquire(priority=1, timeout=0.2)
+
+
+def test_one_session_is_handed_to_one_caller_at_a_time():
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text("x:\n  auth_token: t\n  ct0: c\n", encoding="utf-8")
+    pool = x_sessions.pool()
+    pool.set_interval(0)
+    first = pool.acquire(priority=1, timeout=1)
+    with pytest.raises(RuntimeError):
+        pool.acquire(priority=1, timeout=0.2)
+    pool.release(first)
+    again = pool.acquire(priority=1, timeout=1)
+    pool.release(again)
 
 
 # ------------------------------------------------------------------ 自动运行（schedule）

@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from ..search.engines.xsearch import XEngine
+from ..search import x_sessions
 from ..store import db
 from . import rules, settings, xread
 
@@ -71,7 +73,6 @@ def _throttle() -> None:
 
 def timeline(handle: str, limit: int = POSTS_PER_SOURCE) -> list:
     """One account's own posts, newest first. Raises whatever the CLI raises."""
-    _throttle()
     return XEngine().timeline(handle.lstrip("@"), limit=limit)
 
 
@@ -190,32 +191,66 @@ def collect(scan_id: str, sources: list[dict], tell=None,
     known = known_handles(sources)
     batch = sources[:room]
     total = len(batch) or 1
-    for index, source in enumerate(batch, start=1):
-        target, kind = source["target"], source["kind"]
-        if counters["queries"] >= budget:
+    # 一条会话 = 一条 lane（2026-10-28）：先把这一批摊成「查什么」，再按可用会话数并行。
+    # 每条 lane 的间隔由会话池在借出时留出，所以并行不会把同一个账号的限频打爆。
+    x_sessions.pool().set_interval(float(settings.value("x_interval", xread.X_INTERVAL)))
+    jobs: list[dict] = []
+    reserved = 0
+    for index, source in enumerate(batch):
+        if source["kind"] == "official":
+            calls = 1
+        else:
+            _query, window, step, _limit = xread.query_row(source)
+            calls = len(xread.plan_slices(window, step))
+        if counters["queries"] + reserved >= budget:
             # Out of budget: this row and everything behind it stay at the head of the rotation
             # for the next scan. Counted rather than silently skipped.
-            counters["deferred"] += len(batch) - index + 1
+            counters["deferred"] += len(batch) - index
             break
-        counters["sources"] += 1
-        try:
-            if kind == "official":
-                counters["queries"] += 1
-                tweets = timeline(target)
-                counters["calls_ok"] += 1
-            else:
-                query, window, step, limit = xread.query_row(source)
-                answer = search_sliced(query, window_hours=window, slice_hours=step, limit=limit,
-                                       cancel=cancel)
-                slices = int(answer.get("slices") or 0)
-                bad = list(answer.get("failed") or [])
-                counters["queries"] += slices
+        reserved += calls
+        jobs.append(source)
+
+    def fetch(source: dict) -> tuple[list, int, list]:
+        """One watchlist row, as (rows, calls it took, failures)."""
+        target, kind = source["target"], source["kind"]
+        if kind == "official":
+            return timeline(target), 1, []
+        query, window, step, limit = xread.query_row(source)
+        answer = search_sliced(query, window_hours=window, slice_hours=step, limit=limit,
+                               cancel=cancel)
+        return (answer["rows"], int(answer.get("slices") or 0), list(answer.get("failed") or []))
+
+    lanes = max(1, min(x_sessions.pool().count() or 1, len(jobs) or 1))
+    done = 0
+    with ThreadPoolExecutor(max_workers=lanes) as pool:
+        futures = {pool.submit(fetch, source): source for source in jobs}
+        for future in as_completed(futures):
+            source = futures[future]
+            target, kind = source["target"], source["kind"]
+            counters["sources"] += 1
+            try:
+                tweets, slices, bad = future.result()
+            except Exception as exc:
+                if cancel is not None and cancel.is_set():
+                    for pending in futures:
+                        pending.cancel()
+                    raise
+                counters["failed"].append(target)
+                counters["calls_failed"] += 1
+                _remember_error(counters, exc)
+                log.info("opportunity: %s (%s) did not answer: %r", target, kind, exc)
+                db.opportunity_source_touched(target)
+                done += 1
+                if tell:
+                    tell(done, total)
+                continue
+            counters["queries"] += slices
+            if kind != "official":
                 counters["slices"] += slices
-                counters["calls_ok"] += max(0, slices - len(bad))
-                counters["calls_failed"] += len(bad)
-                for reason in bad:
-                    _remember_error(counters, reason)
-                tweets = answer["rows"]
+            counters["calls_ok"] += max(0, slices - len(bad))
+            counters["calls_failed"] += len(bad)
+            for reason in bad:
+                _remember_error(counters, reason)
             for tweet in tweets:
                 row = post_row(tweet, target, scan_id)
                 if not row["tweet_id"] or not row["text"].strip():
@@ -237,20 +272,13 @@ def collect(scan_id: str, sources: list[dict], tell=None,
                     counters["skipped"] += 1
                     if verdict["excluded"]:
                         counters["excluded"] += 1
-        except Exception as exc:
-            if cancel is not None and cancel.is_set():
-                raise
-            counters["failed"].append(target)
-            counters["calls_failed"] += 1
-            _remember_error(counters, exc)
-            log.info("opportunity: %s (%s) did not answer: %r", target, kind, exc)
-        finally:
             # Touched whether it answered or not: a source that failed is exactly the one the
             # next scan should try again, and leaving it at the head of the queue is how that
             # happens.
             db.opportunity_source_touched(target)
-        if tell:
-            tell(index, total)
+            done += 1
+            if tell:
+                tell(done, total)
     if counters["calls_ok"] == 0 and counters["calls_failed"]:
         # Every call failed. Returning zero posts here would report an empty round, which reads
         # as "the filters found nothing" - the opposite of what happened.

@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from ..search.engines.xsearch import XEngine, rows_of
+from ..search import x_sessions
 from ..store import db
 
 log = logging.getLogger("crypto-hunter.opportunity")
@@ -65,17 +66,10 @@ _NEXT_AT = [0.0]
 
 
 def throttle() -> None:
-    """Serialise X calls: the next one waits for the previous interval to elapse."""
+    """Kept as the tests' seam; the spacing now happens at session hand-out."""
     from . import settings
 
-    interval = float(settings.value("x_interval", X_INTERVAL))
-    with _LOCK:
-        now = time.time()
-        at = max(now, _NEXT_AT[0])
-        _NEXT_AT[0] = at + interval
-    delay = at - now
-    if delay > 0:
-        time.sleep(delay)
+    x_sessions.pool().set_interval(float(settings.value("x_interval", X_INTERVAL)))
 
 
 def cli() -> str:
@@ -116,7 +110,7 @@ def slice_query(query: str, since: int, until: int) -> str:
 
 
 def run(query: str, *, limit: int = QUERY_MAX, cancel: threading.Event | None = None,
-        timeout: float = QUERY_TIMEOUT, runner=None) -> list:
+        timeout: float = QUERY_TIMEOUT, runner=None, session=None) -> list:
     """One search request, as `TweetRow`s. Raises on a bad exit.
 
     `runner` is the seam the tests use: it takes the argv and returns the payload the client would
@@ -130,42 +124,91 @@ def run(query: str, *, limit: int = QUERY_MAX, cancel: threading.Event | None = 
     asked to stop must not keep spending the session.
     """
     argv = [cli(), "search", query, "-t", "Latest", "--max", str(int(limit)), "--json"]
+    started = time.monotonic()
     if runner is not None:
         payload = runner(argv)
+        label = "runner"
     else:
-        payload = json.loads(_stdout(argv, cancel=cancel, timeout=timeout) or "[]")
+        text, label = _stdout(argv, cancel=cancel, timeout=timeout, session=session)
+        payload = json.loads(text or "[]")
     raw = payload.get("data") if isinstance(payload, dict) else payload
     # The client's rows as `TweetRow`, through the same normaliser the screening engine uses.
-    return rows_of(list(raw or []))
+    rows = rows_of(list(raw or []))
+    # One line per request, so a round's lanes can be read off the log: which session spent it,
+    # what was asked, and how long it took. INFO rather than DEBUG: this is the line an operator
+    # opens the log for, and the file above keeps it only while the level allows.
+    log.info("x: %s search %r -> %d rows in %dms", label, _brief(query), len(rows),
+             (time.monotonic() - started) * 1000)
+    return rows
 
 
-def _stdout(argv: list[str], *, cancel: threading.Event | None, timeout: float) -> str:
-    """One subprocess, as the text the client printed."""
-    token, ct0 = credentials()
+def _brief(query: str, width: int = 70) -> str:
+    """The query without the slice stamps, short enough for one log line."""
+    text = " ".join(str(query or "").split())
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+def _stdout(argv: list[str], *, cancel: threading.Event | None, timeout: float,
+            session=None) -> tuple[str, str]:
+    """One subprocess, as the text the client printed, and the session that carried it."""
+    pool = x_sessions.pool()
+    own = session is None
+    current = session or pool.acquire(priority=1)
+    token, ct0 = current.token, current.ct0
     env = {**os.environ, "TWITTER_AUTH_TOKEN": token, "TWITTER_CT0": ct0,
            "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1"}
     creation = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-    throttle()
-    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               encoding="utf-8", errors="replace", env=env, **creation)
-    started = time.monotonic()
-    while True:
-        if cancel is not None and cancel.is_set():
-            process.kill()
-            process.communicate()
-            raise RuntimeError("scan cancelled")
-        try:
-            stdout, stderr = process.communicate(timeout=0.1)
-            break
-        except subprocess.TimeoutExpired:
-            if (time.monotonic() - started) >= timeout:
+    marked = False
+    try:
+        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding="utf-8", errors="replace", env=env,
+                                   **creation)
+        started = time.monotonic()
+        while True:
+            if cancel is not None and cancel.is_set():
                 process.kill()
-                stdout, stderr = process.communicate()
-                raise RuntimeError("x cli timed out after %ss" % int(timeout))
-    if process.returncode != 0:
-        raise RuntimeError("x cli rc=%s: %s" % (process.returncode,
-                                                " ".join((stderr or "").split()[-24:])))
-    return stdout
+                process.communicate()
+                raise RuntimeError("scan cancelled")
+            try:
+                stdout, stderr = process.communicate(timeout=0.1)
+                break
+            except subprocess.TimeoutExpired:
+                if (time.monotonic() - started) >= timeout:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    pool.failed(current)
+                    marked = True
+                    raise RuntimeError("x cli timed out after %ss" % int(timeout))
+        if process.returncode != 0:
+            detail = " ".join((stderr or "").split()[-24:])
+            kind = _failure_kind(detail)
+            if kind == "rate":
+                pool.rate_limited(current)
+            elif kind == "dead":
+                pool.dead(current)
+            else:
+                pool.failed(current)
+            marked = True
+            raise RuntimeError("x cli rc=%s: %s" % (process.returncode, detail))
+        pool.ok(current)
+        marked = True
+        return stdout, current.label
+    finally:
+        if not marked and (cancel is None or not cancel.is_set()):
+            pool.failed(current)
+        if own:
+            pool.release(current)
+
+
+def _failure_kind(detail: str) -> str:
+    """429 rests a session, 401 retires it, everything else is a plain failure."""
+    text = str(detail or "").lower()
+    if "429" in text or "rate limit" in text or "too many requests" in text:
+        return "rate"
+    if "401" in text or "unauthorized" in text or "could not authenticate" in text \
+            or "cookie" in text:
+        return "dead"
+    return "other"
 
 
 def search_sliced(query: str, *, window_hours: int | None = None,
@@ -173,8 +216,10 @@ def search_sliced(query: str, *, window_hours: int | None = None,
                   cancel: threading.Event | None = None, runner=None) -> dict:
     """One query over its whole window, as rows plus what the reading cost.
 
-    A slice that fails is a count, not an exception: a rate-limited slice must not throw away the
-    slices that already answered, which is the same rule the source loop follows one level up.
+    A slice that fails is retried once, then counted - never an exception: a rate-limited slice
+    must not throw away the slices that already answered, which is the same rule the source loop
+    follows one level up. The pool has already marked the session that failed, so the retry asks
+    for another lane; that is what makes a 429 cost one call instead of a whole time window.
     """
     from . import settings
 
@@ -182,18 +227,31 @@ def search_sliced(query: str, *, window_hours: int | None = None,
                        slice_hours or settings.value("slice_hours", SLICE_HOURS))
     rows: list = []
     failed: list[str] = []
+    calls = 0
     for since, until in plan:
         if cancel is not None and cancel.is_set():
             raise RuntimeError("scan cancelled")
-        try:
-            rows.extend(run(slice_query(query, since, until), limit=limit, cancel=cancel,
-                            runner=runner))
-        except Exception as exc:
+        text = slice_query(query, since, until)
+        for attempt in (1, 2):
             if cancel is not None and cancel.is_set():
-                raise
-            failed.append(str(exc))
-            log.info("opportunity: slice %s..%s of %r did not answer: %r", since, until, query, exc)
-    return {"rows": rows, "slices": len(plan), "failed": failed}
+                raise RuntimeError("scan cancelled")
+            calls += 1
+            try:
+                rows.extend(run(text, limit=limit, cancel=cancel, runner=runner))
+                break
+            except Exception as exc:
+                if cancel is not None and cancel.is_set():
+                    raise
+                if attempt == 1:
+                    log.info("opportunity: slice %s..%s of %r failed (%r); retrying once "
+                             "on another session", since, until, query, exc)
+                    continue
+                failed.append(str(exc))
+                log.info("opportunity: slice %s..%s of %r did not answer: %r",
+                         since, until, query, exc)
+    # `slices` is the calls this query actually spent, retries included: it is the number the
+    # round's budget is charged for.
+    return {"rows": rows, "slices": calls, "failed": failed}
 
 
 def query_row(source: dict) -> tuple[str, int, int, int]:

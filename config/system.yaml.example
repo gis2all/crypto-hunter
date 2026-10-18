@@ -34,12 +34,23 @@ llm:
 research_workers: 12
 
 x:
-  # 一个已登录 x.com 会话的 cookie（DevTools -> Application -> Cookies -> https://x.com）。
-  # 用一个一次性账号：搜索是会被限流的读请求，429 会让币丢掉链接。
-  auth_token: null
-  ct0: null
   # 承载会话的客户端，默认 twitter（PATH 上的子进程，不花 token）。
   cli: twitter
+  # 会话列表（2026-10-28）：每一条都是一个平级的 cookie，一条 = 一条并行 lane。
+  # 限频按账号算，所以 N 条能把一轮 X 采集压到 1/N。只给文件读、不进系统设置页
+  # （密钥不出浏览器）；页面只显示「N 个会话、几个可用」。
+  # 429 让该会话冷却 10 分钟，401 直接停用。cookie 从 DevTools -> Application ->
+  # Cookies -> https://x.com 取；用一次性账号，搜索是会被限流的读请求。
+  cookies:
+    - label: main
+      auth_token: null
+      ct0: null
+    - label: alt1
+      auth_token: null
+      ct0: null
+    - label: alt2
+      auth_token: null
+      ct0: null
 
 # DEBUG / INFO / WARNING / ERROR。日志是唯一记录阶段耗时的地方。
 log_level: INFO

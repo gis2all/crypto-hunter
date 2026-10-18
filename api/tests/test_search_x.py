@@ -109,8 +109,12 @@ def test_a_question_without_an_address_asks_the_client_nothing():
     assert answer.hits == [] and cli.argv == []
 
 
-def test_missing_credentials_are_a_refusal_and_not_an_empty_answer(monkeypatch):
+def test_missing_credentials_are_a_refusal_and_not_an_empty_answer(monkeypatch, tmp_path):
     """A round has to be able to tell "X found nothing" from "X was never asked"."""
+    from app import config
+
+    # 这台机器上的 config/system.yaml 有真 cookie；这条测的是「一个都没有」。
+    monkeypatch.setattr(config, "SYSTEM_PATH", tmp_path / "system.yaml")
     monkeypatch.delenv("CH_X_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("CH_X_CT0", raising=False)
     with pytest.raises(RuntimeError) as refusal:
