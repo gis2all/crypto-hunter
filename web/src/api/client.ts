@@ -260,8 +260,9 @@ export const collectFavorite = (chainId: string, ca: string) =>
  *  file, so a save writes exactly the lines it names. */
 export const getSystemForm = () => request<SystemForm>("/system/form");
 
-export const putSystem = (patch: Record<string, unknown>) =>
-  request<SystemForm>("/system", { method: "PUT", body: JSON.stringify({ patch }) });
+export const putSystem = (patch: Record<string, unknown>, sessions?: XSessionDraft[]) =>
+  request<SystemForm>("/system",
+    { method: "PUT", body: JSON.stringify(sessions ? { patch, sessions } : { patch }) });
 
 /** Ask the endpoint what it serves. Read with the rows as they stand on screen, unsaved: a
  *  form that had to be saved before it could be tested would make the operator store an
@@ -274,11 +275,21 @@ export const getSystemModels = (patch: Record<string, unknown>) =>
 export const testSystem = (patch: Record<string, unknown>) =>
   request<SystemTest>("/system/test", { method: "POST", body: JSON.stringify({ patch }) });
 
-/** The X session's own probe: one read of the account the cookies claim to be, which is the
+/** The X sessions' own probe: one read of each account the cookies claim to be, which is the
  *  cheapest question that tells a session from two strings that look like one. Asked with the
- *  page's unsaved rows, and unrecorded - a search spends a rate budget a round needs. */
-export const probeXSession = (patch: Record<string, unknown>) =>
-  request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch }) });
+ *  page's unsaved rows - a blank secret standing for the stored one - and unrecorded. */
+export const probeXSession = (patch: Record<string, unknown>, sessions?: XSessionDraft[]) =>
+  request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch, sessions }) });
+
+/** X 会话（2026-10-28）：一条 = 一条并行 lane。列表随系统设置一起保存；密钥只回指纹。 */
+export type XSessionDraft = {
+  label: string;
+  /** The label this row was loaded under: a rename keeps the cookies the blank boxes stand for. */
+  was_label?: string;
+  auth_token: string;
+  ct0: string;
+  enabled: boolean;
+};
 
 /** 新机会: what the outside world is offering, found by this app's own scans.
  *

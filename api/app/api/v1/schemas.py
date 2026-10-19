@@ -524,6 +524,15 @@ class SettingsFormOut(BaseModel):
     blocked: list[str]
 
 
+class XSessionOut(BaseModel):
+    """One X session as the 系统设置 page may see it: a label, a mask, a switch."""
+
+    label: str
+    enabled: bool = True
+    mask_auth: str = ""
+    mask_ct0: str = ""
+
+
 class SystemFormOut(BaseModel):
     """系统设置: this machine's own wiring - the LLM endpoint, the X session, the log level.
 
@@ -534,6 +543,8 @@ class SystemFormOut(BaseModel):
 
     path: str
     blocks: list[BlockOut]
+    #: X 会话是列表，不走 blocks 的行（一行一个值是 FieldOut 的形状）。
+    sessions: list[XSessionOut] = []
 
 
 class SystemModelsOut(BaseModel):
@@ -571,12 +582,32 @@ class SystemTestOut(BaseModel):
 class SystemXOut(BaseModel):
     """Whether the X session still works, in the client's own words.
 
-    One sentence rather than 测试连接's line per key: there is one session, and it either is
-    logged in or says why it is not.
+    A line per session the page holds, in the order they are drawn: each one either is logged
+    in or says why it is not. `note` summarises them for a single-session file.
     """
 
     ok: bool
     note: str
+    lines: list[SystemTestLineOut] = Field(default_factory=list)
+
+
+class XSessionIn(BaseModel):
+    """What the page sends back: a blank secret keeps the one already stored.
+
+    `was_label` is the label the row was loaded under. A rename sends the new label and the old
+    one, so the blank boxes still find the cookie they stand for - matching on the new label
+    alone made every rename look like a session with no cookies.
+    """
+
+    label: str
+    was_label: str = ""
+    auth_token: str = ""
+    ct0: str = ""
+    enabled: bool = True
+
+
+class XSessionsIn(BaseModel):
+    sessions: list[XSessionIn] = []
 
 
 class LexiconOut(BaseModel):

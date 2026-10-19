@@ -11,6 +11,13 @@
    The full text stays reachable through the widget's `title` attribute. */
 
 .prow .field{min-width:0}
+/* X 会话（2026-10-28）：一条 cookie 三行（标签 / auth_token / ct0），
+   和页面其它行同一条右对齐线；会话之间用 hairline 隔开。 */
+.sess-block{border-top:1px solid var(--hair);margin-top:6px;padding-top:6px}
+.sess-block:first-child{border-top:0;margin-top:0;padding-top:0}
+.sess-head{padding-bottom:2px}
+.sess-head>label{font-weight:600}
+.sess-head>.spacer{flex:1}
 /* 只读派生行（触发时刻）：和输入框同高、同一条右对齐线，但不可编辑 ——
    与 Arc 的 schedule.slots 同一行读法（2026-10-28）。 */
 .prow .field .derived{font-family:var(--mono);font-size:11.5px;color:var(--fg-2);
@@ -495,12 +502,20 @@ html{scrollbar-gutter:stable}
 #view-system .prow .field>*:first-child{grid-column:1;width:var(--ctl-w);min-width:0}
 #view-system .prow .field>*:not(:first-child){grid-column:2;min-width:0;padding-left:6px;
   white-space:nowrap}
+/* The mark sits against the box it belongs to - 未配置 right after the key, 已配置 · <指纹>
+   right after the cookie - and the boxes keep one width and one left edge, so a column of
+   rows reads as a column (2026-10-28, user: 输入框得对齐). The column on their right is
+   sized for the longest mark this page can draw, 已配置 · <首6…尾4>. */
 #view-system .prow .field>.pick-wrap .pick-cur{overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
 /* Where the picker *is* the control, it takes the group's column and holds its label the same
    way the number boxes hold theirs. */
 #view-system .pgroup:not(:has(.prow .field>input.str)) .prow .field>.pick-wrap>.btn{
   width:var(--ctl-w);padding:0 6px;gap:4px;justify-content:space-between}
+
+/* X 会话的输入框比普通数字框宽（cookie 是一长串），右侧留出「已配置 · 指纹」那一列，
+   和其它密钥行的 second column 同一套读法。 */
+#view-system .pgroup .prow.sess{--ctl-w:260px}
 
 /* The endpoint's two probes - 获取模型 / 测试连接 - sit on a strip of their own under the rows
    they act on rather than in the group header: what a gateway answers is a sentence, and a

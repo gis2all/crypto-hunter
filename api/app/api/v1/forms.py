@@ -562,8 +562,6 @@ SYSTEM_LABELS = {
     "llm.tries": "重试次数",
     "llm.key_cooldown": "失效冷却",
     "research_workers": "调研并发",
-    "x.auth_token": "auth_token",
-    "x.ct0": "ct0",
     "x.cli": "搜索客户端",
     "log_level": "日志等级",
 }
@@ -639,14 +637,13 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
         row("research_workers", "num"),
     ])
     session = group("x-session", "X会话", (
-        "两个值来自一个已登录 x.com 的会话 cookie（DevTools → Application → Cookies），"
-        "用一个一次性账号：搜索是会被限流的读请求，429 会让币丢掉链接。"
-        "「测试连接」用它读一次这个账号本身：一次请求，不占搜索额度。"
+        "会话本身在页面下方的「X 会话」里，一条 = 一条并行 lane（429 冷却、401 停用）。"
+        "这里只剩承载会话的客户端。「测试连接」用第一条会话问一次这个账号本身："
+        "一次请求，不占搜索额度。"
     ), [
-        row("x.auth_token"),
-        row("x.ct0"),
         row("x.cli"),
     ], actions=[
+        {"id": "add-session", "label": "添加会话"},
         {"id": "x", "label": "测试连接"},
     ])
     level = group("log-level", "等级", (

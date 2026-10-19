@@ -88,7 +88,9 @@ def test_the_page_draws_the_file_and_never_a_credential(system_file):
     assert fields["llm.api_key"]["dim"] == "已配置 · sk-liv…6789"
     assert fields["llm.api_key"]["widget"] == "password"
     assert "sk-live-0123456789" not in str(fields["llm.api_key"])
-    assert fields["x.ct0"]["dim"] == "未配置"
+    # X 的两个旧键从 2026-10-28 起由页面上的「X会话」列表接管，不再画成两行。
+    assert "x.ct0" not in fields and "x.auth_token" not in fields
+    assert {"x.auth_token", "x.ct0"} <= config.FILE_ONLY_KEYS
     assert fields["llm.reasoning"]["widget"] == "select"
 
 
@@ -114,6 +116,17 @@ def test_a_save_leaves_every_other_line_alone(system_file):
     ]
     assert changed == [("  model: m", "  model: m2")]
     assert "  # 写手的网关。" in system_file.read_text(encoding="utf-8")
+
+
+def test_a_save_keeps_the_file_it_replaced(system_file):
+    """The save leaves what it replaced in `system.yaml.bak`, so a wrong save is undone by
+    copying that back - the copy that was missing when a test wrote this file by accident."""
+    system_settings.save({"llm.model": "m2"})
+    backup = system_file.with_name(system_file.name + ".bak")
+    assert backup.read_text(encoding="utf-8") == FILE
+    saved = system_file.read_text(encoding="utf-8")
+    system_settings.save({"llm.model": "m3"})
+    assert backup.read_text(encoding="utf-8") == saved
 
 
 def test_a_save_is_in_force_before_it_returns(system_file):
@@ -267,14 +280,14 @@ def gateway(monkeypatch):
     return SimpleNamespace(seen=seen, box=box)
 
 
-def test_the_page_offers_the_usual_gateways_and_the_two_probes():
+def test_the_page_offers_the_usual_gateways_and_the_two_probes(system_file):
     """The form carries them, so the page needs no list of its own."""
     fields = _fields()
     assert [p["label"] for p in fields["llm.base_url"]["presets"]] == [
         "opencode zen", "OpenAI", "DeepSeek"]
     actions = [a["id"] for block in forms.system_blocks(system_settings.state())
                for group in block["groups"] for a in group["actions"]]
-    assert actions == ["models", "test", "x"]
+    assert actions == ["models", "test", "add-session", "x"]
 
 
 def test_a_probe_reads_the_draft_not_the_file(system_file, client, gateway):
@@ -437,8 +450,31 @@ def test_the_x_group_carries_its_own_probe():
     answer is printed under that group, so the action travels with the group."""
     groups = {g["key"]: g for block in forms.system_blocks(system_settings.state())
               for g in block["groups"]}
-    assert [a["label"] for a in groups["x-session"]["actions"]] == ["测试连接"]
+    assert [a["label"] for a in groups["x-session"]["actions"]] == ["添加会话", "测试连接"]
     assert groups["llm-call"]["actions"] == []
+
+
+def test_the_log_endpoint_reads_the_tail_and_filters(system_file, client, monkeypatch, tmp_path):
+    """One URL instead of the redirect: the last lines, or the ones matching a word."""
+    monkeypatch.setattr(logging_setup, "LOG_DIR", tmp_path)
+    (tmp_path / "api-run.err.log").write_text(
+        "first line\nx: cookie2 search q -> 4 rows in 900ms\nlast line\n", encoding="utf-8")
+    text = client.get("/api/v1/system/log?tail=2").text
+    assert text.splitlines() == ["x: cookie2 search q -> 4 rows in 900ms", "last line"]
+    assert client.get("/api/v1/system/log?grep=x%3A").text.strip().startswith("x: cookie2")
+
+
+def test_the_ring_answers_only_what_a_reader_has_not_seen(system_file, client):
+    """`since` is the record id, so a page can poll without re-reading the same lines."""
+    logging_setup.setup()
+    logger = logging.getLogger("crypto-hunter.test")
+    before = logging_setup.RING.recent(limit=0)
+    since = before[-1]["id"] if before else 0
+    logger.info("one line a page would poll for")
+    body = client.get("/api/v1/system/logs", params={"since": since, "name": "crypto-hunter.test"})
+    items = body.json()["items"]
+    assert [item["message"] for item in items][-1] == "one line a page would poll for"
+    assert body.json()["next"] == items[-1]["id"]
 
 
 def test_a_working_x_session_says_who_it_is(system_file, client, x_cli):
@@ -485,6 +521,45 @@ def test_the_x_probe_reads_the_draft_session_not_the_file(system_file, client, x
     assert body["ok"] is True
     assert x_cli.seen[0]["env"]["TWITTER_AUTH_TOKEN"] == "typed"
     assert x_cli.seen[0]["env"]["TWITTER_CT0"] == "typed-csrf"
+
+
+def test_the_x_probe_reads_every_session_the_page_holds(system_file, client, x_cli):
+    """Two cookies are two questions: the answer names the row it came from, and the button
+    spends each session's own cookie instead of always the first one's."""
+    x_cli.box.stdout = WHOAMI
+    body = client.post("/api/v1/system/x", json={"sessions": [
+        {"label": "one", "auth_token": "a1", "ct0": "c1"},
+        {"label": "two", "auth_token": "a2", "ct0": "c2"},
+    ]}).json()
+    assert [line["label"] for line in body["lines"]] == ["one", "two"]
+    assert body["ok"] is True
+    assert sorted(call["env"]["TWITTER_AUTH_TOKEN"] for call in x_cli.seen) == ["a1", "a2"]
+
+
+def test_a_session_with_no_cookie_is_not_probed(system_file, client, x_cli):
+    """A half-filled row is not a session yet, and the button says so instead of spending the
+    stored cookie under the row's label."""
+    body = client.post("/api/v1/system/x",
+                       json={"sessions": [{"label": "one"}]}).json()
+    assert body["ok"] is False
+    assert body["lines"] == []
+    assert "没有可测试的会话" in body["note"]
+    assert x_cli.seen == []
+
+
+def test_renaming_a_session_keeps_the_cookies_its_blanks_stand_for(system_file, client):
+    """A rename sends the label the row was loaded under, so the blank boxes still find their
+    cookie. Matching on the new label alone answered every rename with "needs auth_token and
+    ct0", which is the one thing a rename cannot be asked to supply."""
+    _with_session(system_file)
+    answer = client.put("/api/v1/system", json={"patch": {}, "sessions": [
+        {"label": "renamed", "was_label": "main", "auth_token": "", "ct0": "", "enabled": True},
+    ]})
+    assert answer.status_code == 200, answer.text
+    assert [row["label"] for row in answer.json()["sessions"]] == ["renamed"]
+    text = system_file.read_text(encoding="utf-8")
+    assert "auth_token: cookie" in text
+    assert "ct0: csrf" in text
 
 
 def test_a_typo_in_the_x_patch_is_refused_before_anything_is_called(system_file, client, x_cli):

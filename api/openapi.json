@@ -1895,6 +1895,136 @@
     }
    }
   },
+  "/api/v1/system/log": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Get Log",
+    "description": "This process's stderr, last `tail` lines, optionally filtered by a substring.\n\nThe launcher redirects stderr into `log/api-run.err.log`; reading it here is one URL away\nfrom the browser instead of a shell round trip, which is what a reader wants when a round\nleft a line worth looking at.",
+    "operationId": "get_log_api_v1_system_log_get",
+    "parameters": [
+     {
+      "name": "tail",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 200,
+       "title": "Tail"
+      }
+     },
+     {
+      "name": "grep",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Grep"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/logs": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Get Logs",
+    "description": "The last few hundred records, structured and numbered, so `?since=` returns only what is\nnew. The file above keeps everything a shell would want; this keeps what a page can poll.",
+    "operationId": "get_logs_api_v1_system_logs_get",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 0,
+       "title": "Since"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "level",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Level"
+      }
+     },
+     {
+      "name": "name",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Logs Api V1 System Logs Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/system": {
    "put": {
     "tags": [
@@ -5388,6 +5518,14 @@
       },
       "type": "array",
       "title": "Blocks"
+     },
+     "sessions": {
+      "items": {
+       "$ref": "#/components/schemas/XSessionOut"
+      },
+      "type": "array",
+      "title": "Sessions",
+      "default": []
      }
     },
     "type": "object",
@@ -5404,6 +5542,20 @@
       "additionalProperties": true,
       "type": "object",
       "title": "Patch"
+     },
+     "sessions": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/XSessionIn"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sessions"
      }
     },
     "type": "object",
@@ -5535,6 +5687,13 @@
      "note": {
       "type": "string",
       "title": "Note"
+     },
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/SystemTestLineOut"
+      },
+      "type": "array",
+      "title": "Lines"
      }
     },
     "type": "object",
@@ -5543,7 +5702,7 @@
      "note"
     ],
     "title": "SystemXOut",
-    "description": "Whether the X session still works, in the client's own words.\n\nOne sentence rather than 测试连接's line per key: there is one session, and it either is\nlogged in or says why it is not."
+    "description": "Whether the X session still works, in the client's own words.\n\nA line per session the page holds, in the order they are drawn: each one either is logged\nin or says why it is not. `note` summarises them for a single-session file."
    },
    "ValidationError": {
     "properties": {
@@ -5584,6 +5743,69 @@
      "type"
     ],
     "title": "ValidationError"
+   },
+   "XSessionIn": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "was_label": {
+      "type": "string",
+      "title": "Was Label",
+      "default": ""
+     },
+     "auth_token": {
+      "type": "string",
+      "title": "Auth Token",
+      "default": ""
+     },
+     "ct0": {
+      "type": "string",
+      "title": "Ct0",
+      "default": ""
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "label"
+    ],
+    "title": "XSessionIn",
+    "description": "What the page sends back: a blank secret keeps the one already stored.\n\n`was_label` is the label the row was loaded under. A rename sends the new label and the old\none, so the blank boxes still find the cookie they stand for - matching on the new label\nalone made every rename look like a session with no cookies."
+   },
+   "XSessionOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "mask_auth": {
+      "type": "string",
+      "title": "Mask Auth",
+      "default": ""
+     },
+     "mask_ct0": {
+      "type": "string",
+      "title": "Mask Ct0",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "label"
+    ],
+    "title": "XSessionOut",
+    "description": "One X session as the 系统设置 page may see it: a label, a mask, a switch."
    }
   }
  }

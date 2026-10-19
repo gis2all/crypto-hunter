@@ -740,6 +740,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Log
+         * @description This process's stderr, last `tail` lines, optionally filtered by a substring.
+         *
+         *     The launcher redirects stderr into `log/api-run.err.log`; reading it here is one URL away
+         *     from the browser instead of a shell round trip, which is what a reader wants when a round
+         *     left a line worth looking at.
+         */
+        get: operations["get_log_api_v1_system_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Logs
+         * @description The last few hundred records, structured and numbered, so `?since=` returns only what is
+         *     new. The file above keeps everything a shell would want; this keeps what a page can poll.
+         */
+        get: operations["get_logs_api_v1_system_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system": {
         parameters: {
             query?: never;
@@ -2272,6 +2317,11 @@ export interface components {
             path: string;
             /** Blocks */
             blocks: components["schemas"]["BlockOut"][];
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: components["schemas"]["XSessionOut"][];
         };
         /**
          * SystemIn
@@ -2282,6 +2332,8 @@ export interface components {
             patch?: {
                 [key: string]: unknown;
             };
+            /** Sessions */
+            sessions?: components["schemas"]["XSessionIn"][] | null;
         };
         /**
          * SystemModelsOut
@@ -2346,14 +2398,16 @@ export interface components {
          * SystemXOut
          * @description Whether the X session still works, in the client's own words.
          *
-         *     One sentence rather than 测试连接's line per key: there is one session, and it either is
-         *     logged in or says why it is not.
+         *     A line per session the page holds, in the order they are drawn: each one either is logged
+         *     in or says why it is not. `note` summarises them for a single-session file.
          */
         SystemXOut: {
             /** Ok */
             ok: boolean;
             /** Note */
             note: string;
+            /** Lines */
+            lines?: components["schemas"]["SystemTestLineOut"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -2367,6 +2421,61 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * XSessionIn
+         * @description What the page sends back: a blank secret keeps the one already stored.
+         *
+         *     `was_label` is the label the row was loaded under. A rename sends the new label and the old
+         *     one, so the blank boxes still find the cookie they stand for - matching on the new label
+         *     alone made every rename look like a session with no cookies.
+         */
+        XSessionIn: {
+            /** Label */
+            label: string;
+            /**
+             * Was Label
+             * @default
+             */
+            was_label: string;
+            /**
+             * Auth Token
+             * @default
+             */
+            auth_token: string;
+            /**
+             * Ct0
+             * @default
+             */
+            ct0: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /**
+         * XSessionOut
+         * @description One X session as the 系统设置 page may see it: a label, a mask, a switch.
+         */
+        XSessionOut: {
+            /** Label */
+            label: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Mask Auth
+             * @default
+             */
+            mask_auth: string;
+            /**
+             * Mask Ct0
+             * @default
+             */
+            mask_ct0: string;
         };
     };
     responses: never;
@@ -3626,6 +3735,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemFormOut"];
+                };
+            };
+        };
+    };
+    get_log_api_v1_system_log_get: {
+        parameters: {
+            query?: {
+                tail?: number;
+                grep?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_logs_api_v1_system_logs_get: {
+        parameters: {
+            query?: {
+                since?: number;
+                limit?: number;
+                level?: string;
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -9,16 +9,21 @@ taken over says so instead of pretending a save would change it (see `system_set
 from __future__ import annotations
 
 import json
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from ... import config, system_settings
+from ... import config, logging_setup, system_settings
 from ...llm import client as llm
 from ...search.engines.xsearch import PROBE_TIMEOUT, XEngine
 from . import forms
-from .schemas import SystemFormOut, SystemModelsOut, SystemTestOut, SystemXOut
+from .schemas import (SystemFormOut, SystemModelsOut, SystemTestOut, SystemXOut,
+                      XSessionIn)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -31,11 +36,50 @@ class SystemIn(BaseModel):
     """A patch keyed by each row's own path in the file (`llm.base_url`)."""
 
     patch: dict = Field(default_factory=dict)
+    #: X 会话列表：和 patch 一起提交，走同一个「保存并生效」。缺省 = 不动这一块。
+    sessions: list[XSessionIn] | None = None
 
 
 @router.get("/form", response_model=SystemFormOut)
 def get_form() -> dict:
     return _form()
+
+
+@router.get("/log", response_class=PlainTextResponse)
+def get_log(tail: int = 200, grep: str = "") -> str:
+    """This process's stderr, last `tail` lines, optionally filtered by a substring.
+
+    The launcher redirects stderr into `log/api-run.err.log`; reading it here is one URL away
+    from the browser instead of a shell round trip, which is what a reader wants when a round
+    left a line worth looking at.
+    """
+    path = logging_setup.log_path()
+    if not path.is_file():
+        return "还没有日志文件：%s" % path
+    window = 256 * 1024
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        end = handle.tell()
+        handle.seek(max(0, end - window))
+        text = handle.read().decode("utf-8", "replace")
+    lines = text.splitlines()
+    if grep:
+        lines = [line for line in lines if grep in line]
+    return "\n".join(lines[-max(1, min(int(tail), 2000)):])
+
+
+@router.get("/logs")
+def get_logs(since: int = 0, limit: int = 100, level: str = "", name: str = "") -> dict:
+    """The last few hundred records, structured and numbered, so `?since=` returns only what is
+    new. The file above keeps everything a shell would want; this keeps what a page can poll."""
+    chosen = getattr(logging, level.upper(), None) if level else None
+    items = logging_setup.RING.recent(
+        since=max(0, int(since)),
+        limit=max(1, min(int(limit), 500)),
+        level=chosen if isinstance(chosen, int) else None,
+        name=name.strip(),
+    )
+    return {"items": items, "next": items[-1]["id"] if items else since}
 
 
 @router.put("", response_model=SystemFormOut)
@@ -48,6 +92,8 @@ def put_system(body: SystemIn) -> dict:
     """
     try:
         system_settings.save(body.patch)
+        if body.sessions is not None:
+            system_settings.save_x_sessions([row.model_dump() for row in body.sessions])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return _form()
@@ -112,10 +158,38 @@ def post_x(body: SystemIn) -> dict:
         values = system_settings.effective(body.patch)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    engine = XEngine(token=values["x.auth_token"], ct0=values["x.ct0"],
-                     cli=values["x.cli"].strip() or None, timeout=PROBE_TIMEOUT)
+    cli = values["x.cli"].strip() or None
+    if body.sessions is not None:
+        # One line per session the page holds: a second cookie is the one an operator adds and
+        # then wants to hear about, and a probe that answered for the first one was answering
+        # about a session they did not ask after.
+        rows = system_settings.probe_sessions([row.model_dump() for row in body.sessions])
+        if not rows:
+            return {"ok": False, "note": "没有可测试的会话：先填上 auth_token 和 ct0", "lines": []}
+        with ThreadPoolExecutor(max_workers=min(4, len(rows))) as pool:
+            readings = list(pool.map(
+                lambda row: _probe_session(row, cli), rows))
+        good = sum(1 for line in readings if line["ok"])
+        note = ("%d 个会话都正常" % good if good == len(readings)
+                else "%d/%d 个会话正常" % (good, len(readings)))
+        return {"ok": good == len(readings), "note": note, "lines": readings}
+    token, ct0 = values.get("x.auth_token", ""), values.get("x.ct0", "")
+    if not (token and ct0):
+        # 会话列表接管之后，旧的两个键是空的；按钮测的是第一条会话。
+        row = system_settings.first_session()
+        token, ct0 = (row or {}).get("auth_token", ""), (row or {}).get("ct0", "")
+    engine = XEngine(token=token, ct0=ct0,
+                     cli=cli, timeout=PROBE_TIMEOUT)
     reading = engine.probe()
     return {"ok": reading["ok"], "note": reading["note"]}
+
+
+def _probe_session(row: dict, cli: str | None) -> dict:
+    """One session's profile read, as a line the page can print beside the button."""
+    engine = XEngine(token=row["auth_token"], ct0=row["ct0"], cli=cli, timeout=PROBE_TIMEOUT)
+    reading = engine.probe()
+    return {"label": row["label"], "ok": reading["ok"], "note": reading["note"],
+            "status": None, "latency_ms": None, "chars": None}
 
 
 def _key_label(index: int) -> str:
@@ -163,4 +237,5 @@ def _probe_current(patch: Mapping[str, Any]) -> dict:
 def _form() -> dict:
     """The page, read fresh: the file's own state is what a row is drawn from."""
     return {"path": str(config.SYSTEM_PATH),
-            "blocks": forms.system_blocks(system_settings.state())}
+            "blocks": forms.system_blocks(system_settings.state()),
+            "sessions": system_settings.x_sessions()}

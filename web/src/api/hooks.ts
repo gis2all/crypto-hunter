@@ -68,7 +68,8 @@ export function useSystemForm() {
 export function useSaveSystem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Record<string, unknown>) => api.putSystem(patch),
+    mutationFn: ({ patch, sessions }: { patch: Record<string, unknown>;
+      sessions?: api.XSessionDraft[] }) => api.putSystem(patch, sessions),
     onSuccess: (form) => {
       qc.setQueryData(["system-form"], form);
     },

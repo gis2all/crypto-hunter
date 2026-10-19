@@ -18,6 +18,7 @@ Two rules come with the loader, and the page has to keep them:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import shutil
@@ -28,6 +29,8 @@ from typing import Any
 from ruamel.yaml.comments import CommentedMap
 
 from . import config, logging_setup
+
+log = logging.getLogger("crypto-hunter.system")
 
 #: Serialises a save against another save. `config`'s own lock guards the chain files, which
 #: are other files entirely, so nothing here shares it.
@@ -122,6 +125,99 @@ def _entry(path: str) -> tuple[str, str, str] | None:
         if key == path:
             return key, name, kind
     return None
+
+
+def _session_rows(document: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The file's X sessions as rows, with the raw values (never handed to a browser)."""
+    block = document.get("x") if isinstance(document.get("x"), Mapping) else {}
+    rows: list[dict[str, Any]] = []
+    listed = block.get("cookies") if isinstance(block.get("cookies"), list) else []
+    for index, item in enumerate(listed):
+        if not isinstance(item, Mapping):
+            continue
+        token = str(item.get("auth_token") or "").strip()
+        ct0 = str(item.get("ct0") or "").strip()
+        if not token or not ct0:
+            continue
+        rows.append({"label": str(item.get("label") or "cookie%d" % (index + 1)).strip(),
+                     "auth_token": token, "ct0": ct0,
+                     "enabled": bool(item.get("enabled", True))})
+    if not rows:
+        token = str(block.get("auth_token") or "").strip()
+        ct0 = str(block.get("ct0") or "").strip()
+        if token and ct0:
+            rows.append({"label": "main", "auth_token": token, "ct0": ct0, "enabled": True})
+    return rows
+
+
+def x_sessions() -> list[dict[str, Any]]:
+    """What the 系统设置 page shows: labels, masks, enabled - never the cookies themselves."""
+    return [{"label": row["label"], "enabled": row["enabled"],
+             "mask_auth": masked(row["auth_token"]), "mask_ct0": masked(row["ct0"])}
+            for row in _session_rows(_load())]
+
+
+def first_session() -> dict[str, Any] | None:
+    """The session the probe button spends: the first enabled one, else the first."""
+    rows = _session_rows(_load())
+    for row in rows:
+        if row["enabled"]:
+            return row
+    return rows[0] if rows else None
+
+
+def probe_sessions(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The sessions a probe should ask about: the page's rows as they stand, with a blank secret
+    standing for the stored one exactly as a save reads it. A row with neither is skipped -
+    there is nothing to spend, and the page already says so.
+    """
+    stored = {row["label"]: row for row in _session_rows(_load())}
+    out: list[dict[str, Any]] = []
+    for raw in rows:
+        label = str(raw.get("label") or "").strip()
+        before = stored.get(str(raw.get("was_label") or "").strip()) or stored.get(label, {})
+        token = str(raw.get("auth_token") or "").strip() or before.get("auth_token", "")
+        ct0 = str(raw.get("ct0") or "").strip() or before.get("ct0", "")
+        if token and ct0:
+            out.append({"label": label or before.get("label", "cookie"),
+                        "auth_token": token, "ct0": ct0})
+    return out
+
+
+def save_x_sessions(rows: list[Mapping[str, Any]]) -> None:
+    """Replace the cookie list with the page's rows. A blank secret keeps the stored one."""
+    with _lock:
+        _seed()
+        document = _load()
+        existing = {row["label"]: row for row in _session_rows(document)}
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw in rows or []:
+            label = str(raw.get("label") or "").strip()
+            if not label:
+                raise ValueError("每个会话都要一个标签")
+            if label in seen:
+                raise ValueError("会话标签重复：%s" % label)
+            seen.add(label)
+            before = (existing.get(str(raw.get("was_label") or "").strip())
+                      or existing.get(label, {}))
+            token = str(raw.get("auth_token") or "").strip() or before.get("auth_token", "")
+            ct0 = str(raw.get("ct0") or "").strip() or before.get("ct0", "")
+            if not token or not ct0:
+                raise ValueError("会话 %s 需要 auth_token 和 ct0" % label)
+            out.append({"label": label, "auth_token": token, "ct0": ct0,
+                        "enabled": bool(raw.get("enabled", True))})
+        if len(out) > 10:
+            raise ValueError("最多 10 个会话")
+        block = document.get("x")
+        if not isinstance(block, Mapping):
+            block = document["x"] = {}
+        block["cookies"] = out
+        for key in ("auth_token", "ct0"):
+            if key in block:
+                del block[key]
+        _write(document)
+        config.load_env_file()
 
 
 def effective(patch: Mapping[str, Any]) -> dict[str, str]:
@@ -220,8 +316,27 @@ def _load() -> Any:
 
 
 def _write(document: Any) -> None:
-    """Replace the file through a temp file and a rename (see `config.write_document`)."""
+    """Keep the file as it stands, then replace it through a temp file and a rename (see
+    `config.write_document`).
+
+    The copy is what makes a bad save reversible: `system.yaml.bak` is the file the last save
+    replaced, so copying it back undoes that save. A test once wrote this file by accident
+    (2026-10-28) and the keys it held were gone with no copy to fall back on.
+    """
+    _backup(config.SYSTEM_PATH)
     config.write_document(config.SYSTEM_PATH, document)
+
+
+def _backup(path: Any) -> None:
+    """Write what the file holds now to `<name>.bak`, next to it."""
+    if not path.is_file():
+        return
+    try:
+        shutil.copyfile(path, path.with_name(path.name + ".bak"))
+    except OSError as error:
+        # A save that works is better than a save refused over its own safety copy; the log
+        # line is what says the copy is missing.
+        log.warning("system.yaml: could not write %s.bak: %s", path.name, error)
 
 
 def _seed() -> None:
