@@ -1,6 +1,6 @@
 # 挖链
 
-`search/` 只干一件事：找到这个项目的官方入口。`base`（命中与 URL 归一）/ `identify`（读页面定 tier）/ `discover`（搜索与互证）/ `harvest` / `engines/xsearch`。搜索不走模型、不花 token。
+`search/` 只干一件事：找到这个项目的官方入口。`base`（命中与 URL 归一）/ `identify`（读页面定 tier）/ `discover`（搜索与互证）/ `harvest` / `engines/xsearch`；`x_sessions.py` 是这些搜索共用的会话池（N 条 cookie = N 条 lane）。搜索不走模型、不花 token。
 
 ## 链下调研（挖链部分）
 
@@ -15,4 +15,4 @@
 
 | 变量 | 作用 |
 | --- | --- |
-| `CH_X_AUTH_TOKEN` / `CH_X_CT0` / `CH_X_CLI` | X 搜索的会话 cookie 与承载客户端（只放在 `config/system.yaml`）。**会话是用时才读的**：保存新 cookie 后下次搜索即生效，无需重启（见 `api/app/api/v1/README.md` · 系统设置（本机接线））。**搜索不走模型，所以没有「搜索模型」这一项** |
+| `x.cookies` / `CH_X_CLI` | X 搜索的会话池（`config/system.yaml`）：每条一个平级 cookie，一条 = 一条并行 lane；`429` 让该条冷却 10 分钟，`401` 只停用它，其余照常。旧的 `CH_X_AUTH_TOKEN` / `CH_X_CT0` 在列表为空时兜底成一条 `main`。**会话是用时才读的**：保存新 cookie 后下次搜索即生效，无需重启（见 `api/app/api/v1/README.md` · 系统设置（本机接线））。**搜索不走模型，所以没有「搜索模型」这一项** |
