@@ -1,0 +1,4 @@
+# The repository is LF. A worktree may be either; git stores what is committed without
+# asking every editor's line-ending setting (2026-10-28: one commit stored seven files
+# with CRLF, and every later diff of them was a whole-file rewrite).
+* text=auto eol=lf
