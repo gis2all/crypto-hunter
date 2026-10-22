@@ -217,8 +217,21 @@ def collect(scan_id: str, sources: list[dict], tell=None,
             return timeline(target), 1, []
         query, window, step, limit = xread.query_row(source)
         answer = search_sliced(query, window_hours=window, slice_hours=step, limit=limit,
-                               cancel=cancel)
+                               cancel=cancel, retry=can_retry)
         return (answer["rows"], int(answer.get("slices") or 0), list(answer.get("failed") or []))
+
+    # Retries are calls the plan did not reserve. They may only spend what is left after every
+    # planned slice, so `calls_per_scan` stays a ceiling rather than a suggestion (2026-10-28).
+    slack = max(0, budget - reserved)
+    slack_lock = threading.Lock()
+
+    def can_retry() -> bool:
+        nonlocal slack
+        with slack_lock:
+            if slack <= 0:
+                return False
+            slack -= 1
+            return True
 
     lanes = max(1, min(x_sessions.pool().count() or 1, len(jobs) or 1))
     done = 0

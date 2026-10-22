@@ -181,7 +181,7 @@ def _stdout(argv: list[str], *, cancel: threading.Event | None, timeout: float,
                     raise RuntimeError("x cli timed out after %ss" % int(timeout))
         if process.returncode != 0:
             detail = " ".join((stderr or "").split()[-24:])
-            kind = _failure_kind(detail)
+            kind = x_sessions.classify(detail)
             if kind == "rate":
                 pool.rate_limited(current)
             elif kind == "dead":
@@ -200,26 +200,20 @@ def _stdout(argv: list[str], *, cancel: threading.Event | None, timeout: float,
             pool.release(current)
 
 
-def _failure_kind(detail: str) -> str:
-    """429 rests a session, 401 retires it, everything else is a plain failure."""
-    text = str(detail or "").lower()
-    if "429" in text or "rate limit" in text or "too many requests" in text:
-        return "rate"
-    if "401" in text or "unauthorized" in text or "could not authenticate" in text \
-            or "cookie" in text:
-        return "dead"
-    return "other"
-
-
 def search_sliced(query: str, *, window_hours: int | None = None,
                   slice_hours: int | None = None, limit: int = QUERY_MAX,
-                  cancel: threading.Event | None = None, runner=None) -> dict:
+                  cancel: threading.Event | None = None, runner=None,
+                  retry=None) -> dict:
     """One query over its whole window, as rows plus what the reading cost.
 
     A slice that fails is retried once, then counted - never an exception: a rate-limited slice
     must not throw away the slices that already answered, which is the same rule the source loop
     follows one level up. The pool has already marked the session that failed, so the retry asks
     for another lane; that is what makes a 429 cost one call instead of a whole time window.
+
+    `retry` is the round's say on whether a second call may be spent - the source loop hands in
+    what the budget has left after every planned slice, so a round cannot go over `calls_per_scan`
+    by retrying. Unset means "yes, retry" (the tests and any caller with no budget to keep).
     """
     from . import settings
 
@@ -242,13 +236,14 @@ def search_sliced(query: str, *, window_hours: int | None = None,
             except Exception as exc:
                 if cancel is not None and cancel.is_set():
                     raise
-                if attempt == 1:
+                if attempt == 1 and (retry is None or retry()):
                     log.info("opportunity: slice %s..%s of %r failed (%r); retrying once "
                              "on another session", since, until, query, exc)
                     continue
                 failed.append(str(exc))
                 log.info("opportunity: slice %s..%s of %r did not answer: %r",
                          since, until, query, exc)
+                break
     # `slices` is the calls this query actually spent, retries included: it is the number the
     # round's budget is charged for.
     return {"rows": rows, "slices": calls, "failed": failed}

@@ -404,7 +404,7 @@ def test_the_query_runner_normalises_the_clients_rows():
 def test_a_search_leaves_one_line_saying_which_session_spent_it():
     """The line a round's lanes are read off: session, query, rows, milliseconds."""
     logging_setup.setup()
-    seen = logging_setup.RING.recent(limit=0)
+    seen = logging_setup.RING.recent(limit=None)
     since = seen[-1]["id"] if seen else 0
     xread.run("testnet is live", runner=lambda argv: _payload("1"))
     lines = logging_setup.RING.recent(since=since, name="crypto-hunter.opportunity")
@@ -444,6 +444,20 @@ def test_the_query_runner_asks_for_latest_not_top(monkeypatch):
     argv = seen["argv"]
     assert argv[1] == "search" and argv[argv.index("-t") + 1] == "Latest"
     assert argv[argv.index("--max") + 1] == str(xread.QUERY_MAX)
+
+
+def test_a_round_with_no_slack_does_not_spend_a_retry():
+    """The budget is a ceiling: a retry only happens when the round has calls left after every
+    planned slice."""
+    calls = {"n": 0}
+
+    def runner(argv):
+        calls["n"] += 1
+        raise RuntimeError("429")
+
+    out = xread.search_sliced("testnet", window_hours=4, slice_hours=4, runner=runner,
+                              retry=lambda: False)
+    assert out["slices"] == 1 and len(out["failed"]) == 1 and calls["n"] == 1
 
 
 def test_a_failed_slice_is_retried_once_on_another_lane():
@@ -2661,6 +2675,41 @@ def test_a_429_rests_a_session_and_a_401_retires_it():
     assert pool.snapshot()[0]["enabled"] is False
     with pytest.raises(RuntimeError):
         pool.acquire(priority=1, timeout=0.2)
+
+
+def test_a_retired_session_comes_back_when_the_file_changes():
+    """A 401 stops the session until someone touches the file - that is what the log says, and
+    what a fixed cookie is: a new token, or an edited file."""
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text("x:\n  auth_token: t\n  ct0: c\n", encoding="utf-8")
+    pool = x_sessions.pool()
+    pool.set_interval(0)
+    session = pool.acquire(priority=1, timeout=1)
+    pool.release(session)
+    pool.dead(session)
+    assert pool.count() == 0
+    config.SYSTEM_PATH.write_text("x:\n  auth_token: t\n  ct0: c\n# edited\n", encoding="utf-8")
+    assert pool.count() == 1
+
+
+def test_the_probe_skips_the_session_a_lane_is_holding():
+    """Two calls on one account at once is what the pool exists to prevent; the probe is one of
+    those calls."""
+    from app import config
+    from app.search import x_sessions
+
+    config.SYSTEM_PATH.write_text(
+        "x:\n  cookies:\n"
+        "    - label: one\n      auth_token: t1\n      ct0: c1\n"
+        "    - label: two\n      auth_token: t2\n      ct0: c2\n", encoding="utf-8")
+    pool = x_sessions.pool()
+    pool.set_interval(0)
+    held = pool.acquire(priority=1, timeout=1)
+    seen = pool.first()
+    assert seen is not None and seen.label != held.label
+    pool.release(held)
 
 
 def test_one_session_is_handed_to_one_caller_at_a_time():

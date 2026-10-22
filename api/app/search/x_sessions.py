@@ -9,8 +9,9 @@ Health is a reading, not an exception. A 429 rests that session for ten minutes 
 retried on another lane; a 401 turns it off until the file changes; anything else is a failure
 count. Only when no session can answer at all does the caller see an error.
 
-Where they come from: `config/system.yaml`. The legacy `x.auth_token` / `x.ct0` pair is the first
-session (`main`), and `x.cookies` is a file-only list of extras. The file is re-read when its
+Where they come from: `config/system.yaml`. `x.cookies` is the list - every entry a peer, in the
+order the file has them. The legacy `x.auth_token` / `x.ct0` pair is read only when that list is
+empty, as one session called `main`, so an old file keeps working. The file is re-read when its
 mtime moves, so adding a cookie needs no restart.
 """
 
@@ -134,7 +135,11 @@ class Pool:
                 session.rate_limited = previous.rate_limited
                 session.failures = previous.failures
                 session.cooldown_until = previous.cooldown_until
-                session.enabled = session.enabled and previous.enabled
+                # The file wins on `enabled`: a 401 stops a session until the file changes, which
+                # is what the log line promises. Cooldowns and counters are time-based and survive
+                # an edit that has nothing to do with this session.
+                if session.enabled and not previous.enabled:
+                    session.note = ""
                 session.last_used_at = previous.last_used_at
                 session.next_at = previous.next_at
         self._sessions = loaded
@@ -246,7 +251,10 @@ class Pool:
         with self._cond:
             self._refresh()
             for session in self._sessions:
-                if session.enabled and (allow_cooling or session.cooldown_until <= time.time()):
+                # A session a lane is holding is not the one to spend on a probe: two calls on one
+                # account at once is exactly what the pool exists to prevent.
+                if (session.enabled and not session.busy
+                        and (allow_cooling or session.cooldown_until <= time.time())):
                     return session
             return None
 
