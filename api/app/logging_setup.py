@@ -63,8 +63,9 @@ class RingHandler(logging.Handler):
             }))
             self._next += 1
 
-    def recent(self, since: int = 0, limit: int = 100, level: int | None = None,
+    def recent(self, since: int = 0, limit: int | None = 100, level: int | None = None,
                name: str = "") -> list[dict]:
+        """Records newer than `since`, oldest first. `limit=None` is all of them, `0` is none."""
         with self._lock:
             items = [item for ident, item in self._records if ident > since]
         if level is not None:
@@ -72,7 +73,9 @@ class RingHandler(logging.Handler):
                      if logging.getLevelName(item["level"]) >= level]
         if name:
             items = [item for item in items if item["name"].startswith(name)]
-        return items[-limit:] if limit > 0 else items
+        if limit is None:
+            return items
+        return items[-limit:] if limit > 0 else []
 
 
 RING = RingHandler()

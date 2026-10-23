@@ -531,6 +531,9 @@ class XSessionOut(BaseModel):
     enabled: bool = True
     mask_auth: str = ""
     mask_ct0: str = ""
+    #: The pool's reading, not the file's: "" (nothing to report), "cooling" (429 rest) or
+    #: "disabled" (401 retired it).
+    state: str = ""
 
 
 class SystemFormOut(BaseModel):

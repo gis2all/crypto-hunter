@@ -75,7 +75,8 @@ def get_logs(since: int = 0, limit: int = 100, level: str = "", name: str = "") 
     chosen = getattr(logging, level.upper(), None) if level else None
     items = logging_setup.RING.recent(
         since=max(0, int(since)),
-        limit=max(1, min(int(limit), 500)),
+        # 0 means "none", the way a caller reading it would expect; the cap keeps one poll small.
+        limit=max(0, min(int(limit), 500)),
         level=chosen if isinstance(chosen, int) else None,
         name=name.strip(),
     )

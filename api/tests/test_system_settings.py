@@ -468,13 +468,43 @@ def test_the_ring_answers_only_what_a_reader_has_not_seen(system_file, client):
     """`since` is the record id, so a page can poll without re-reading the same lines."""
     logging_setup.setup()
     logger = logging.getLogger("crypto-hunter.test")
-    before = logging_setup.RING.recent(limit=0)
+    before = logging_setup.RING.recent(limit=None)
     since = before[-1]["id"] if before else 0
     logger.info("one line a page would poll for")
     body = client.get("/api/v1/system/logs", params={"since": since, "name": "crypto-hunter.test"})
     items = body.json()["items"]
     assert [item["message"] for item in items][-1] == "one line a page would poll for"
     assert body.json()["next"] == items[-1]["id"]
+
+
+def test_the_page_reads_the_pools_health_not_only_the_file(system_file, monkeypatch):
+    """A session the file calls enabled can be resting from a 429 or retired by a 401; the page
+    has to say which, or every call silently waits out a cooldown."""
+    _with_session(system_file)
+    from app.search import x_sessions as pool_module
+
+    monkeypatch.setattr(pool_module, "pool", lambda: SimpleNamespace(snapshot=lambda: [
+        {"label": "main", "enabled": True, "cooling": True}]))
+    assert system_settings.x_sessions()[0]["state"] == "cooling"
+
+    monkeypatch.setattr(pool_module, "pool", lambda: SimpleNamespace(snapshot=lambda: [
+        {"label": "main", "enabled": False, "cooling": False}]))
+    assert system_settings.x_sessions()[0]["state"] == "disabled"
+
+    monkeypatch.setattr(pool_module, "pool", lambda: SimpleNamespace(snapshot=lambda: [
+        {"label": "main", "enabled": True, "cooling": False}]))
+    assert system_settings.x_sessions()[0]["state"] == ""
+
+
+def test_the_logs_endpoint_gives_nothing_when_asked_for_nothing(system_file, client):
+    body = client.get("/api/v1/system/logs", params={"limit": 0}).json()
+    assert body["items"] == []
+
+
+def test_the_log_endpoint_says_so_when_the_file_is_missing(system_file, client, monkeypatch,
+                                                          tmp_path):
+    monkeypatch.setattr(logging_setup, "LOG_DIR", tmp_path)
+    assert "还没有日志文件" in client.get("/api/v1/system/log").text
 
 
 def test_a_working_x_session_says_who_it_is(system_file, client, x_cli):

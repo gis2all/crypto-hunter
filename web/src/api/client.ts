@@ -286,6 +286,8 @@ export type XSessionDraft = {
   label: string;
   /** The label this row was loaded under: a rename keeps the cookies the blank boxes stand for. */
   was_label?: string;
+  /** The pool's reading as the page last saw it: "" | "cooling" | "disabled". */
+  state?: string;
   auth_token: string;
   ct0: string;
   enabled: boolean;

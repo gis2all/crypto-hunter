@@ -41,7 +41,7 @@ export function SystemView() {
     if (!data) return;
     setSessions((data.sessions ?? []).map((row) => ({
       label: row.label, was_label: row.label, auth_token: "", ct0: "", enabled: row.enabled,
-      mask_auth: row.mask_auth, mask_ct0: row.mask_ct0,
+      mask_auth: row.mask_auth, mask_ct0: row.mask_ct0, state: row.state ?? "",
     })));
   }, [data]);
 
@@ -79,7 +79,7 @@ export function SystemView() {
     if (action === "add-session") {
       setSessions((prev) => [...prev, {
         label: "cookie" + (prev.length + 1), was_label: "", auth_token: "", ct0: "", enabled: true,
-        mask_auth: "", mask_ct0: ""}]);
+        mask_auth: "", mask_ct0: "", state: ""}]);
       return;
     }
     setBusy(action);
@@ -175,7 +175,12 @@ export function SystemView() {
                     {group.key === "x-session" ? sessions.map((row, index) => (
                       <div className="sess-block" key={index}>
                         <div className="prow sess-head">
-                          <label>会话 {index + 1}</label>
+                          <label>
+                            会话 {index + 1}
+                            {row.state === "disabled" ? <span className="dim">已停用</span>
+                              : row.state === "cooling" ? <span className="dim">冷却中</span>
+                                : null}
+                          </label>
                           <span className="spacer" />
                           <button type="button" className="btn sec"
                                   onClick={() => setSessions((prev) =>

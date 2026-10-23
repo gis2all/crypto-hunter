@@ -151,10 +151,31 @@ def _session_rows(document: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def x_sessions() -> list[dict[str, Any]]:
-    """What the 系统设置 page shows: labels, masks, enabled - never the cookies themselves."""
-    return [{"label": row["label"], "enabled": row["enabled"],
-             "mask_auth": masked(row["auth_token"]), "mask_ct0": masked(row["ct0"])}
-            for row in _session_rows(_load())]
+    """What the 系统设置 page shows: labels, masks, and the health the pool knows - never the
+    cookies themselves.
+
+    `state` is the pool's reading, not the file's: a session the file calls enabled can still be
+    resting from a 429 (`cooling`) or retired by a 401 (`disabled`), and a page that showed only
+    the file would look healthy while every call waited out a cooldown. The file stays the source
+    of `enabled` - that is what a save writes.
+    """
+    try:
+        from .search.x_sessions import pool as session_pool
+        live = {row["label"]: row for row in session_pool().snapshot()}
+    except Exception:  # the page must draw even if the pool cannot read the file
+        live = {}
+    out: list[dict[str, Any]] = []
+    for row in _session_rows(_load()):
+        reading = live.get(row["label"])
+        state = ""
+        if reading is not None and not reading["enabled"]:
+            state = "disabled"
+        elif reading is not None and reading["cooling"]:
+            state = "cooling"
+        out.append({"label": row["label"], "enabled": row["enabled"],
+                    "mask_auth": masked(row["auth_token"]), "mask_ct0": masked(row["ct0"]),
+                    "state": state})
+    return out
 
 
 def first_session() -> dict[str, Any] | None:

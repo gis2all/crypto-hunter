@@ -5798,6 +5798,11 @@
       "type": "string",
       "title": "Mask Ct0",
       "default": ""
+     },
+     "state": {
+      "type": "string",
+      "title": "State",
+      "default": ""
      }
     },
     "type": "object",

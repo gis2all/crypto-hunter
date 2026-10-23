@@ -2476,6 +2476,11 @@ export interface components {
              * @default
              */
             mask_ct0: string;
+            /**
+             * State
+             * @default
+             */
+            state: string;
         };
     };
     responses: never;
