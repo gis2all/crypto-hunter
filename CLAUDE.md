@@ -57,16 +57,17 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/core/`：纯逻辑（`filters`、`funnel`、`scoring`、`models`、`parse`、`caliber`），不得有 IO；「0 是否算读数」只由 `parse.py` 与 `sources/base.py` 决定。
 - `api/app/sources/`：一个源一个适配器，跨链的放根目录，只服务一条链的放 `<chain>/`。见 `README.md` 与该链 `SOURCES.md`。
 - `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
-- `api/app/search/`：挖链（识别、发现、抓取、引擎）。见 `README.md`。
+- `api/app/search/`：挖链（识别、发现、抓取、引擎）与会话池。`x_sessions.py` 把 `x.cookies` 变成 N 条并行 lane（429 冷却、401 停用各自独立），所有 X 调用都从它借会话。见 `README.md`。
 - `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、链注册表自动核验（`chainverify` / `chain_registry`）、晋升门槛、读者自己的归档与删除。与一轮的编排无关，不写 `runs`。见 `README.md`。
 - `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
-- `api/app/system_settings.py`：系统设置页那张表，读写 `config/system.yaml` 并写入 `os.environ`。
+- `api/app/system_settings.py`：系统设置页那张表，读写 `config/system.yaml` 并写入 `os.environ`；X 会话列表也在这里（增删改、只回指纹、`was_label` 让改名保留原 cookie、逐条探测、合并池子的冷却/停用状态）；每次保存先把旧文件复制成 `system.yaml.bak`。
+- `api/app/logging_setup.py`：本项目 logger 的唯一出口（stderr）＋进程内最近 500 条的环形缓冲；`GET /api/v1/system/log` 与 `/system/logs` 读它。
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
 - `web/src/features/`：一个页面一个目录；`web/src/components/` 存放通用件；`web/src/styles/` 是视觉的唯一出处。见两份 `README.md`。
-- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）；`opportunity.example.yaml` 是新机会那条流水线十个旋钮的模板，本机那份 `opportunity.yaml` 由设定页保存时创建，只写被改过的键，删掉即回默认。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
+- `config/`：`chains/*.example.yaml` 是出厂模板（跟仓库），同名的 `*.yaml` 是本机那份（首次读取时从模板播种，不入库）；`system.yaml` 是本机私密接线（不入库）；`opportunity.example.yaml` 是新机会那条流水线十三个旋钮的模板，本机那份 `opportunity.yaml` 由设定页保存时创建，只写被改过的键，删掉即回默认。当前四条链：Arc / Robinhood / Solana / BSC；左栏只渲染 `enabled` 的那条。
 - `data/`：`crypto-hunter.db` 与 `raw/`（每轮原始响应与 HTTP 缓存），不入库。
 
 # 6. 术语
@@ -102,7 +103,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 | 修改收藏页 | `web/src/features/README.md` · 收藏页 | `api/app/api/v1/favorites.py`、`report/assemble.py` 与 `web/src/features/favorites/` |
 | 修改 CA 搜索 | `web/src/features/README.md` · CA 搜索 | `api/app/lookup.py`、`api/app/api/v1/lookup.py` 与 `web/src/features/lookup/` |
 | 修改新机会（watchlist、扫描、分组与抽取、溯源、链核验、主题、晋升门槛、用户状态、页面与设定） | `api/app/opportunity/README.md` | `api/app/opportunity/`、`api/app/api/v1/opportunity.py` 与 `web/src/features/opportunity/`；watchlist 种子在 `opportunity/seeds/watchlist.yaml`，链注册表种子/同步在 `chainverify.py`，旋钮在 `opportunity/settings.py` 的 `FIELDS` 与 `config/opportunity.example.yaml` |
-| 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py` 与 `web/src/features/system/` |
+| 修改本机接线（LLM、X 搜索、日志） | `api/app/api/v1/README.md` · 系统设置（本机接线） | `config/system.yaml`、`api/app/system_settings.py`、`api/app/search/x_sessions.py`（会话池）、`api/app/logging_setup.py`（日志环与两条日志 URL）与 `web/src/features/system/` |
 | 第 8 节（边界与待决）中的待决事项 | 先与用户确认 | 第 8 节 |
 
 # 8. 边界与待决
