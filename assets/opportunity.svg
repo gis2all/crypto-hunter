@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="210" viewBox="0 0 880 210" role="img" aria-label="新机会的一轮八段">
+<style>
+.b{fill:#ECECFF;stroke:#9370DB;stroke-width:1.1}
+.t{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif;font-size:13px;fill:#333;text-anchor:middle}
+.a{stroke:#9370DB;stroke-width:1.1;fill:none}
+.h{fill:#9370DB;stroke:none}
+@media (prefers-color-scheme:dark){.b{fill:#2d333b;stroke:#768390}.t{fill:#adbac7}.a{stroke:#768390}.h{fill:#768390}}
+</style>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="h" d="M0,0 L10,5 L0,10 Z"/></marker></defs>
+<rect class="b" x="18.0" y="18.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="113.0" y="45.0">读 watchlist</text>
+<text class="t" x="113.0" y="63.0">按轮转读源</text>
+<rect class="b" x="236.0" y="18.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="331.0" y="45.0">抓材料</text>
+<text class="t" x="331.0" y="63.0">时间切片、多会话并行</text>
+<rect class="b" x="454.0" y="18.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="549.0" y="45.0">刷新官网</text>
+<text class="t" x="549.0" y="63.0">只读已登记站点</text>
+<rect class="b" x="672.0" y="18.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="767.0" y="45.0">分组</text>
+<text class="t" x="767.0" y="63.0">一次模型调用</text>
+<rect class="b" x="672.0" y="128.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="767.0" y="155.0">找官方入口</text>
+<text class="t" x="767.0" y="173.0">官网 / 文档 / 官方 X</text>
+<rect class="b" x="454.0" y="128.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="549.0" y="155.0">抽取落库</text>
+<text class="t" x="549.0" y="173.0">一组一次调用</text>
+<rect class="b" x="236.0" y="128.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="331.0" y="155.0">补链</text>
+<text class="t" x="331.0" y="173.0">未注册链自动核验</text>
+<rect class="b" x="18.0" y="128.0" width="190.0" height="64.0" rx="4" ry="4"/>
+<text class="t" x="113.0" y="155.0">生命周期</text>
+<text class="t" x="113.0" y="173.0">到期退役</text>
+<path class="a" marker-end="url(#ar)" d="M208.0,50.0 L232.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M426.0,50.0 L450.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M644.0,50.0 L668.0,50.0"/>
+<path class="a" marker-end="url(#ar)" d="M767.0,82.0 L767.0,124.0"/>
+<path class="a" marker-end="url(#ar)" d="M672.0,160.0 L648.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M454.0,160.0 L430.0,160.0"/>
+<path class="a" marker-end="url(#ar)" d="M236.0,160.0 L212.0,160.0"/>
+</svg>
