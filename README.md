@@ -27,9 +27,10 @@ Crypto Hunter 是一个用 AI 发现与筛选优质链上加密项目的研究�
 ```
 cd api; uv run python -m app       # 后端 127.0.0.1:8787，同时托管 web/dist
 cd web; npm install; npm run dev   # 前端开发服务器 5173，/api 代理到 8787
+cd web; npm run build              # 改完前端后构建，生产页面（web/dist）才会更新
 ```
 
-启动后访问 http://127.0.0.1:8787；前端改动后需执行 `cd web; npm run build` 才会进入生产页面。
+启动后访问 http://127.0.0.1:8787
 
 ## 三、新机会
 
