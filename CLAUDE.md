@@ -20,6 +20,8 @@ cd web; npm install; npm run dev      # 前端 5173，/api 代理到 8787
 cd web; npm run build                 # 生产：tsc -b 与 vite build，随后强制刷新浏览器
 ```
 
+本机常驻实例由 `scripts\serve-standalone.ps1` 启动（`scripts/` 不入库）：无参数＝端口空闲才启动，`-Stop` 停止。它经 WMI 创建进程，父进程是 `WmiPrvSE`，所以关掉 Codex 或这个终端都不会打断正在跑的扫描 —— 用 Codex 工具调用直接起服务，进程会挂在 Codex 的进程树里，重启即中断。
+
 接口类型：Pydantic 是唯一真源 —— 先执行 `cd api; uv run python -m app.export_openapi`，再执行 `cd web; npm run types`；不得手写 DTO。
 
 ## 改动后的验证
@@ -84,6 +86,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 主池：流动性最大的池。
 - `0`：是答案而非缺失 —— 判空用 `is not None` 而非 `if value:`；集合类型的 `[]` 视为「未答」，不赢走字段。
 - 收藏与搜索记录：同一张 `favorites` 行（主键 `(chain_id, ca)`），区别仅在于 `origin` 与 `kept`；链名、配置、轮次只是随行存储的值，不发生任何级联。
+- 星标（新机会）：`opportunities.kept`，读者自己的标记，与 `user_state`（归档 / 删除）**并列**而不是它的第五种取值；它不冻结卡片，归档 / 删除也不摘星。两条产品线的取消收藏都要二次确认（星旁出现「取消收藏」）。
 - 市场口径：一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` 与 `h24`），而非榜单或发射台自报的数值。
 
 # 7. 变更入口
