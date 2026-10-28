@@ -820,8 +820,17 @@ div.pgroup>.pset{margin-top:auto}
   display:inline-flex;align-items:center}
 .fav:hover,.rescan:hover{color:var(--accent-fg)}
 .fav svg{fill:none}
-.fav.on{color:var(--accent)}
+/* 和新机会卡片上那颗星同一个金色（2026-10-29, user）：两条线里的「收藏」是一回事，
+   不该一条蓝一条黄。 */
+.fav.on{color:#e3b341}
+.fav.on:hover{color:#e3b341}
 .fav.on svg{fill:currentColor}
+/* 星旁那句「取消收藏」：和新机会卡片上的确认同一个金色与字号，不带框 —— 它站的是
+   星与分数之间的空档，加了框就像第二个按钮。 */
+.fav-confirm{border:0;background:none;padding:0 2px;line-height:1;cursor:pointer;
+  color:#e3b341;font-family:var(--sans);font-size:11.5px;white-space:nowrap}
+.fav-confirm:hover{text-decoration:underline}
+.fav-confirm:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
 .fav:focus-visible,.rescan:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
 /* Spent while the search it started is in flight; it turns in the meantime (.ico.spin). */
 .rescan:disabled,.rescan:disabled:hover{opacity:.45;cursor:not-allowed;color:var(--muted)}
@@ -1074,6 +1083,11 @@ div.pgroup>.pset{margin-top:auto}
   border:0;background:none;color:var(--muted);cursor:pointer}
 .opp-acts button:hover{background:var(--surface-warm);color:var(--fg-2)}
 .opp-acts button:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+/* 收藏（2026-10-29）：星标是读者自己的标记，实心金色 = 已收藏；取消收藏要点两次，
+   第一次只把这一张置为待确认，第二次才发请求。 */
+.opp-acts button.star.on{color:#e3b341}
+.opp-acts button.star.on svg{fill:currentColor}
+.opp-acts button.star-confirm{width:auto;padding:0 6px;font-size:11px;color:#e3b341}
 /* 「没有门槛信息」不是一道门槛：灰字，不和「需资金」用同一个 chip 形状。行高对齐 chips。 */
 .opp-barrier-empty{font-family:var(--mono);font-size:10.5px;line-height:20px;color:var(--muted)}
 /* 门槛压到页脚正上方：卡片被拉伸出来的空白落在正文与门槛之间，而不是门槛与页脚之间。
