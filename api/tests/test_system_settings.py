@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import httpx
@@ -103,6 +105,36 @@ def test_a_variable_the_shell_set_is_drawn_read_only(system_file, monkeypatch):
     assert fields["llm.base_url"]["value"] == "https://shell/v1"
     assert fields["llm.base_url"]["dim"] == "环境变量"
     assert fields["llm.model"]["widget"] == "text"
+
+
+def test_two_readers_never_leave_a_value_the_file_does_not_own(system_file):
+    """`state()` re-reads the file on every request. Two at once used to delete each other's
+    variables and write back an empty ownership record, and the page then drew every row
+    read-only as 「环境变量」 until a restart (2026-10-28)."""
+    ready = threading.Barrier(8)
+
+    def load(_):
+        ready.wait()
+        config.load_env_file()
+        return config.file_owner()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        owners = list(pool.map(load, range(8)))
+    owned = config.file_owner()
+    assert "CH_LLM_MODEL" in owned
+    assert os.environ["CH_LLM_MODEL"] == owned["CH_LLM_MODEL"]
+    assert all("CH_LLM_MODEL" in owner for owner in owners)
+
+
+def test_a_whole_number_is_drawn_without_a_decimal(system_file):
+    """A YAML scalar is a ruamel subclass of int, and the response model turned it into `0.0`."""
+    from ruamel.yaml.scalarint import ScalarInt
+
+    value = system_settings._shown(ScalarInt(0), "num")
+    assert type(value) is int and value == 0
+    assert system_settings._shown(ScalarInt(300), "num") == 300
+    assert system_settings._shown(0.5, "num") == 0.5
+    assert system_settings._shown(True, "bool") is True
 
 
 def test_a_save_leaves_every_other_line_alone(system_file):

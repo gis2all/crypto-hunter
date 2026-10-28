@@ -411,5 +411,18 @@ def _text(raw: Any) -> str:
 
 
 def _shown(raw: Any, kind: str) -> Any:
-    """What a row draws: JSON as the text a box can edit, everything else as it is."""
-    return _text(raw) if kind == "json" else raw
+    """What a row draws: JSON as the text a box can edit, numbers as plain Python numbers.
+
+    A YAML scalar arrives as a ruamel subclass, and the response model turns that subclass of
+    `int` into a float - `回答上限: 0` was drawn as `0.0`. Unwrapping here keeps the number the
+    file holds, and an integral float still reads as an integer.
+    """
+    if kind == "json":
+        return _text(raw)
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int):
+        return int(raw)
+    if isinstance(raw, float):
+        return int(raw) if raw.is_integer() else float(raw)
+    return raw

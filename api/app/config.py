@@ -101,6 +101,13 @@ FILE_ONLY_KEYS: frozenset[str] = frozenset({
 #: re-reading one path never reaches for a variable another path owns.
 _FROM_FILE: dict[Path, dict[str, str]] = {}
 
+#: `load_env_file` rewrites `os.environ` and the ownership record together, and both halves
+#: have to move as one. Two callers at once used to interleave: one deleted the variable the
+#: other was about to re-own, the loser then skipped it (`name in os.environ`) and wrote back an
+#: empty record, leaving values in the environment that no file owned - which the settings page
+#: reads as "环境变量" and draws read-only until a restart (2026-10-28).
+_ENV_LOCK = threading.RLock()
+
 
 def _dig(document: Mapping, path: str) -> Any:
     """`document`'s value at `path`, or None where the file has nothing to say."""
@@ -141,7 +148,8 @@ def file_owner(path: Path | None = None) -> dict[str, str]:
     The page reads this to tell a value it can write from one the operating system is holding:
     a variable the file did not set is never touched by the file, so a row for it is read-only.
     """
-    return dict(_FROM_FILE.get(path or SYSTEM_PATH, {}))
+    with _ENV_LOCK:
+        return dict(_FROM_FILE.get(path or SYSTEM_PATH, {}))
 
 
 def load_env_file(path: Path | None = None) -> int:
@@ -154,6 +162,11 @@ def load_env_file(path: Path | None = None) -> int:
     A real environment variable always wins, including one set after the file was read: that
     key is simply never touched again.
     """
+    with _ENV_LOCK:
+        return _load_env_file(path)
+
+
+def _load_env_file(path: Path | None = None) -> int:
     path = path or SYSTEM_PATH
     for key, value in list(_FROM_FILE.pop(path, {}).items()):
         if os.environ.get(key) == value:
