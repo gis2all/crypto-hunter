@@ -35,6 +35,7 @@ import {
   RotateCw,
   Save,
   SlidersHorizontal,
+  Star,
   Trash2,
   TriangleAlert,
   UnfoldVertical,
@@ -53,6 +54,7 @@ import {
   useOpportunityScans,
 
   useOpportunitySources,
+  useKeepOpportunity,
   useSetOpportunityState,
   useStartOpportunityScan,
 } from "../../api/hooks";
@@ -107,10 +109,21 @@ function matches(item: OpportunityItem, key: string, value: string): boolean {
     case "barrier":
       // 门槛是多选字段，这里一次只筛一档：`.fav-opts` 是单选的行。
       return item.barrier.includes(value);
+    case "kept":
+      // 星标是卡片上的一个读数，只有「全部 / 只看收藏」两档。
+      return item.kept;
     default:
       return true;
   }
 }
+
+/** 收藏是唯一一个由页面补出来的筛选项：后端不存「收藏」这个维度，它只是卡片上的一个
+ *  布尔值，计数也由当前列表实时数出来（2026-10-29）。 */
+const KEPT_FILTER: OpportunityFilter = {
+  key: "kept",
+  title: "收藏",
+  options: [{ value: "", label: "全部" }, { value: "1", label: "只看收藏" }],
+};
 
 /** One stored timestamp, cut to the minute: the seconds never matter and the string is long. */
 const NOVELTY_LABELS: Record<string, string> = {
@@ -417,11 +430,15 @@ function Body({ item, full }: { item: OpportunityItem; full: boolean }) {
 
 /** One entry. Steps for an activity, a sentence for a project - and the trust state, which is
  *  three-valued on purpose: 未判定 is a reading, not a missing one. */
-function EntryCard({ item, trust, full, onState }: {
+function EntryCard({ item, trust, full, onState, onKeep, armed, onArm }: {
   item: OpportunityItem;
   trust: Record<string, { label: string; tone: string }>;
   full: boolean;
   onState: (slug: string, state: string) => void;
+  onKeep: (slug: string, kept: boolean) => void;
+  /** 取消收藏是二次确认：第一次点击只是把这张卡置为「待确认」。 */
+  armed: boolean;
+  onArm: (slug: string | null) => void;
 }) {
   const badge = trust[item.trust] ?? { label: item.trust, tone: "muted" };
   const handle = (item.organizer || "").replace(/^@/, "");
@@ -515,6 +532,17 @@ function EntryCard({ item, trust, full, onState }: {
         {/* 这一页唯一的写动作，而且是读者自己的：归档＝知道但不优先，删除＝不想要（软删，
             行与证据都留着）。它不动管线那半 —— 卡片照样说清"为什么它不在列表上"。 */}
         <span className="opp-acts">
+          <button type="button" className={"star" + (item.kept ? " on" : "")}
+            title={item.kept ? "取消收藏" : "收藏"}
+            onClick={() => (item.kept ? onArm(item.slug) : onKeep(item.slug, true))}>
+            <Icon as={Star} size={12} />
+          </button>
+          {armed ? (
+            <button type="button" className="star-confirm"
+              onClick={() => { onKeep(item.slug, false); onArm(null); }}>
+              取消收藏
+            </button>
+          ) : null}
           {item.user_state === "active" ? (
             <>
               <button type="button" title="归档（知道但不优先，管线不再更新它）"
@@ -565,6 +593,16 @@ export function OpportunityView() {
   const scanNow = useStartOpportunityScan();
   const stopScan = useCancelOpportunityScan();
   const setState = useSetOpportunityState();
+  const keep = useKeepOpportunity();
+  /** 取消收藏的确认只对一张卡、只维持五秒：点别的、等五秒、刷新，都会自己收回。 */
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setArmed(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
   const settings = useOpportunitySettingsState();
   /** 报告 / 设定：与雷达顶栏那条一样，是这一页的两面。 */
   const [view, setView] = useState<"report" | "settings">(
@@ -599,7 +637,18 @@ export function OpportunityView() {
 
   const data = query.data;
   const form: OpportunityForm = data?.form ?? {};
-  const groups: OpportunityFilter[] = data?.filters ?? [];
+  /** The backend's groups, with 收藏 folded in right after 状态: one more facet, not a tab. */
+  const groups: OpportunityFilter[] = useMemo(() => {
+    const base = data?.filters ?? [];
+    const out: OpportunityFilter[] = [];
+    for (const group of base) {
+      out.push(group);
+      if (group.key === "status") {
+        out.push(KEPT_FILTER);
+      }
+    }
+    return out;
+  }, [data?.filters]);
   const sorts = data?.sorts ?? [];
   const trustLabels = form.trust ?? {};
   const items = data?.items ?? [];
@@ -668,6 +717,8 @@ export function OpportunityView() {
   /** 已处理：读者自己按下去的两个桶。「全部」是可见的退出口，和生态 / 状态同一套结构。 */
   const processedTotal = tabCounts.archived + tabCounts.deleted;
   const showProcessed = processedTotal > 0 || tab === "archived" || tab === "deleted";
+  /** 收藏的计数先按其它筛选收窄，再数带星的：和状态 / 生态同一套读数规则。 */
+  const keptScope = statusScope.filter((item) => matches(item, "status", value("status")));
   const processedRows = ([
     ["all", "全部", processedTotal],
     ["archived", "归档", tabCounts.archived],
@@ -944,6 +995,7 @@ export function OpportunityView() {
             const total = group.key === "status" ? statusScope.length
               : group.key === "ecosystem" ? ecosystemItems.length
                 : group.key === "category_group" ? categoryGroupItems.length
+                  : group.key === "kept" ? keptScope.length
                   : group.options.find((option) => !option.value)?.count ?? null;
             const shut = !!folded[group.key];
             return (
@@ -973,6 +1025,10 @@ export function OpportunityView() {
                       ? categoryGroupItems.filter(
                         (item) => item.category_group === option.value).length
                       : categoryGroupItems.length;
+                  } else if (group.key === "kept") {
+                    count = option.value
+                      ? keptScope.filter((item) => item.kept).length
+                      : keptScope.length;
                   }
                   return (
                     <div
@@ -1122,6 +1178,9 @@ export function OpportunityView() {
               {shown.map((item) => (
                 <EntryCard item={item} trust={trustLabels} full={openAll}
                   onState={(slug, state) => setState.mutate({ slug, state })}
+                  onKeep={(slug, kept) => keep.mutate({ slug, kept })}
+                  armed={armed === item.slug}
+                  onArm={setArmed}
                   key={item.slug + ":" + bulkTick} />
               ))}
             </div>
