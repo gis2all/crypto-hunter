@@ -1462,6 +1462,418 @@
     }
    }
   },
+  "/api/v1/opportunity": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "List Opportunities",
+    "description": "Everything the page draws, in one read.\n\nThe un-promoted rows come back with the promoted ones and are told apart by `status`: a\npage that only ever received successes could not answer \"why is this not on the list\", and\nthat question is the whole reason the gate records a reason.",
+    "operationId": "list_opportunities_api_v1_opportunity_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 300,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunityListOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/settings": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Read Settings",
+    "description": "The knobs this module runs on, as the 设定 tab draws them.",
+    "operationId": "read_settings_api_v1_opportunity_settings_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunitySettingsOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Save Settings",
+    "description": "Save what the page sent. Unknown keys are ignored rather than stored.",
+    "operationId": "save_settings_api_v1_opportunity_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OpportunitySettingsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunitySettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/scans": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "List Scans",
+    "description": "Every scan so far, newest first: the 归档 tab and the strip under the bar.",
+    "operationId": "list_scans_api_v1_opportunity_scans_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 20,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/OpportunityScanRowOut"
+         },
+         "title": "Response List Scans Api V1 Opportunity Scans Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/queues": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Read Queues",
+    "description": "What is still waiting: 未分组 / 未抽取 / 溯源失败，各带条数与分数最高的几条。",
+    "operationId": "read_queues_api_v1_opportunity_queues_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 0,
+       "default": 6,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "scan",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "只看这一轮抓到的帖子",
+       "title": "Scan"
+      },
+      "description": "只看这一轮抓到的帖子"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Queues Api V1 Opportunity Queues Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/items/{slug}": {
+   "patch": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Set Item State",
+    "description": "归档 / 删除 / 恢复 one entry, by hand.\n\nThe one write this page has, and it is the reader's own: 归档 is \"I know about this and it is\nnot a priority\", 删除 is \"I do not want it\" (soft - the row and its evidence stay). Neither\ntouches the pipeline's reading, so the card keeps saying why it is not on the list.",
+    "operationId": "set_item_state_api_v1_opportunity_items__slug__patch",
+    "parameters": [
+     {
+      "name": "slug",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Slug"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OpportunityStateIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunityItemOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/sources": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "List Sources",
+    "description": "The watchlist as it stands: what a scan will read next time.",
+    "operationId": "list_sources_api_v1_opportunity_sources_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/OpportunitySourceOut"
+         },
+         "type": "array",
+         "title": "Response List Sources Api V1 Opportunity Sources Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/scan": {
+   "post": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Start Scan",
+    "description": "Start one scan and answer with the row to poll.\n\nA second scan is refused while one is running rather than queued: two scans read the same\ntimelines, the X throttle serialises them anyway, and the second one would only pay twice\nfor the same material.",
+    "operationId": "start_scan_api_v1_opportunity_scan_post",
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunityScanOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/scans/{scan_id}/cancel": {
+   "post": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Cancel Scan",
+    "description": "Ask the running scan to stop. Idempotent, and never an error for a scan that just ended.\n\nThe page may have been polling a row that finished between the click and this call, and \"it\nis not running any more\" is the answer the reader wanted - so a cancel for an unknown or\nfinished scan answers `cancelled: false` with the reason rather than a 404. The scan stops at\nthe next X call rather than at the end of one, which is what makes it worth having: the thing\nbeing waited on is usually a rate limit.",
+    "operationId": "cancel_scan_api_v1_opportunity_scans__scan_id__cancel_post",
+    "parameters": [
+     {
+      "name": "scan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scan Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Cancel Scan Api V1 Opportunity Scans  Scan Id  Cancel Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/opportunity/scans/{scan_id}": {
+   "get": {
+    "tags": [
+     "opportunity"
+    ],
+    "summary": "Read Scan",
+    "operationId": "read_scan_api_v1_opportunity_scans__scan_id__get",
+    "parameters": [
+     {
+      "name": "scan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scan Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpportunityScanOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/system/form": {
    "get": {
     "tags": [
@@ -1476,6 +1888,136 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/SystemFormOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/log": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Get Log",
+    "description": "This process's stderr, last `tail` lines, optionally filtered by a substring.\n\nThe launcher redirects stderr into `log/api-run.err.log`; reading it here is one URL away\nfrom the browser instead of a shell round trip, which is what a reader wants when a round\nleft a line worth looking at.",
+    "operationId": "get_log_api_v1_system_log_get",
+    "parameters": [
+     {
+      "name": "tail",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 200,
+       "title": "Tail"
+      }
+     },
+     {
+      "name": "grep",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Grep"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/system/logs": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Get Logs",
+    "description": "The last few hundred records, structured and numbered, so `?since=` returns only what is\nnew. The file above keeps everything a shell would want; this keeps what a page can poll.",
+    "operationId": "get_logs_api_v1_system_logs_get",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 0,
+       "title": "Since"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "level",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Level"
+      }
+     },
+     {
+      "name": "name",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Logs Api V1 System Logs Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
         }
        }
       }
@@ -3094,6 +3636,28 @@
        }
       ],
       "title": "Seconds"
+     },
+     "done": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Done"
+     },
+     "total": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Total"
      }
     },
     "type": "object",
@@ -3103,7 +3667,7 @@
      "state"
     ],
     "title": "JobStageOut",
-    "description": "One row of a search's step list: what the stage is called and where it has got to.\n\nThe four states are the ones a round's step list draws too (pending / run / done /\nfailed), so the two panels cannot disagree about what a stopped stage looks like.\n`seconds` is filled the moment the stage ends and stays empty until then."
+    "description": "One row of a search's step list: what the stage is called and where it has got to.\n\nThe four states are the ones a round's step list draws too (pending / run / done /\nfailed), so the two panels cannot disagree about what a stopped stage looks like.\n`seconds` is filled the moment the stage ends and stays empty until then.\n\n`done` / `total` are the **inside** of a running stage: how many of its units it has got\nthrough. A scan's collect stage is six minutes of X calls, while its grouping stage is one\nfull-text call over every pending post (plus at most one repair call); without these two\nnumbers the page can only say \"running\" for minutes on end, which is what \"it looks stuck\"\nmeant (user, 2026-10-18)."
    },
    "LabelIn": {
     "properties": {
@@ -3436,6 +4000,915 @@
      "value"
     ],
     "title": "MetricOut"
+   },
+   "OpportunityFilterOptionOut": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Count"
+     },
+     "type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Type"
+     }
+    },
+    "type": "object",
+    "required": [
+     "value",
+     "label"
+    ],
+    "title": "OpportunityFilterOptionOut",
+    "description": "One row of the filter panel. `value` is empty for 全部."
+   },
+   "OpportunityFilterOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "options": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunityFilterOptionOut"
+      },
+      "type": "array",
+      "title": "Options"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "options"
+    ],
+    "title": "OpportunityFilterOut",
+    "description": "One group in the panel. A group with fewer than two real choices is not sent at all."
+   },
+   "OpportunityItemOut": {
+    "properties": {
+     "slug": {
+      "type": "string",
+      "title": "Slug"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "category_group": {
+      "type": "string",
+      "title": "Category Group"
+     },
+     "category": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Category"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "organizer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Organizer"
+     },
+     "official_account": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Official Account"
+     },
+     "official_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Official Url"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySourceLinkOut"
+      },
+      "type": "array",
+      "title": "Sources",
+      "default": []
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "trust": {
+      "type": "string",
+      "title": "Trust"
+     },
+     "trust_basis": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trust Basis"
+     },
+     "ecosystem": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ecosystem"
+     },
+     "chain_type": {
+      "type": "string",
+      "title": "Chain Type",
+      "default": "unknown"
+     },
+     "chain_public": {
+      "type": "boolean",
+      "title": "Chain Public",
+      "default": false
+     },
+     "source_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Type"
+     },
+     "risk": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Risk"
+     },
+     "barrier": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Barrier",
+      "default": []
+     },
+     "maturity": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maturity"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "deadline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deadline"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "user_state": {
+      "type": "string",
+      "title": "User State",
+      "default": "active"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "heat": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Heat"
+     },
+     "heat_band": {
+      "type": "string",
+      "title": "Heat Band",
+      "default": "未判定"
+     },
+     "heat_basis": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Heat Basis"
+     },
+     "discovered_at": {
+      "type": "string",
+      "title": "Discovered At"
+     },
+     "source_kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Kind"
+     },
+     "source_ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Ref"
+     },
+     "extract_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Extract Version"
+     },
+     "novelty": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Novelty"
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunityStepOut"
+      },
+      "type": "array",
+      "title": "Steps",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "slug",
+     "kind",
+     "category_group",
+     "title",
+     "trust",
+     "status",
+     "discovered_at"
+    ],
+    "title": "OpportunityItemOut",
+    "description": "One entry: an activity with steps, or a project with a sentence.\n\nEverything a reader needs is here, steps included - the list prints them under the entry,\nand a second request to read the instructions for something already on screen would be a\nround trip for text this query already has."
+   },
+   "OpportunityListOut": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunityItemOut"
+      },
+      "type": "array",
+      "title": "Items",
+      "default": []
+     },
+     "counts": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Counts",
+      "default": {}
+     },
+     "scan": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/OpportunityScanOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "filters": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunityFilterOut"
+      },
+      "type": "array",
+      "title": "Filters",
+      "default": []
+     },
+     "sorts": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySortOut"
+      },
+      "type": "array",
+      "title": "Sorts",
+      "default": []
+     },
+     "form": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Form",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "OpportunityListOut",
+    "description": "The page's single read: the entries, how many sit in each state, and the last scan."
+   },
+   "OpportunityScanOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "trigger": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trigger"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "stages": {
+      "items": {
+       "$ref": "#/components/schemas/JobStageOut"
+      },
+      "type": "array",
+      "title": "Stages",
+      "default": []
+     },
+     "counters": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Counters",
+      "default": {}
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "started_at": {
+      "type": "string",
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "status",
+     "started_at"
+    ],
+    "title": "OpportunityScanOut",
+    "description": "One scan, as the page polls it: the stages it walks and what each one found."
+   },
+   "OpportunityScanRowOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "started_at": {
+      "type": "string",
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "counters": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Counters",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "status",
+     "started_at"
+    ],
+    "title": "OpportunityScanRowOut",
+    "description": "One past scan, as the 归档 tab and the time strip read it."
+   },
+   "OpportunitySettingBlockOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "columns": {
+      "type": "integer",
+      "title": "Columns",
+      "default": 1
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySettingGroupOut"
+      },
+      "type": "array",
+      "title": "Groups",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title"
+    ],
+    "title": "OpportunitySettingBlockOut"
+   },
+   "OpportunitySettingGroupOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "fields": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySettingOut"
+      },
+      "type": "array",
+      "title": "Fields",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title"
+    ],
+    "title": "OpportunitySettingGroupOut"
+   },
+   "OpportunitySettingOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "string"
+       }
+      ],
+      "title": "Value"
+     },
+     "min": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Min"
+     },
+     "max": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Max"
+     },
+     "hint": {
+      "type": "string",
+      "title": "Hint"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "label",
+     "value",
+     "hint",
+     "kind"
+    ],
+    "title": "OpportunitySettingOut",
+    "description": "One knob on the 设定 tab: what it is called, what it is now, and what it does."
+   },
+   "OpportunitySettingsIn": {
+    "properties": {
+     "values": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Values",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "OpportunitySettingsIn"
+   },
+   "OpportunitySettingsOut": {
+    "properties": {
+     "fields": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySettingOut"
+      },
+      "type": "array",
+      "title": "Fields",
+      "default": []
+     },
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/OpportunitySettingBlockOut"
+      },
+      "type": "array",
+      "title": "Blocks",
+      "default": []
+     },
+     "dirty_hint": {
+      "type": "string",
+      "title": "Dirty Hint",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "OpportunitySettingsOut"
+   },
+   "OpportunitySortOut": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "dirs": {
+      "items": {
+       "prefixItems": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "string"
+        }
+       ],
+       "type": "array",
+       "maxItems": 2,
+       "minItems": 2
+      },
+      "type": "array",
+      "title": "Dirs"
+     }
+    },
+    "type": "object",
+    "required": [
+     "value",
+     "label",
+     "dirs"
+    ],
+    "title": "OpportunitySortOut",
+    "description": "One sort key and the two directions it reads in, as (value, label) pairs."
+   },
+   "OpportunitySourceLinkOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "url": {
+      "type": "string",
+      "title": "Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind",
+     "label",
+     "url"
+    ],
+    "title": "OpportunitySourceLinkOut",
+    "description": "One clickable source on a card: official account, site, doc, or the original post."
+   },
+   "OpportunitySourceOut": {
+    "properties": {
+     "target": {
+      "type": "string",
+      "title": "Target"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "ecosystem": {
+      "type": "string",
+      "title": "Ecosystem"
+     },
+     "family": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Family"
+     },
+     "cluster": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cluster"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "window_hours": {
+      "type": "integer",
+      "title": "Window Hours",
+      "default": 24
+     },
+     "slice_hours": {
+      "type": "integer",
+      "title": "Slice Hours",
+      "default": 4
+     },
+     "max_results": {
+      "type": "integer",
+      "title": "Max Results",
+      "default": 40
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "added_at": {
+      "type": "string",
+      "title": "Added At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "target",
+     "kind",
+     "ecosystem",
+     "enabled",
+     "added_at"
+    ],
+    "title": "OpportunitySourceOut",
+    "description": "One watchlist row: what a scan looks at, and what verified it."
+   },
+   "OpportunityStateIn": {
+    "properties": {
+     "user_state": {
+      "type": "string",
+      "title": "User State"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_state"
+    ],
+    "title": "OpportunityStateIn",
+    "description": "What the reader is setting one entry to."
+   },
+   "OpportunityStepOut": {
+    "properties": {
+     "ordinal": {
+      "type": "integer",
+      "title": "Ordinal"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "body": {
+      "type": "string",
+      "title": "Body"
+     },
+     "source_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Url"
+     },
+     "source_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ordinal",
+     "body"
+    ],
+    "title": "OpportunityStepOut",
+    "description": "One participation step, with the page it was read from."
    },
    "PillOut": {
     "properties": {
@@ -4045,6 +5518,14 @@
       },
       "type": "array",
       "title": "Blocks"
+     },
+     "sessions": {
+      "items": {
+       "$ref": "#/components/schemas/XSessionOut"
+      },
+      "type": "array",
+      "title": "Sessions",
+      "default": []
      }
     },
     "type": "object",
@@ -4061,6 +5542,20 @@
       "additionalProperties": true,
       "type": "object",
       "title": "Patch"
+     },
+     "sessions": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/XSessionIn"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sessions"
      }
     },
     "type": "object",
@@ -4192,6 +5687,13 @@
      "note": {
       "type": "string",
       "title": "Note"
+     },
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/SystemTestLineOut"
+      },
+      "type": "array",
+      "title": "Lines"
      }
     },
     "type": "object",
@@ -4200,7 +5702,7 @@
      "note"
     ],
     "title": "SystemXOut",
-    "description": "Whether the X session still works, in the client's own words.\n\nOne sentence rather than 测试连接's line per key: there is one session, and it either is\nlogged in or says why it is not."
+    "description": "Whether the X session still works, in the client's own words.\n\nA line per session the page holds, in the order they are drawn: each one either is logged\nin or says why it is not. `note` summarises them for a single-session file."
    },
    "ValidationError": {
     "properties": {
@@ -4241,6 +5743,74 @@
      "type"
     ],
     "title": "ValidationError"
+   },
+   "XSessionIn": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "was_label": {
+      "type": "string",
+      "title": "Was Label",
+      "default": ""
+     },
+     "auth_token": {
+      "type": "string",
+      "title": "Auth Token",
+      "default": ""
+     },
+     "ct0": {
+      "type": "string",
+      "title": "Ct0",
+      "default": ""
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "label"
+    ],
+    "title": "XSessionIn",
+    "description": "What the page sends back: a blank secret keeps the one already stored.\n\n`was_label` is the label the row was loaded under. A rename sends the new label and the old\none, so the blank boxes still find the cookie they stand for - matching on the new label\nalone made every rename look like a session with no cookies."
+   },
+   "XSessionOut": {
+    "properties": {
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "mask_auth": {
+      "type": "string",
+      "title": "Mask Auth",
+      "default": ""
+     },
+     "mask_ct0": {
+      "type": "string",
+      "title": "Mask Ct0",
+      "default": ""
+     },
+     "state": {
+      "type": "string",
+      "title": "State",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "label"
+    ],
+    "title": "XSessionOut",
+    "description": "One X session as the 系统设置 page may see it: a label, a mask, a switch."
    }
   }
  }

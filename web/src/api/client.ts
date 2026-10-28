@@ -31,6 +31,18 @@ export type Funnel = components["schemas"]["FunnelOut"];
 export type Favorite = components["schemas"]["FavoriteOut"];
 export type Job = components["schemas"]["JobOut"];
 export type JobStage = components["schemas"]["JobStageOut"];
+export type OpportunityList = components["schemas"]["OpportunityListOut"];
+export type OpportunityItem = components["schemas"]["OpportunityItemOut"];
+export type OpportunityStep = components["schemas"]["OpportunityStepOut"];
+export type OpportunitySource = components["schemas"]["OpportunitySourceOut"];
+export type OpportunityScan = components["schemas"]["OpportunityScanOut"];
+export type OpportunityFilter = components["schemas"]["OpportunityFilterOut"];
+export type OpportunitySetting = components["schemas"]["OpportunitySettingOut"];
+export type OpportunitySettings = components["schemas"]["OpportunitySettingsOut"];
+export type OpportunitySettingBlock = components["schemas"]["OpportunitySettingBlockOut"];
+export type OpportunitySettingGroup = components["schemas"]["OpportunitySettingGroupOut"];
+export type OpportunityScanRow = components["schemas"]["OpportunityScanRowOut"];
+export type OpportunitySort = components["schemas"]["OpportunitySortOut"];
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
@@ -248,8 +260,9 @@ export const collectFavorite = (chainId: string, ca: string) =>
  *  file, so a save writes exactly the lines it names. */
 export const getSystemForm = () => request<SystemForm>("/system/form");
 
-export const putSystem = (patch: Record<string, unknown>) =>
-  request<SystemForm>("/system", { method: "PUT", body: JSON.stringify({ patch }) });
+export const putSystem = (patch: Record<string, unknown>, sessions?: XSessionDraft[]) =>
+  request<SystemForm>("/system",
+    { method: "PUT", body: JSON.stringify(sessions ? { patch, sessions } : { patch }) });
 
 /** Ask the endpoint what it serves. Read with the rows as they stand on screen, unsaved: a
  *  form that had to be saved before it could be tested would make the operator store an
@@ -262,8 +275,83 @@ export const getSystemModels = (patch: Record<string, unknown>) =>
 export const testSystem = (patch: Record<string, unknown>) =>
   request<SystemTest>("/system/test", { method: "POST", body: JSON.stringify({ patch }) });
 
-/** The X session's own probe: one read of the account the cookies claim to be, which is the
+/** The X sessions' own probe: one read of each account the cookies claim to be, which is the
  *  cheapest question that tells a session from two strings that look like one. Asked with the
- *  page's unsaved rows, and unrecorded - a search spends a rate budget a round needs. */
-export const probeXSession = (patch: Record<string, unknown>) =>
-  request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch }) });
+ *  page's unsaved rows - a blank secret standing for the stored one - and unrecorded. */
+export const probeXSession = (patch: Record<string, unknown>, sessions?: XSessionDraft[]) =>
+  request<SystemX>("/system/x", { method: "POST", body: JSON.stringify({ patch, sessions }) });
+
+/** X 会话（2026-10-28）：一条 = 一条并行 lane。列表随系统设置一起保存；密钥只回指纹。 */
+export type XSessionDraft = {
+  label: string;
+  /** The label this row was loaded under: a rename keeps the cookies the blank boxes stand for. */
+  was_label?: string;
+  /** The pool's reading as the page last saw it: "" | "cooling" | "disabled". */
+  state?: string;
+  auth_token: string;
+  ct0: string;
+  enabled: boolean;
+};
+
+/** 新机会: what the outside world is offering, found by this app's own scans.
+ *
+ *  One read for the whole page - entries, the counts behind its header, the last scan and the
+ *  page's own copy. The entries carry their steps, so opening one is not a second request.
+ *  Nothing here is scoped by a chain or a set of settings: an activity belongs to no chain,
+ *  which is why this is a Place of its own rather than a tab under a radar. */
+export const getOpportunity = () => request<OpportunityList>("/opportunity");
+
+/** The watchlist: what the next scan will read, and what verified each row. */
+export const listOpportunitySources = () =>
+  request<OpportunitySource[]>("/opportunity/sources");
+
+/** Start one scan and answer with the row to poll. A 409 means one is already running -
+ *  the backend refuses rather than queues, because two scans read the same timelines. */
+export const startOpportunityScan = () =>
+  request<OpportunityScan>("/opportunity/scan", { method: "POST" });
+
+/** 设定页的字段与分组：键、名字、当前值、范围与说明，全部由后端给。 */
+export const getOpportunitySettings = () =>
+  request<OpportunitySettings>("/opportunity/settings");
+
+export const saveOpportunitySettings = (values: Record<string, number>) =>
+  request<OpportunitySettings>("/opportunity/settings", {
+    method: "PUT",
+    body: JSON.stringify({ values }),
+  });
+
+/** 每一轮扫描，最新在前：归档 tab 与顶栏那条时间轮次读它。 */
+export const listOpportunityScans = (limit = 20) =>
+  request<OpportunityScanRow[]>("/opportunity/scans?limit=" + limit);
+
+/** 还在排队的东西：未分组 / 未抽取 / 溯源失败。 */
+export const getOpportunityQueues = (scan?: string) =>
+  request<{
+    unclassified: { count: number; top: { ref: string; handle: string; text: string; score: number }[] };
+    unextracted: {
+      count: number;
+      top: { ref: string; handle: string; text: string; score: number; project_name?: string | null }[];
+    };
+    trace_failed: {
+      count: number;
+      top: { ref: string; handle: string; text: string; score: number; project_name?: string | null }[];
+    };
+  }>("/opportunity/queues?limit=0" + (scan ? "&scan=" + encodeURIComponent(scan) : ""));
+
+/** 归档 / 删除 / 恢复 one entry. The page's only write, and it is the reader's own. */
+export const setOpportunityState = (slug: string, userState: string) =>
+  request<OpportunityItem>("/opportunity/items/" + encodeURIComponent(slug), {
+    method: "PATCH",
+    body: JSON.stringify({ user_state: userState }),
+  });
+
+export const getOpportunityScan = (scanId: string) =>
+  request<OpportunityScan>("/opportunity/scans/" + encodeURIComponent(scanId));
+
+/** Ask the running scan to stop. Answers `cancelled: false` when there is nothing to stop -
+ *  a scan that finished between the click and the call is not an error. The scan stops at the
+ *  next X call rather than at the end of one, which is the point: what it is usually waiting on
+ *  is a rate limit. */
+export const cancelOpportunityScan = (scanId: string) =>
+  request<{ cancelled: boolean; reason: string }>(
+    "/opportunity/scans/" + encodeURIComponent(scanId) + "/cancel", { method: "POST" });

@@ -11,6 +11,8 @@ coerces each leaf to the type of the current value (`config.coerce_into`).
 
 from __future__ import annotations
 
+from ...opportunity import heat, schema
+
 from typing import Any
 
 from ... import config
@@ -560,8 +562,6 @@ SYSTEM_LABELS = {
     "llm.tries": "重试次数",
     "llm.key_cooldown": "失效冷却",
     "research_workers": "调研并发",
-    "x.auth_token": "auth_token",
-    "x.ct0": "ct0",
     "x.cli": "搜索客户端",
     "log_level": "日志等级",
 }
@@ -637,14 +637,13 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
         row("research_workers", "num"),
     ])
     session = group("x-session", "X会话", (
-        "两个值来自一个已登录 x.com 的会话 cookie（DevTools → Application → Cookies），"
-        "用一个一次性账号：搜索是会被限流的读请求，429 会让币丢掉链接。"
-        "「测试连接」用它读一次这个账号本身：一次请求，不占搜索额度。"
+        "会话本身在页面下方的「X 会话」里，一条 = 一条并行 lane（429 冷却、401 停用）。"
+        "这里只剩承载会话的客户端。「测试连接」用第一条会话问一次这个账号本身："
+        "一次请求，不占搜索额度。"
     ), [
-        row("x.auth_token"),
-        row("x.ct0"),
         row("x.cli"),
     ], actions=[
+        {"id": "add-session", "label": "添加会话"},
         {"id": "x", "label": "测试连接"},
     ])
     level = group("log-level", "等级", (
@@ -657,3 +656,133 @@ def system_blocks(state: dict[str, dict]) -> list[dict]:
         {"key": "x", "title": "搜索", "columns": 1, "groups": [session]},
         {"key": "log", "title": "日志", "columns": 1, "groups": [level]},
     ]
+
+
+# ---------------------------------------------------------------- 新机会（页面文案）
+
+#: The two lists the page draws, in the order it draws them. The key is the entry's `kind`.
+#: The two kinds, as the panel's 类别 options are labelled. The two lists they used to title are
+#: gone (one list + a status filter, 2026-10-18), and their hints went with them - a hint for a
+#: section nothing renders is copy with no reader.
+OPPORTUNITY_LISTS = (
+    ("activity", "可参与活动"),
+    ("project", "新项目协议"),
+)
+
+#: The trust states, in the reader's words. Three of them, and 未判定 is one: an entry nobody
+#: could confirm must not read as either confirmed or refuted.
+OPPORTUNITY_TRUST = {
+    "official": {"label": "官方", "tone": "ok"},
+    "community": {"label": "社区", "tone": "warn"},
+    "unjudged": {"label": "未判定", "tone": "muted"},
+}
+
+
+#: 新机会的筛选面板：分组顺序、键名与它们读的字段。选项由数据决定（只有真的出现过的
+#: 类目 / 门槛 / 生态才成为一行），标题与说法在这里，前端不识别任何一条。
+OPPORTUNITY_STATUS = (("promoted", "可参与"), ("candidate", "未晋升"), ("retired", "已结束"))
+#: 来源类型只有两种（2026-10-18 起 X 单源）：一个账号（身份库，不再读时间线），或一条查询。
+OPPORTUNITY_SOURCE_LABELS = {
+    "official": "官方账号",
+    "query": "查询",
+}
+#: 排序键与它的两个方向。**热度不在其中**：它是来源帖自己的读数，换一批源就会变，
+#: 只做徽章与筛选（见 `api/app/opportunity/README.md` · 落地形状）。
+OPPORTUNITY_SORTS = (
+    ("discovered", "发现时间", (("desc", "从新到旧"), ("asc", "从旧到新"))),
+    ("deadline", "截止时间", (("asc", "从早到晚"), ("desc", "从晚到早"))),
+)
+
+
+def _present(values, keep: tuple[str, ...] = ()) -> list[str]:
+    """The options a group may offer: what the entries actually carry, in a fixed order.
+
+    A group that offers a category nobody used is a switch that can only ever empty the page,
+    which is the one kind of control this app does not ship. `keep` fixes the order where the
+    vocabulary has one (the eight barriers), so the rows do not shuffle between reads.
+    """
+    seen = {str(value) for value in values if value}
+    if keep:
+        return [name for name in keep if name in seen]
+    return sorted(seen)
+
+
+def opportunity_filters(items: list[dict], counts: dict) -> list[dict]:
+    """The panel: **大类, 生态, then 状态** - three groups (2026-10-26, user).
+
+    大类 is the upper reading of `category` (发行与分配 / 使用与增长 / …); 生态 is the axis a
+    reader actually browses by ("BTC 生态有什么"); 状态 is the one question the page has to keep
+    answerable: why is this not on the list. Every other group was noise - 类别 duplicated 类目,
+    核实 collapses once entries trace to an official home, and 门槛 / 热度 / 来源 are readings
+    the card itself already prints.
+
+    A group is only sent when it has at least two choices: 生态 with a single ecosystem present is
+    not a choice, and a group that can only empty the page is the kind of control this app does
+    not ship.
+    """
+    groups: list[dict] = []
+    # Retired rows keep their old `category` for the audit trail, but a label that only survives
+    # on rows the list no longer shows is a switch that can only empty the page - the exact thing
+    # this panel refuses to send. 其他 disappeared this way on 2026-10-27.
+    live = [item for item in items if item.get("user_state") != "deleted"]
+
+    # 大类：category 的上一层读法。顺序固定在 schema.CATEGORY_GROUPS，只列真的出现过的那些。
+    categories = _present(
+        (item.get("category_group")
+         or schema.category_group_for(item.get("category"), item.get("kind"))
+         for item in live), schema.CATEGORY_GROUPS)
+    if len(categories) > 1:
+        groups.append({"key": "category_group", "title": "大类", "options":
+                       [{"value": "", "label": "全部"}] + [
+                           {"value": name, "label": schema.CATEGORY_GROUP_LABELS.get(name, name)}
+                           for name in categories]})
+
+    # 已知链按 `CHAINS` 的顺序，枚举外的新链排在它们后面（按字母），多链与未判定永远最后。
+    # 未验证 / 未上线的链也留在这里，用 type 标明状态，不再另开一组。
+    ecosystems = schema.order_ecosystems(item.get("ecosystem") for item in live)
+    if len(ecosystems) > 1:
+        groups.append({"key": "ecosystem", "title": "生态", "options":
+                       [{"value": "", "label": "全部"}] +
+                       [{"value": name, "label": schema.ecosystem_label(name),
+                         "type": (None if name in (schema.MULTI, schema.UNJUDGED)
+                                  else (schema.chain_type(name)
+                                        if schema.chain_type(name) != "unknown"
+                                        else "unverified"))}
+                        for name in ecosystems]})
+
+    status = [{"value": "", "label": "全部", "count": None}] + [
+        {"value": key, "label": label,
+         # `opportunity_counts` keys read `status:kind`, so a status' total is the sum of its
+         # two kinds - which is also what makes 可参与 + 未晋升 + 已结束 equal the page's 条目.
+         "count": sum(value for name, value in counts.items() if name.startswith(key + ":"))}
+        for key, label in OPPORTUNITY_STATUS
+    ]
+    groups.append({"key": "status", "title": "状态", "options": status})
+    return groups
+
+
+def opportunity_sorts() -> list[dict]:
+    return [{"value": value, "label": label, "dirs": list(dirs)}
+            for value, label, dirs in OPPORTUNITY_SORTS]
+
+
+def opportunity_form() -> dict:
+    """The 新机会 page's own copy: what the page is, its trust words, and the空态.
+
+    Same rule as the settings page: the explanatory sentences live here and the frontend prints
+    them without recognising any of them. Button labels stay on the page, the way the CA search
+    page keeps its own - these are the sentences a reader has to be able to trust, and they have
+    to be one copy.
+    """
+    return {
+        "title": "新机会",
+        # 只留页面真的会画的那些（2026-10-18）：页头没有说明段，两个列表与两个折叠区已被
+        # 「一个列表 + 状态筛选」取代，所以 lists / pending_* / retired_* 都不再发。
+        # 热度口径挂在徽章的 tooltip 上，不占一行字。
+        "trust": OPPORTUNITY_TRUST,
+        "sources_title": "watchlist",
+        "sources_lead": ("扫描只读查询行（每条查询按时间切片）。官方账号已停读，"
+                         "只作为已知项目身份保留；项目官网与文档的刷新是下一步。"
+                         "种子来自 seeds/watchlist.yaml，之后以这张表为准。"),
+        "empty": "还没有扫描过。点「开始扫描」跑一次。",
+    }

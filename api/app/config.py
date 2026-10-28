@@ -82,7 +82,12 @@ SYSTEM_KEYS: tuple[tuple[str, str, str], ...] = (
 #: file keeps taking them, because an install may already have written one and needing the
 #: exception should not wait for a release. The test that pairs rows with keys reads this - a
 #: key is either a row or file-only, never both.
-FILE_ONLY_KEYS: frozenset[str] = frozenset({"llm.extra_headers"})
+FILE_ONLY_KEYS: frozenset[str] = frozenset({
+    "llm.extra_headers",
+    # X 会话从 2026-10-28 起是页面上的列表（x.cookies），这两行只留给旧文件兜底。
+    "x.auth_token",
+    "x.ct0",
+})
 
 #: What the file put in the environment, and what it put there. A value that is still exactly
 #: this is still the file's to withdraw; anything else means somebody else owns the variable

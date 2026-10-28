@@ -1,10 +1,11 @@
 import { Bot, Save, ScrollText, Search, Settings, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { errorText, getSystemModels, probeXSession, testSystem } from "../../api/client";
 import type { SettingsField, SystemModels, SystemTest, SystemX } from "../../api/client";
 import { useSaveSystem, useSystemForm } from "../../api/hooks";
+import type { XSessionDraft } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { Pick } from "../../components/Pick";
 import { NoteHelp } from "../settings/NoteHelp";
@@ -34,6 +35,15 @@ export function SystemView() {
   const save = useSaveSystem();
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
   const data = query.data;
+  /** X 会话列表：和上面的行一起进同一个 draft，走右上角的「保存并生效」。 */
+  const [sessions, setSessions] = useState<SessionDraft[]>([]);
+  useEffect(() => {
+    if (!data) return;
+    setSessions((data.sessions ?? []).map((row) => ({
+      label: row.label, was_label: row.label, auth_token: "", ct0: "", enabled: row.enabled,
+      mask_auth: row.mask_auth, mask_ct0: row.mask_ct0, state: row.state ?? "",
+    })));
+  }, [data]);
 
   // What an endpoint answered, held apart from the form on purpose: none of it is saved, and
   // leaving the page is meant to forget it. `choices` is keyed by the row the backend named
@@ -45,7 +55,11 @@ export function SystemView() {
     lines?: SystemTest["lines"] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const dirty = Object.keys(draft).length;
+  const saved = data?.sessions ?? [];
+  const sessionDirty = sessions.length !== saved.length
+    || sessions.some((row, at) => row.label !== saved[at]?.label
+      || row.auth_token !== "" || row.ct0 !== "");
+  const dirty = Object.keys(draft).length + (sessionDirty ? 1 : 0);
   const valueOf = (field: SettingsField): FieldValue =>
     field.key in draft ? draft[field.key] : (field.value as FieldValue);
 
@@ -55,29 +69,40 @@ export function SystemView() {
     if (dirty === 0) {
       return;
     }
-    save.mutate(draft, { onSuccess: () => setDraft({}) });
+    save.mutate({ patch: draft, sessions }, { onSuccess: () => setDraft({}) });
   };
 
   // A probe reads the rows as they stand on screen - the draft, not the file - so a wrong
   // endpoint can be found out before it is written down. A refusal is not an exception here:
   // it is the sentence the operator is after, printed beside the button that asked.
   const run = (action: string, groupKey: string) => {
+    if (action === "add-session") {
+      setSessions((prev) => [...prev, {
+        label: "cookie" + (prev.length + 1), was_label: "", auth_token: "", ct0: "", enabled: true,
+        mask_auth: "", mask_ct0: "", state: ""}]);
+      return;
+    }
     setBusy(action);
     // One union, named: three answers of three shapes go through one handler below.
     const call: Promise<SystemModels | SystemTest | SystemX> = action === "models"
       ? getSystemModels(draft)
-      : action === "x" ? probeXSession(draft) : testSystem(draft);
+      : action === "x"
+        ? probeXSession(draft, sessions.map(({ label, was_label, auth_token, ct0, enabled }) =>
+            ({ label, was_label, auth_token, ct0, enabled })))
+        : testSystem(draft);
     call
       .then((answer) => {
-        // One line per key is the one answer that is not a sentence; the other two carry a note.
-        if ("lines" in answer) {
-          setProbe({ group: groupKey, ok: answer.ok, lines: answer.lines });
+        // A list of lines is the shape two of the three answers can take; what is left is a
+        // sentence, and 获取模型 also hands back the models it found.
+        const lines = "lines" in answer ? answer.lines : undefined;
+        if (lines?.length) {
+          setProbe({ group: groupKey, ok: answer.ok, lines });
           return;
         }
         if ("apply_to" in answer && answer.apply_to && answer.models.length) {
           setChoices((was) => ({ ...was, [answer.apply_to]: answer.models }));
         }
-        setProbe({ group: groupKey, ok: answer.ok, note: answer.note });
+        setProbe({ group: groupKey, ok: answer.ok, note: "note" in answer ? answer.note : "" });
       })
       .catch((err) => setProbe({ group: groupKey, ok: false, note: errorText(err) }))
       .finally(() => setBusy(null));
@@ -147,6 +172,57 @@ export function SystemView() {
                     <NoteHelp text={group.detail} />
                   </div>
                   <div className="prows">
+                    {group.key === "x-session" ? sessions.map((row, index) => (
+                      <div className="sess-block" key={index}>
+                        <div className="prow sess-head">
+                          <label>
+                            会话 {index + 1}
+                            {row.state === "disabled" ? <span className="dim">已停用</span>
+                              : row.state === "cooling" ? <span className="dim">冷却中</span>
+                                : null}
+                          </label>
+                          <span className="spacer" />
+                          <button type="button" className="btn sec"
+                                  onClick={() => setSessions((prev) =>
+                                    prev.filter((_, at) => at !== index))}>
+                            移除
+                          </button>
+                        </div>
+                        <div className="prow sess">
+                          <label>标签</label>
+                          <span className="field">
+                            <input className="num" value={row.label}
+                                   onChange={(event) => setSessions((prev) => prev.map((item, at) =>
+                                     at === index ? { ...item, label: event.target.value } : item))} />
+                          </span>
+                        </div>
+                        <div className="prow sess">
+                          <label>auth_token</label>
+                          <span className="field">
+                            <input className="num" type="password" value={row.auth_token}
+                                   onChange={(event) => setSessions((prev) => prev.map((item, at) =>
+                                     at === index
+                                       ? { ...item, auth_token: event.target.value } : item))} />
+                            <span className="dim">
+                              {row.auth_token ? "未保存"
+                                : row.mask_auth ? "已配置 · " + row.mask_auth : "未配置"}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="prow sess">
+                          <label>ct0</label>
+                          <span className="field">
+                            <input className="num" type="password" value={row.ct0}
+                                   onChange={(event) => setSessions((prev) => prev.map((item, at) =>
+                                     at === index ? { ...item, ct0: event.target.value } : item))} />
+                            <span className="dim">
+                              {row.ct0 ? "未保存"
+                                : row.mask_ct0 ? "已配置 · " + row.mask_ct0 : "未配置"}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    )) : null}
                     {group.fields.map((field) => {
                       // A row the operating system owns arrives as a reading ("ro"), the same
                       // shape the settings page uses for a value this page cannot edit.
@@ -242,3 +318,5 @@ export function SystemView() {
     </div>
   );
 }
+
+type SessionDraft = XSessionDraft & { mask_auth: string; mask_ct0: string };

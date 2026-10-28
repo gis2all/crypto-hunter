@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -57,6 +56,17 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
     db.init_db()
     return config.DB_PATH
+
+
+@pytest.fixture(autouse=True)
+def _fresh_x_pool(tmp_path, monkeypatch):
+    """A pool per test: session health is process state and must not leak between tests."""
+    from app import config
+    from app.search import x_sessions
+
+    # 绝不能写这台机器的 config/system.yaml（2026-10-28：一次测试把它覆盖了）。
+    monkeypatch.setattr(config, "SYSTEM_PATH", tmp_path / "system.yaml")
+    monkeypatch.setattr(x_sessions, "_POOL", x_sessions.Pool())
 
 
 @pytest.fixture()

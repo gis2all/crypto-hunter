@@ -1,0 +1,861 @@
+# 新机会 watchlist 种子（v1）
+#
+# 用途：首次运行时播种 opportunity_sources 表（对标 config/chains/*.example.yaml 的播种方式：
+# 这份跟仓库，运行时那份在库里、由操作者增删）。字段对应表列：target / kind / ecosystem / note。
+#
+# 验证方式：official 类的 handle 全部用项目自己的 X 会话跑过 `twitter user <handle>` 确认存在；
+# note 里的证据是「凭什么说它是官方」——优先取项目自己官网上的 X 链接，其次是简介里的自我声明。
+# 验证日期 2026-10-18。handle 会改名（本轮抓到 Intract→FairDAO、Karak→OpenGDP、Axelar 迁移、
+# EigenLayer→EigenCloud），所以这份清单要定期复核，改名是常态而不是异常。
+#
+# 2026-10-27：official 行默认 enabled: false —— 不再读时间线，只作为身份库（known）；
+# 扫描只读 query 行。官网/文档刷新是下一步。
+#
+# 2026-10-27：query 行统一带排除词（交易大赛 / AMA / 抽奖 / 博彩 / 体育 / 娱乐 / 游戏 / 开户 /
+# 演唱会，以及 giveaway / lottery / casino / betting / sports / entertainment / gaming /
+# concert 等英文对应词），在 X 端先少占每片 40 条的名额；免费闸仍是第二层。
+
+checked_at: 2026-10-18
+checked_with: twitter user <handle> --json（项目自己的 X 会话）
+
+# ---------------------------------------------------------------- official
+official:
+  # 比特币生态
+  - target: atomicalsxyz
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: BitcoinStamps
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: BotanixLabs
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: citrea_xyz
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: fractal_bitcoin
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: LiquidiumWTF
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: MEonBTC
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: NodeMonkes
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Stacks
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: TaprootWizards
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: TrustlessLabs
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # DeFi（激励与积分）
+  - target: 0xfluid
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: aave
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: CurveFinance
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: driftprotocol
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: eigencloud
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "官网 eigenlayer.xyz 链接；原候选 @eigenlayer 不存在或不是本人"
+  - target: eigenfoundation
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "官网 eigenlayer.xyz 链接（Eigen Foundation）"
+  - target: ethena
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "官网 ethena.fi 链接；原候选 @ethena_labs 不存在或不是本人"
+  - target: GMX_IO
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: JupiterExchange
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: KaminoFinance
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: LidoFinance
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: marginfi
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: MorphoLabs
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: OpenGDP
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "官网 karak.network 链接 + 简介 Now OpenGDP；原候选 @Karak_Network 不存在或不是本人"
+  - target: pendle_fi
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: sparkfinance
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "官网 spark.fi 链接；原候选 @sparkdotfi 不存在或不是本人"
+  - target: symbioticfi
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # 交易所（打新公告）
+  - target: binance
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: bitget
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "官网 bitget.com 链接；原候选 @bitgetglobal 不存在或不是本人"
+  - target: BithumbOfficial
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Bybit_Official
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: coinbase
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Gate_io
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: HTX_Global
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: kucoincom
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: okx
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: upbitglobal
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # 基础设施
+  - target: AcrossProtocol
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: anoma
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: AvailProject
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: axelar
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "简介写着 now at @axelar + 官网链接；原候选 @axelarcore 不存在或不是本人"
+  - target: chainlink
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: EspressoSys
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Hyperlane
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: LayerZero_Labs
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: namada
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: RiscZero
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "官网 risczero.com 链接（@risc0 是别人）；原候选 @Risc0 不存在或不是本人"
+  - target: StargateFinance
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: SuccinctLabs
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: wormhole
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # 公链 / L2
+  - target: 0xPolygon
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Aptos
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: arbitrum
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: avax
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "官网 avax.network 链接（@Avalanche 是冰球队）；原候选 @Avalanche 不存在或不是本人"
+  - target: base
+    kind: official
+    ecosystem: base
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: berachain
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: celestia
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: cosmos
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: EclipseFND
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: ethereum
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: HyperliquidX
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: LineaBuild
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: MegaETH
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: monad_xyz
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: NEARProtocol
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Optimism
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Scroll_ZKP
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: SeiNetwork
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: solana
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: SonicLabs
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Starknet
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: SuiNetwork
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: ton_blockchain
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: zksync
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # 发射台
+  - target: aeroxyz
+    kind: official
+    ecosystem: base
+    enabled: false
+    note: "官网 aerodrome.finance 链接；原候选 @AerodromeFi 不存在或不是本人"
+  - target: bonkfun
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: boopdotfun
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: CoinList
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: daosdotfun
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: FjordFoundry
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: four_meme_
+    kind: official
+    ecosystem: bsc
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: LegionDotCC
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: MagicEden
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: MeteoraAG
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: orca_so
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: ordiscan_com
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "官网 ordiscan.com 链接；原候选 @ordiscan 不存在或不是本人"
+  - target: PancakeSwap
+    kind: official
+    ecosystem: bsc
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Polkastarter
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Pumpfun
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "官网 pump.fun 链接；原候选 @pumpdotfun 不存在或不是本人"
+  - target: Raydium
+    kind: official
+    ecosystem: solana
+    enabled: false
+    note: "官网 raydium.io 链接；原候选 @RaydiumProtocol 不存在或不是本人"
+  - target: unisat_wallet
+    kind: official
+    ecosystem: bitcoin
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Uniswap
+    kind: official
+    ecosystem: ethereum
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: virtuals_io
+    kind: official
+    ecosystem: base
+    enabled: false
+    note: "handle 存在（twitter user）"
+  # 任务 / 激励平台
+  - target: FairDAO_io
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "已改名：简介写着 formerly Intract Labs；原候选 @intractio 不存在或不是本人"
+  - target: Galxe
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: guildxyz
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: KaitoAI
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: layer3xyz
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: Port3Network
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: QuestN_com
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+  - target: zealy_io
+    kind: official
+    ecosystem: multi
+    enabled: false
+    note: "handle 存在（twitter user）"
+
+# ------------------------------------------------- 平台 / 交易所 / 目录（URL 类）
+# reachable 是 2026-10-18 的实测：200 走普通道，403/202 需要 curl_cffi 指纹道或 Playwright。
+catalog:
+  # 任务 / 激励平台
+  - target: https://galxe.com
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://zealy.io
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://layer3.xyz
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 403（需指纹道）"
+  - target: https://intract.io
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 403（需指纹道）；平台已改名 FairDAO"
+  - target: https://www.taskon.xyz
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://port3.io
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://guild.xyz
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://dorahacks.io
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；黑客松"
+  - target: https://ethglobal.com
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；黑客松"
+  - target: https://gitcoin.co
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；Grant"
+  - target: https://devfolio.co
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；黑客松"
+  - target: https://lablab.ai
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；黑客松 / AI"
+  - target: https://taikai.network
+    kind: platform
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200；黑客松"
+  # 交易所（打新公告）
+  - target: https://www.binance.com/en/support/announcement
+    kind: exchange
+    ecosystem: multi
+    enabled: true
+    note: "reachable 202（Cloudflare 挑战，需指纹道）"
+  - target: https://www.okx.com/support/hc/en-us
+    kind: exchange
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  # catalog
+  - target: https://fractalecosystem.io/categories
+    kind: catalog
+    ecosystem: bitcoin
+    enabled: true
+    note: "reachable 200"
+  - target: https://l2beat.com
+    kind: catalog
+    ecosystem: ethereum
+    enabled: true
+    note: "reachable 200"
+  - target: https://defillama.com
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 403（需指纹道）"
+  - target: https://rootdata.com
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://cryptorank.io/airdrops
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 403（需指纹道）"
+  - target: https://airdrops.io
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://dropstab.com
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 200"
+  - target: https://dappradar.com/airdrops
+    kind: catalog
+    ecosystem: multi
+    enabled: true
+    note: "reachable 403（需指纹道）"
+  - target: https://solana.com/ecosystem
+    kind: catalog
+    ecosystem: solana
+    enabled: true
+    note: "reachable 200"
+  - target: https://www.base.org/ecosystem
+    kind: catalog
+    ecosystem: base
+    enabled: true
+    note: "reachable 200"
+
+# ---------------------------------------------------------------- query（1–5 + discovery）
+# 2026-10-22：按机会族重建。每个 query 行带 family；旧 30 条由迁移禁用，不在这里重复。
+query:
+  # network
+  - target: '("run a node" OR "run your own node" OR "node sale" OR "validator node" OR "become a validator" OR restaking) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：节点、验证者、sequencer、prover、restaking"
+  - target: '(testnet OR devnet OR faucet) ("run a node" OR "validator node" OR "test transaction") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：测试网参与与 faucet"
+  - target: '(测试网 OR 节点) (运行 OR 注册 OR 销售) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: network
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 网络与安全：中文节点/测试网"
+  # capital
+  - target: '("points program" OR "season 1" OR "season 2" OR APR OR APY) (deposit OR "provide liquidity" OR stake OR "open a vault" OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：积分、季节、收益率与资金动作"
+  - target: '("liquidity mining" OR "yield farming") (deposit OR "provide liquidity" OR stake OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：挖矿、LP、借贷"
+  - target: '(积分 OR 流动性挖矿 OR 质押) (存入 OR 提供流动性 OR 金库 OR 复投) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: capital
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 资本与流动性：中文积分与资金动作"
+  # usage
+  - target: '(testnet OR faucet OR "public beta" OR "early access") ("complete quest" OR quest OR "check-in" OR waitlist) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：测试网、积分、任务"
+  - target: '(from:Galxe OR from:Layer3xyz OR from:zealy_io OR from:TaskOn_xyz OR from:IntractHQ) (quest OR points OR check-in) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：任务平台"
+  - target: '(测试网 OR 水龙头 OR 公测) (任务 OR 积分 OR 签到) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: usage
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 使用与增长：中文任务与测试网"
+  # issuance
+  - target: '("free mint" OR mint OR allowlist OR IDO OR LBP OR launchpad OR TGE OR "token sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：Mint、白名单、IDO、TGE"
+  - target: '("fair launch" OR "bonding curve" OR "node sale" OR "token sale" OR "public sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：公平发行、曲线、节点销售"
+  - target: '(打新 OR 认购 OR 免费铸造 OR 空投领取 OR 白名单) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: issuance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 发行与分配：中文发行动作"
+  # governance
+  - target: '("vote on" OR "delegate votes" OR "governance proposal" OR gauge) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：投票、委托、ve、gauge"
+  - target: '(治理 OR 投票 OR 委托) (提案 OR Snapshot) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：中文治理"
+  - target: '("governance proposal" OR "delegate votes" OR "cast your vote") (DAO OR token OR protocol) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: governance
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 所有权与治理：DAO 提案"
+  # discovery
+  - target: '("new protocol" OR "new mechanism" OR "new gameplay" OR "new standard" OR "new primitive") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: discovery
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 独立发现：新协议、新机制、新玩法"
+  - target: '("new standard" OR "new primitive" OR "new gameplay") (protocol OR app OR SDK) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+    kind: query
+    family: discovery
+    ecosystem: multi
+    window_hours: 24
+    slice_hours: 4
+    max_results: 40
+    enabled: true
+    note: "2026-10-22 独立发现：新 primitives 与项目发布"
+
+# ---------------------------------------------------------------- 待人工确认
+# 本轮没能验证的：handle 不存在、站点不挂 X 链接、或域名已迁走。
+# 按设计稿的规矩，宁可不入库也不写一个猜的 handle（trust: unjudged）。
+pending:
+  - target: Flashbots
+    why: "flashbots.net 渲染后无 X 链接；搜域名只得到噪音"
+  - target: Boundless
+    why: "boundless.xyz 无 X 链接（静态 7.5KB、渲染后同样没有）"
+  - target: Story
+    why: "story.foundation 链接的是 @datafdn（DATA Foundation，另一个组织）"
+  - target: Movement
+    why: "movementlabs.xyz 渲染结果为空白页"
+  - target: Wonderverse
+    why: "域名跳到 wonderverse.com 且无 X 链接；@Wonderverse 是别人"
+  - target: Seedify
+    why: "seedify.fund 已跳转到 testnet.vibevibe.fun（疑似改版 / 迁移）"
+  - target: TaskOn
+    why: "@taskon_xyz 存在，但显示名是「Taskon Xyz ❤️ Memecoin」，疑似粉丝号"
+  - target: BitVM Alliance
+    why: "@BitVM_Alliance 不存在；未找到官网"
+  - target: Fiamma
+    why: "@fiamma_btc 不存在；未找到官网"
+  - target: Alkanes
+    why: "@alkanes_btc 不存在；未找到官方号"
+  - target: Quantum Cats
+    why: "quantumcats.xyz 链接 @QuantumCatsXYZ，但该 handle 已不可解析"

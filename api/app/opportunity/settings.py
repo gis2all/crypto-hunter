@@ -1,0 +1,203 @@
+"""新机会的设定：一份 yaml，读在调用处，写在设定页（2026-10-19, user）。
+
+The module's knobs were Python constants - every one of them something this session changed by
+editing code (`MAX_SOURCES`, `MAX_CALLS`, `MAX_CLASSIFY`, `MAX_EXTRACT`, `MAX_TRACES`, `X_INTERVAL`,
+the window and slice). They are settings, not facts, so they live in `config/`:
+
+- `config/opportunity.example.yaml` is the tracked template, with the defaults written out;
+- `config/opportunity.yaml` is the machine's own copy and appears **when the reader saves one** -
+  not seeded at startup, because a file that exists only after a save keeps the defaults in code
+  (where the tests and the constants already are) and the overrides in one place;
+- `value(key)` answers the effective setting: the file's value when it has one, else the default.
+
+Same split as `config/chains/*.example.yaml` and its live copy, and the same rule as the rest of the
+repo: settings are not stored in the database.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from .. import config
+
+log = logging.getLogger("crypto-hunter.opportunity")
+
+EXAMPLE_PATH = Path(str(config.ROOT / "config" / "opportunity.example.yaml"))
+LIVE_PATH = Path(str(config.ROOT / "config" / "opportunity.yaml"))
+
+#: Every knob, with the words the 设定 page prints and the range it accepts. **The defaults here are
+#: the truth**; the yaml only overrides them, which is what keeps a missing file harmless.
+FIELDS = (
+    {"key": "sources_per_scan", "label": "读源数", "default": -1, "min": -1, "max": 200,
+     "hint": "一次扫描读 watchlist 的前 N 个（最久没读过的先读）。-1 读全部，0 关闭 X 采集；"
+             "只算查询行。"},
+    {"key": "calls_per_scan", "label": "X 调用上限", "default": -1, "min": -1, "max": 300,
+     "hint": "查询行一条会切成好几片，所以预算按调用次数算。-1 按需（硬顶 300），0 不调 X。"},
+    {"key": "x_interval", "label": "调用间隔（秒）", "default": 5.0, "min": 1.0, "max": 60.0,
+     "hint": "实测 2.5 秒时第 13 个连续请求开始 429，而 CLI 自己的退避把每个失败变成四十秒。"},
+    {"key": "sites_per_scan", "label": "官网刷新数", "default": -1, "min": -1, "max": 100,
+     "hint": "每轮读几个官网（按最久没刷过的先读），并发 4 个；-1 全部（51 个约 30 秒），"
+             "0 关闭官网刷新。不花 X 调用；只有正文真的变了才写成材料。"},
+    {"key": "auto_interval_hours", "label": "间隔", "default": 8,
+     "min": 0, "max": 24,
+     "hint": "到点自动跑一轮，和 Arc 的定时同一套；0 = 关闭。手动跑过之后，这一格也算用掉。"},
+    {"key": "auto_start_hour", "label": "起始（时）", "default": 2, "min": 0, "max": 23,
+     "hint": "锚点小时（0-23，Asia/Shanghai）。8 小时间隔 + 02:30 = 02:30 / 10:30 / 18:30。"},
+    {"key": "auto_start_minute", "label": "起始（分）", "default": 30, "min": 0,
+     "max": 59,
+     "hint": "锚点分钟；和别的链的整点错开半格，撞上链的轮次时本轮让路、稍后再试。"},
+    {"key": "classify_per_scan", "label": "分组帖子上限", "default": 1000, "min": 1, "max": 2000,
+     "hint": "一次分组最多 N 条；完整正文不截断，超过上限直接报错，不拆批、不留下轮。"},
+    {"key": "extract_per_scan", "label": "抽取项目上限", "default": 40, "min": 1, "max": 200,
+     "hint": "一个项目组＝一次抽取；40 个约 4 分钟，超出的留在未抽取。"},
+    {"key": "traces_per_scan", "label": "溯源项目上限", "default": 200, "min": 0, "max": 500,
+     "hint": "按项目去重后最多溯源 N 个；并发 4，先解析官方号，再读官网与文档。0 表示不溯源。"},
+    {"key": "window_hours", "label": "查询窗口（小时）", "default": 24, "min": 1, "max": 720,
+     "hint": "一条查询往回看多久。窗口 ÷ 片长 = 这条查询的调用次数。"},
+    {"key": "slice_hours", "label": "切片长度（小时）", "default": 4, "min": 1, "max": 168,
+     "hint": "每次请求最多 40 条，切片是解法：片太长热词会被截断，太短则吃光预算。"},
+    {"key": "pass_score", "label": "过闸下限分", "default": 30, "min": 0, "max": 200,
+     "hint": "资格规则命中之后，总分仍要达到它。总分只决定排序，不决定过闸。"},
+)
+
+_BY_KEY = {field["key"]: field for field in FIELDS}
+
+#: The page's blocks, in the order it prints them. Each block is one card in the ARC-style
+#: settings page; the field objects themselves stay flat in FIELDS so `value()` and the yaml
+#: file keep their one-key-per-setting shape.
+BLOCKS = (
+    {"key": "collect", "title": "采集", "columns": 1, "groups": (
+        {"key": "x", "title": "X 采集",
+         "keys": ("sources_per_scan", "calls_per_scan", "x_interval")},
+        {"key": "site", "title": "官网刷新",
+         "keys": ("sites_per_scan",)},
+    )},
+    {"key": "analyze", "title": "分析", "columns": 1, "groups": (
+        {"key": "models", "title": "模型预算",
+         "keys": ("classify_per_scan", "extract_per_scan", "traces_per_scan")},
+    )},
+    {"key": "query", "title": "查询与闸", "columns": 1, "groups": (
+        {"key": "timing", "title": "时间与闸门",
+         "keys": ("window_hours", "slice_hours", "pass_score")},
+    )},
+    # 和 Arc 一样：节奏单独一块「运行」，排在分析与阈值之后，行名用短词。
+    {"key": "run", "title": "运行", "columns": 1, "groups": (
+        {"key": "rhythm", "title": "运行节奏",
+         "keys": ("auto_interval_hours", "auto_start_hour", "auto_start_minute", "auto_slots")},
+    )},
+)
+
+_cache: dict[str, Any] = {}
+
+
+def _coerce(field: dict, raw: Any) -> Any:
+    """One value, as the field's own type, clamped to its range. A bad value keeps the default."""
+    default = field["default"]
+    try:
+        value = float(raw) if isinstance(default, float) else int(raw)
+    except (TypeError, ValueError):
+        return default
+    # `-1` is a sentinel, not a range: "everything" for the knobs that opt in (min = -1).
+    # Clamping would turn it into 0, which means the opposite thing.
+    if isinstance(default, int) and field["min"] <= -1 and value == -1:
+        return -1
+    if isinstance(default, float):
+        value = round(value, 2)
+    return max(field["min"], min(field["max"], value))
+
+
+def _file() -> dict[str, Any]:
+    """Only what the machine's own file carries, coerced. An absent key is absent here."""
+    document: dict[str, Any] = {}
+    try:
+        if LIVE_PATH.exists():
+            document = yaml.safe_load(LIVE_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        log.exception("opportunity: the settings file could not be read, using the defaults")
+    if not isinstance(document, dict):
+        document = {}
+    return {key: _coerce(_BY_KEY[key], raw) for key, raw in document.items() if key in _BY_KEY}
+
+
+def read() -> dict[str, Any]:
+    """The effective settings: the file's values over the defaults in `FIELDS`."""
+    over = _file()
+    return {key: over.get(key, field["default"]) for key, field in _BY_KEY.items()}
+
+
+def value(key: str, default: Any = None) -> Any:
+    """One setting, read at call time so a saved change reaches the next scan, not the next restart.
+
+    **The caller's default is the default**: the file overrides it when it names the key, and the
+    module constants stay the truth otherwise (which is also what keeps them monkeypatchable in a
+    test, and what makes a missing file harmless).
+    """
+    return _file().get(key, default)
+
+
+def write(patch: dict[str, Any]) -> dict[str, Any]:
+    """Save what the 设定 page sent, and answer the effective settings.
+
+    Only known keys are written, and only values that differ from the defaults: a key nothing
+    reads would be the silent switch this app does not ship, and a file full of defaults is a
+    second copy of FIELDS that can drift. Saving everything back to defaults removes the file.
+    """
+    current = read()
+    for key, raw in (patch or {}).items():
+        if key in _BY_KEY:
+            current[key] = _coerce(_BY_KEY[key], raw)
+    overrides = {key: value for key, value in current.items()
+                 if value != _BY_KEY[key]["default"]}
+    body = ("# 新机会的设定。默认值写在 api/app/opportunity/settings.py 的 FIELDS 里，\n"
+            "# 这个文件只保存被改过的那些；删掉它即回到默认。\n")
+    if overrides:
+        LIVE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LIVE_PATH.write_text(body + yaml.safe_dump(overrides, allow_unicode=True, sort_keys=False),
+                             encoding="utf-8")
+    elif LIVE_PATH.exists():
+        LIVE_PATH.unlink()
+    log.info("opportunity: settings saved (%d overrides)", len(overrides))
+    return current
+
+
+def form() -> dict:
+    """The fields and the page's block layout: key, label, current value, range and hint."""
+    current = read()
+    fields = [{"key": field["key"], "label": field["label"], "value": current[field["key"]],
+               "min": field["min"], "max": field["max"], "hint": field["hint"],
+               "kind": "float" if isinstance(field["default"], float) else "int"}
+              for field in FIELDS]
+    # 触发时刻是算出来的，不是存下来的：和 Arc 的 schedule.slots 同一行意思，
+    # 只读，保存时被 write() 忽略（它不在 FIELDS 里）。
+    fields.append({"key": "auto_slots", "label": "触发时刻", "value": _slots_text(current),
+                   "min": None, "max": None, "kind": "text",
+                   "hint": "由间隔与起始算出；撞上链的轮次时本轮让路，实际会晚几分钟。"})
+    by_key = {field["key"]: field for field in fields}
+    blocks = [
+        {"key": block["key"], "title": block["title"],
+         "columns": int(block.get("columns") or 1),
+         "groups": [
+             {"key": group["key"], "title": group["title"],
+              "fields": [by_key[key] for key in group["keys"]]}
+             for group in block["groups"]
+         ]}
+        for block in BLOCKS
+    ]
+    return {"fields": fields, "blocks": blocks,
+            "dirty_hint": "保存并生效后，下一轮扫描使用新值。"}
+
+
+def _slots_text(current: dict) -> str:
+    """The times the next scans are due, as the settings page prints them."""
+    interval = int(current.get("auto_interval_hours") or 0)
+    if interval <= 0:
+        return "不排期"
+    hour = int(current.get("auto_start_hour") or 0)
+    minute = int(current.get("auto_start_minute") or 0)
+    steps = max(1, 24 // interval) if interval <= 24 else 1
+    return " / ".join("%02d:%02d" % ((hour + index * interval) % 24, minute)
+                      for index in range(steps))

@@ -4,12 +4,23 @@ The order is the thing worth testing, and the order must not be a special case f
 every assertion here is about which token was asked about, when, and what came out.
 """
 
+import pytest
+
 from app.core import filters, funnel
 from app.core.models import SafetyFacts, TokenMetrics
+from app.pipeline import decide
 from app.pipeline.decide import GATE_LIMIT, RESEARCH_LIMIT, Engine, _gate_cap, _research_cap, _rule_note
 from conftest import metrics_row as _row, settings_dict as _settings
 
 CHAIN = {"id": "arc", "label": "Arc", "pipeline": {"scan_limit": 5000}, "sources": []}
+
+
+@pytest.fixture(autouse=True)
+def _one_worker(monkeypatch):
+    """Production fans the per-token reads out over eight threads; these tests assert the
+    shortlist's order, so they run the same code on one. The concurrency is exercised by the
+    sources' own tests, not here."""
+    monkeypatch.setattr(decide, "ENRICH_WORKERS", 1)
 
 
 class FakeSource:

@@ -1,4 +1,4 @@
-import { Moon, Search, Settings, Star, Sun } from "lucide-react";
+import { Compass, Moon, Search, Settings, Star, Sun } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { Icon } from "../../components/Icon";
@@ -7,11 +7,12 @@ import { chainIdMark } from "../../components/chainMark";
 import type { Theme } from "../../theme";
 
 /** The places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is one shelf for
- *  every chain; 搜索 reads one address from any chain; 系统设置 is this machine - the gateway,
- *  the X session, the log level. None of the last three is a row in the chain list: a kept
- *  card, a searched one and a gateway's key can all belong to something this app never
+ *  every chain; 搜索 reads one address from any chain; 新机会 is what the outside world is
+ *  offering, found by this app's own scans; 系统设置 is this machine - the gateway, the X
+ *  session, the log level. None of the last four is a row in the chain list: a kept card, a
+ *  searched one, an activity and a gateway's key can all belong to something this app never
  *  screens. */
-export type Place = "radar" | "favorites" | "lookup" | "system";
+export type Place = "radar" | "favorites" | "lookup" | "opportunity" | "system";
 
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
  *  chain, not a menu, and a row nobody can open is not a menu item. A chain's 设定 is a tab in
@@ -42,6 +43,15 @@ export function Rail({
         <b>CRYPTO HUNTER</b>
       </div>
       <nav className="nav">
+        {/* 新机会 sits above the radars: it reads the outside world rather than a chain the
+            reader chose, so it is not part of the chain list (user, 2026-10-21). */}
+        <div
+          className={"nav-i" + (place === "opportunity" ? " on" : "")}
+          onClick={() => onSelectPlace("opportunity")}
+        >
+          <Icon as={Compass} size={14} />
+          新机会
+        </div>
         {/* Only chains that are wired get a row. A chain nobody can open is not a menu
             item: 待接 on BSC and a 添加链 待定 placeholder both raised a question the rail
             cannot answer, so they are gone (user, 2026-09-26). A chain carries no count

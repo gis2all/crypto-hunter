@@ -38,6 +38,9 @@ config/system.yaml
 config/chains/*.yaml
 !config/chains/*.example.yaml
 
+# opportunity settings: the tracked file is the template, the live copy is local
+config/opportunity.yaml
+
 # logs and coverage
 log/
 *.log
