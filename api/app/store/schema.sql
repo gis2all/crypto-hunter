@@ -333,6 +333,8 @@ CREATE TABLE IF NOT EXISTS opportunities (
   --: `opportunity_put` 的 upsert 会重写其它每一列，但不会把归档撤销。删除是软删，行留着。
   user_state      TEXT NOT NULL DEFAULT 'active',   -- active | archived | deleted
   user_state_at   TEXT,
+  kept            INTEGER NOT NULL DEFAULT 0,       -- 1 = starred by the reader; survives archive/delete
+  kept_at         TEXT,
   reason          TEXT,                     -- why it is not promoted; see opportunity/promote.py
   --: 热度：来源帖自身的互动量换算的 0-100（见 opportunity/heat.py）。没有来源帖的材料是
   --: NULL —— 页面材料没有互动读数，而"没问到"与"没人看"不是一件事。它不是排序键。

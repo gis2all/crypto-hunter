@@ -245,6 +245,9 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   #: 对已存在的表什么也不做，第一次真跑就是这样在抽取阶段撞上的。
                   ("opportunities", "heat", "REAL"),
                   ("opportunities", "heat_basis", "TEXT"),
+                  #: 收藏：读者自己的星标，独立于 user_state（可参与 / 已结束 / 已归档都能带星）。
+                  ("opportunities", "kept", "INTEGER NOT NULL DEFAULT 0"),
+                  ("opportunities", "kept_at", "TEXT"),
                   ("opportunities", "ecosystem", "TEXT"),
                   ("opportunities", "user_state", "TEXT NOT NULL DEFAULT 'active'"),
                   ("opportunities", "user_state_at", "TEXT"),
@@ -1442,6 +1445,9 @@ def opportunity_items(status: str | None = None, kind: str | None = None,
 
     The un-promoted rows come back too: "why is this not on the list" is a question the page
     has to be able to answer, and a query that only ever returns successes cannot.
+
+    `limit` of 0 or less is every row: the page draws the whole library, and a silent cap on it
+    read as "the cards I found last week are gone" (2026-10-28).
     """
     conn = connect()
     try:
@@ -1453,9 +1459,11 @@ def opportunity_items(status: str | None = None, kind: str | None = None,
             where.append("kind = ?")
             values.append(kind)
         clause = (" WHERE " + " AND ".join(where)) if where else ""
-        rows = conn.execute(
-            "SELECT * FROM opportunities%s ORDER BY discovered_at DESC, slug LIMIT ?"
-            % clause, (*values, limit)).fetchall()
+        sql = "SELECT * FROM opportunities%s ORDER BY discovered_at DESC, slug" % clause
+        if limit and limit > 0:
+            sql += " LIMIT ?"
+            values.append(limit)
+        rows = conn.execute(sql, tuple(values)).fetchall()
         items = [dict(row) for row in rows]
         if items:
             marks = ",".join("?" for _ in items)
@@ -1630,6 +1638,24 @@ def opportunity_user_state(slug: str, state: str) -> bool:
         cursor = conn.execute(
             "UPDATE opportunities SET user_state = ?, user_state_at = ?, updated_at = ?"
             " WHERE slug = ?", (state, now_iso(), now_iso(), slug))
+        return bool(cursor.rowcount)
+    finally:
+        conn.close()
+
+
+def opportunity_keep(slug: str, kept: bool) -> bool:
+    """收藏 / 取消收藏 one entry. False when the slug is not one of ours.
+
+    The star is the reader's own and sits beside `user_state` rather than inside it: a card can
+    be starred while it is 可参与, 已结束 or 已归档, and a starred card keeps being updated by
+    the pipeline - 归档 is the one that freezes it. Archiving or deleting a starred card leaves
+    the star where it is, so 恢复 brings it back to 收藏 still starred.
+    """
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            "UPDATE opportunities SET kept = ?, kept_at = ?, updated_at = ?"
+            " WHERE slug = ?", (1 if kept else 0, now_iso() if kept else None, now_iso(), slug))
         return bool(cursor.rowcount)
     finally:
         conn.close()

@@ -1468,7 +1468,7 @@
      "opportunity"
     ],
     "summary": "List Opportunities",
-    "description": "Everything the page draws, in one read.\n\nThe un-promoted rows come back with the promoted ones and are told apart by `status`: a\npage that only ever received successes could not answer \"why is this not on the list\", and\nthat question is the whole reason the gate records a reason.",
+    "description": "Everything the page draws, in one read.\n\nThe un-promoted rows come back with the promoted ones and are told apart by `status`: a\npage that only ever received successes could not answer \"why is this not on the list\", and\nthat question is the whole reason the gate records a reason.\n\n`limit=0` (the default) is every card. A default of 300 silently cut the oldest ones off\nthe page, which read as deleted cards (2026-10-28).",
     "operationId": "list_opportunities_api_v1_opportunity_get",
     "parameters": [
      {
@@ -1477,9 +1477,9 @@
       "required": false,
       "schema": {
        "type": "integer",
-       "maximum": 1000,
-       "minimum": 1,
-       "default": 300,
+       "maximum": 5000,
+       "minimum": -1,
+       "default": 0,
        "title": "Limit"
       }
      }
@@ -1692,7 +1692,7 @@
      "opportunity"
     ],
     "summary": "Set Item State",
-    "description": "归档 / 删除 / 恢复 one entry, by hand.\n\nThe one write this page has, and it is the reader's own: 归档 is \"I know about this and it is\nnot a priority\", 删除 is \"I do not want it\" (soft - the row and its evidence stay). Neither\ntouches the pipeline's reading, so the card keeps saying why it is not on the list.",
+    "description": "归档 / 删除 / 恢复 one entry, by hand.\n\nThe one write this page has, and it is the reader's own: 归档 is \"I know about this and it is\nnot a priority\", 删除 is \"I do not want it\" (soft - the row and its evidence stay). Neither\ntouches the pipeline's reading, so the card keeps saying why it is not on the list.\n\n`kept` rides the same endpoint because it is the same kind of write: the reader's own mark,\nnext to the pipeline's reading. A star never freezes a card and survives 归档 / 删除.",
     "operationId": "set_item_state_api_v1_opportunity_items__slug__patch",
     "parameters": [
      {
@@ -4258,6 +4258,11 @@
       "title": "User State",
       "default": "active"
      },
+     "kept": {
+      "type": "boolean",
+      "title": "Kept",
+      "default": false
+     },
      "reason": {
       "anyOf": [
        {
@@ -4847,14 +4852,29 @@
    "OpportunityStateIn": {
     "properties": {
      "user_state": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "User State"
+     },
+     "kept": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kept"
      }
     },
     "type": "object",
-    "required": [
-     "user_state"
-    ],
     "title": "OpportunityStateIn",
     "description": "What the reader is setting one entry to."
    },

@@ -701,6 +701,8 @@ class OpportunityItemOut(BaseModel):
     status: str
     #: 读者自己的决定：active / archived / deleted。与 `status` 是两件事（见 store/schema.sql）。
     user_state: str = "active"
+    #: 读者自己的星标：独立于 user_state（可参与 / 已结束 / 已归档都能带星）。
+    kept: bool = False
     #: Why it is not promoted, in the reader's words (empty once it is).
     reason: str | None = None
     #: 热度：来源帖自身互动量换算的 0-100，与它读成人话的那一档。没有来源帖的材料是 None，
@@ -824,7 +826,10 @@ class OpportunityScanRowOut(BaseModel):
 class OpportunityStateIn(BaseModel):
     """What the reader is setting one entry to."""
 
-    user_state: str
+    #: `active` / `archived` / `deleted`; 归档 and 删除 freeze the card. Optional so the same
+    #: endpoint can carry a star: `kept` alone moves the star and nothing else.
+    user_state: str | None = None
+    kept: bool | None = None
 
 
 class OpportunityListOut(BaseModel):

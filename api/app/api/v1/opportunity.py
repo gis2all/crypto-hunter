@@ -71,6 +71,7 @@ def _item(row: dict) -> OpportunityItemOut:
         deadline=row.get("deadline"), status=row.get("status") or "candidate",
         reason=promote.reason_label(row.get("reason")),
         user_state=row.get("user_state") or "active",
+        kept=bool(row.get("kept")),
         heat=row.get("heat"), heat_band=heat.band(row.get("heat")),
         heat_basis=row.get("heat_basis") or None,
         discovered_at=row["discovered_at"],
@@ -92,12 +93,15 @@ def _scan(row: dict | None) -> OpportunityScanOut | None:
 
 
 @router.get("", response_model=OpportunityListOut)
-def list_opportunities(limit: int = Query(300, ge=1, le=1000)) -> dict:
+def list_opportunities(limit: int = Query(0, ge=-1, le=5000)) -> dict:
     """Everything the page draws, in one read.
 
     The un-promoted rows come back with the promoted ones and are told apart by `status`: a
     page that only ever received successes could not answer "why is this not on the list", and
     that question is the whole reason the gate records a reason.
+
+    `limit=0` (the default) is every card. A default of 300 silently cut the oldest ones off
+    the page, which read as deleted cards (2026-10-28).
     """
     watchlist.ensure_seeded()
     items = db.opportunity_items(limit=limit)
@@ -144,11 +148,18 @@ def set_item_state(slug: str, body: OpportunityStateIn) -> dict:
     The one write this page has, and it is the reader's own: 归档 is "I know about this and it is
     not a priority", 删除 is "I do not want it" (soft - the row and its evidence stay). Neither
     touches the pipeline's reading, so the card keeps saying why it is not on the list.
+
+    `kept` rides the same endpoint because it is the same kind of write: the reader's own mark,
+    next to the pipeline's reading. A star never freezes a card and survives 归档 / 删除.
     """
-    if body.user_state not in db.USER_STATES:
+    if body.user_state is None and body.kept is None:
+        raise HTTPException(status_code=422, detail="要么给 user_state，要么给 kept")
+    if body.user_state is not None and body.user_state not in db.USER_STATES:
         raise HTTPException(status_code=422,
                             detail="user_state 只能是 %s" % " / ".join(db.USER_STATES))
-    if not db.opportunity_user_state(slug, body.user_state):
+    if body.user_state is not None and not db.opportunity_user_state(slug, body.user_state):
+        raise HTTPException(status_code=404, detail="没有这个条目")
+    if body.kept is not None and not db.opportunity_keep(slug, body.kept):
         raise HTTPException(status_code=404, detail="没有这个条目")
     row = db.opportunity_item(slug)
     return _item(row)
