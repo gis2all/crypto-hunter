@@ -2,7 +2,7 @@
 
 ## 产品定义
 
-每条链按生效配置的周期自动跑一轮，从数千个代币里挑出 N 个，各附一份两分钟内可读完的判断。本项目是研究流水线，不是行情终端。交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。
+两条产品线，互不依赖。**币种筛选**：每条链按生效配置的周期自动跑一轮，从数千个代币里挑出 N 个，各附一份两分钟内可读完的判断。**新机会**：只读 X，把外部正在发生的可参与机会（打新、挖矿、空投、测试网任务等）与新出现的协议、工具整理成卡片。本项目是研究流水线，不是行情终端。交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。
 
 # 2. 技术栈
 
@@ -138,6 +138,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 
 # 10. 文档约定
 
+- 根 `README.md` 是对外介绍（两条产品线、流程图、运行与配置）；本文件是给维护者的架构与约定。
 - 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/opportunity/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
 - 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md` 与 `api/app/opportunity/prompts/`。
 - 规则不编号：定位一条规则用模块文档的小节名，`rg` 搜小节名或规则里的关键词即可；跨文档引用写「见 `<模块>/README.md` · 小节名」，同文档内写「见本文件 · 小节名」。
