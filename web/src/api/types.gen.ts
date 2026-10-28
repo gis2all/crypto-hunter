@@ -538,6 +538,9 @@ export interface paths {
          *     The un-promoted rows come back with the promoted ones and are told apart by `status`: a
          *     page that only ever received successes could not answer "why is this not on the list", and
          *     that question is the whole reason the gate records a reason.
+         *
+         *     `limit=0` (the default) is every card. A default of 300 silently cut the oldest ones off
+         *     the page, which read as deleted cards (2026-10-28).
          */
         get: operations["list_opportunities_api_v1_opportunity_get"];
         put?: never;
@@ -632,6 +635,9 @@ export interface paths {
          *     The one write this page has, and it is the reader's own: 归档 is "I know about this and it is
          *     not a priority", 删除 is "I do not want it" (soft - the row and its evidence stay). Neither
          *     touches the pipeline's reading, so the card keeps saying why it is not on the list.
+         *
+         *     `kept` rides the same endpoint because it is the same kind of write: the reader's own mark,
+         *     next to the pipeline's reading. A star never freezes a card and survives 归档 / 删除.
          */
         patch: operations["set_item_state_api_v1_opportunity_items__slug__patch"];
         trace?: never;
@@ -1774,6 +1780,11 @@ export interface components {
              * @default active
              */
             user_state: string;
+            /**
+             * Kept
+             * @default false
+             */
+            kept: boolean;
             /** Reason */
             reason?: string | null;
             /** Heat */
@@ -2037,7 +2048,9 @@ export interface components {
          */
         OpportunityStateIn: {
             /** User State */
-            user_state: string;
+            user_state?: string | null;
+            /** Kept */
+            kept?: boolean | null;
         };
         /**
          * OpportunityStepOut

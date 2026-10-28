@@ -299,7 +299,8 @@ export type XSessionDraft = {
  *  page's own copy. The entries carry their steps, so opening one is not a second request.
  *  Nothing here is scoped by a chain or a set of settings: an activity belongs to no chain,
  *  which is why this is a Place of its own rather than a tab under a radar. */
-export const getOpportunity = () => request<OpportunityList>("/opportunity");
+/** `limit=0` is every card: the page draws the whole library, oldest rounds included. */
+export const getOpportunity = () => request<OpportunityList>("/opportunity?limit=0");
 
 /** The watchlist: what the next scan will read, and what verified each row. */
 export const listOpportunitySources = () =>
@@ -343,6 +344,13 @@ export const setOpportunityState = (slug: string, userState: string) =>
   request<OpportunityItem>("/opportunity/items/" + encodeURIComponent(slug), {
     method: "PATCH",
     body: JSON.stringify({ user_state: userState }),
+  });
+
+/** 收藏 / 取消收藏：和归档同一个端点，只动星标，不动读者的状态。 */
+export const setOpportunityKept = (slug: string, kept: boolean) =>
+  request<OpportunityItem>("/opportunity/items/" + encodeURIComponent(slug), {
+    method: "PATCH",
+    body: JSON.stringify({ kept }),
   });
 
 export const getOpportunityScan = (scanId: string) =>
