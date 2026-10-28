@@ -1092,6 +1092,23 @@ def test_a_card_that_is_not_on_a_chain_is_retired(isolated_db, monkeypatch):
     assert row["status"] == "retired" and row["reason"] == "offchain"
 
 
+def test_the_page_gets_every_card_and_limit_zero_is_what_asks_for_it(isolated_db):
+    """A default cap of 300 left the oldest cards off the page, which read as deleted."""
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post"}
+    for index in range(4):
+        counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0,
+                    "issues": 0, "frozen": 0}
+        extract._store(material,
+                       [Entry(title="Acme %d" % index, kind="project", summary="s",
+                              ecosystem="base")], [], counters)
+
+    assert len(db.opportunity_items(limit=0)) == 4
+    assert len(db.opportunity_items(limit=2)) == 2
+
+
 def test_an_archived_card_is_frozen(isolated_db):
     """归档 / 删除是读者的决定：同一项目再有新材料也不覆盖它，补链也不再问。"""
     from app.opportunity import extract
@@ -1831,6 +1848,35 @@ def test_the_reader_can_archive_and_restore(isolated_db, client):
     again = client.patch("/api/v1/opportunity/items/opp-archivable",
                          json={"user_state": "active"}).json()
     assert again["user_state"] == "active"
+
+
+def test_a_star_is_its_own_mark_and_does_not_freeze_the_card(isolated_db, client):
+    """收藏不等于归档：加星之后同一事件的更新照常覆盖，归档/删除也不摘星。"""
+    _an_entry()
+    body = client.patch("/api/v1/opportunity/items/opp-archivable",
+                        json={"kept": True}).json()
+    assert body["kept"] is True
+
+    # still updated by the pipeline (the star freezes nothing)
+    _an_entry(summary="改写后的摘要")
+    assert db.opportunity_item("opp-archivable")["summary"] == "改写后的摘要"
+    assert db.opportunity_item("opp-archivable")["kept"] == 1
+
+    # archiving keeps the star, restoring finds it again
+    client.patch("/api/v1/opportunity/items/opp-archivable", json={"user_state": "archived"})
+    assert db.opportunity_item("opp-archivable")["kept"] == 1
+    client.patch("/api/v1/opportunity/items/opp-archivable", json={"user_state": "active"})
+    assert db.opportunity_item("opp-archivable")["kept"] == 1
+
+    off = client.patch("/api/v1/opportunity/items/opp-archivable",
+                       json={"kept": False}).json()
+    assert off["kept"] is False
+
+
+def test_a_patch_with_neither_state_nor_star_is_refused(isolated_db, client):
+    _an_entry()
+    answer = client.patch("/api/v1/opportunity/items/opp-archivable", json={})
+    assert answer.status_code == 422
 
 
 def test_deleting_is_soft(isolated_db, client):

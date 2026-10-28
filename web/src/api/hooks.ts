@@ -331,6 +331,16 @@ export function useSetOpportunityState() {
   });
 }
 
+/** 收藏是读者自己的星标：不冻结卡片，归档 / 删除也不摘星（2026-10-29）。 */
+export function useKeepOpportunity() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, kept }: { slug: string; kept: boolean }) =>
+      api.setOpportunityKept(slug, kept),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["opportunity"] }),
+  });
+}
+
 export function useCancelOpportunityScan() {
   const client = useQueryClient();
   return useMutation({

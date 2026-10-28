@@ -1,5 +1,5 @@
 import { Boxes, ChevronDown, ChevronRight, RotateCw, ShieldCheck, Star } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Card as CardModel } from "../../api/client";
 import { CopyCa } from "../../components/CopyCa";
@@ -31,7 +31,6 @@ function Verdict({ segments, full }: { segments: CardModel["verdict"]; full: boo
   const box = useRef<HTMLParagraphElement>(null);
   const [cut, setCut] = useState(false);
   const [open, setOpen] = useState(false);
-
   // 展开卡片 and this card own 展开 drop the clamp, and a box without a clamp always
   // reports "not cut" - so the measurement is skipped while either is on and the answer
   // stands from the layout that had the clamp. Measuring there is a loop: `cut` clears, the
@@ -124,6 +123,19 @@ export function Card({
   const short = `${card.ca.slice(0, 6)}…${card.ca.slice(-4)}`;
   // Ranks 1-3 carry the podium strip; the colours live in app.css.
   const podium = listed && card.rank >= 1 && card.rank <= 3 ? " podium-" + card.rank : "";
+  /** 取消收藏要按第二下（2026-10-29, user）：第一下只把星标置为待确认，星旁出现「取消
+   *  收藏」，五秒内点它才真的摘掉。和新机会卡片同一个做法，两条线学一次就够。
+   *  文字放在星与分数之间：分数始终贴着卡片右边缘，只有星标向左让位。 */
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setArmed(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+  // 星标一旦落定（收进来或被摘掉）、或者这张卡换成了另一个币，待确认就作废。
+  useEffect(() => { setArmed(false); }, [favorited, card.ca]);
   // A card with no rank is not a card that came last - it is a card no round put in a list at
   // all, which is what a CA search produces. Rank is where that shows: the ordinal, the 新进 /
   // 续榜 flag (there was no previous round to be 续 of) and the three pool ranks all read off
@@ -187,9 +199,28 @@ export function Card({
               aria-pressed={favorited}
               aria-label={favorited ? "取消收藏" : "收藏这张卡"}
               title={favorited ? "取消收藏" : "收藏这张卡"}
-              onClick={onFavorite}
+              onClick={() => {
+                if (favorited && !armed) {
+                  setArmed(true);
+                  return;
+                }
+                setArmed(false);
+                onFavorite();
+              }}
             >
               <Icon as={Star} size={14} />
+            </button>
+          ) : null}
+          {onFavorite && armed ? (
+            <button
+              type="button"
+              className="fav-confirm"
+              onClick={() => {
+                setArmed(false);
+                onFavorite();
+              }}
+            >
+              取消收藏
             </button>
           ) : null}
           {/* The rank stands under the score (2026-10-02, user): both are readings of the
