@@ -125,6 +125,14 @@ const KEPT_FILTER: OpportunityFilter = {
   options: [{ value: "", label: "全部" }, { value: "1", label: "只看收藏" }],
 };
 
+/** 本轮：这一轮带来了什么。新增 ＝ 本轮首次发现，更新 ＝ 本轮就地重写过、但属于更早那几轮
+ *  的卡。只在选中某一轮时存在：全部轮次下「更新过」几乎等于全库，说了等于没说（2026-10-29）。 */
+const ROUND_FILTER: OpportunityFilter = {
+  key: "round",
+  title: "本轮",
+  options: [{ value: "", label: "新增" }, { value: "updated", label: "更新" }],
+};
+
 /** One stored timestamp, cut to the minute: the seconds never matter and the string is long. */
 const NOVELTY_LABELS: Record<string, string> = {
   protocol: "新协议", gameplay: "新玩法", mechanism: "新机制", standard: "新标准",
@@ -278,10 +286,14 @@ function ScanPanel({ scan, open, stopping, onCancel }: {
     const timer = window.setTimeout(() => setArmed(false), 10000);
     return () => window.clearTimeout(timer);
   }, [armed]);
-  // 与 Arc 一轮同一条读法：一句漏斗 + 一句状态，不重复轮次条上已有的时间。
+  // 与 Arc 一轮同一条读法：一句漏斗 + 一句状态，不重复轮次条上已有的时间。写入的条数再拆成
+  // 新增 / 更新两半：这两个数是落库那一刻数出来的，老扫描没有它们就不硬凑一个 0。
+  const split = extract.created === undefined
+    ? ""
+    : ` · 新增 ${extract.created ?? 0} · 更新 ${extract.updated ?? 0}`;
   const funnel = collect.posts === undefined
     ? ""
-    : `帖子 ${collect.posts} → 分组 ${classify.groups ?? 0} → 出卡 ${extract.entries ?? 0}`;
+    : `帖子 ${collect.posts} → 分组 ${classify.groups ?? 0} → 写入 ${extract.entries ?? 0}` + split;
   const foot = !scan
     ? "本轮待运行 · 跑完自动落库"
     : failed
@@ -644,11 +656,14 @@ export function OpportunityView() {
     for (const group of base) {
       out.push(group);
       if (group.key === "status") {
+        if (pickedScan) {
+          out.push(ROUND_FILTER);
+        }
         out.push(KEPT_FILTER);
       }
     }
     return out;
-  }, [data?.filters]);
+  }, [data?.filters, pickedScan]);
   const sorts = data?.sorts ?? [];
   const trustLabels = form.trust ?? {};
   const items = data?.items ?? [];
@@ -684,7 +699,37 @@ export function OpportunityView() {
       return true;
     }
     const from = roundStart(pickedScan);
+    if (value("round") === "updated" && roundMeasured(pickedScan)) {
+      // 更新的卡按 `updated_scan` 归到这一轮：它们的 `discovered_at` 仍是最早那一轮，
+      // 所以这里不能用那个窗口。
+      return (item.updated_scan ?? "") === pickedScan && item.discovered_at < from;
+    }
     return item.discovered_at >= from && item.discovered_at < roundEnd(pickedScan);
+  };
+
+  /** 轮次条上的「出卡」与左侧「全部」同一口径：这一轮首次发现、且没被归档 / 删除的卡。
+   *  抽取站写下的条数里含就地更新的老卡（`discovered_at` 保留最早那一轮），那部分只进
+   *  tooltip：两个数共用一个词，读者就会以为列表少了一截（2026-10-29）。 */
+  const roundNew = (scanId: string) => {
+    const from = roundStart(scanId);
+    const to = roundEnd(scanId);
+    return items.filter((item) => item.discovered_at >= from && item.discovered_at < to
+      && item.user_state === "active").length;
+  };
+  const roundWritten = (counters: unknown) =>
+    (counters as { extract?: { entries?: number } } | undefined)?.extract?.entries ?? 0;
+  /** 本轮被就地重写、但属于更早那几轮的卡。与 `roundNew` 一起正好是这一轮写入的全部。 */
+  const roundUpdated = (scanId: string) => {
+    const from = roundStart(scanId);
+    return items.filter((item) => (item.updated_scan ?? "") === scanId
+      && item.discovered_at < from && item.user_state === "active").length;
+  };
+  /** 这一轮记不记得「谁被更新过」。记录之前的扫描没有 `created` / `updated` 这两个计数，
+   *  那时是**不知道**，不是 0 —— 与别处的「未判定」同一条规矩（2026-10-29）。 */
+  const roundMeasured = (scanId: string) => {
+    const row = scanRows.find((item) => item.id === scanId);
+    const counters = (row?.counters ?? {}) as { extract?: { created?: number } };
+    return counters.extract?.created !== undefined;
   };
 
   const inTab = (item: OpportunityItem) => {
@@ -803,6 +848,15 @@ export function OpportunityView() {
       setPicked((prev) => ({ ...prev, ecosystem: "" }));
     }
   }, [liveEcosystems, picked.ecosystem]);
+
+  // 换到一轮没有记录的旧轮次时，「更新」没有数据可看，退回「新增」——否则点过去是一张空
+  // 列表，读起来像「这一轮的卡丢了」（2026-10-29）。
+  useEffect(() => {
+    if (picked.round === "updated" && pickedScan && !roundMeasured(pickedScan)) {
+      setPicked((prev) => ({ ...prev, round: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked.round, pickedScan]);
 
 
   const shown = useMemo(() => {
@@ -938,7 +992,7 @@ export function OpportunityView() {
 
       {/* 轮次条与雷达同一条：运行面板下面一行，左右箭头翻历史。 */}
       {view === "report" && currentScan ? (
-        <div className="bhead opp-roundbar">
+        <div className={"bhead opp-roundbar" + (pickedScan ? "" : " allrows")}>
           <div className="batch">
             <button type="button" title="更早一轮"
               className={"step" + (scanIndex < scanRows.length - 1 ? "" : " demo")}
@@ -956,8 +1010,19 @@ export function OpportunityView() {
           </div>
           <div className="funnel">
             <span>出卡</span>
-            <b>{(currentScan.counters as { extract?: { entries?: number } }).extract?.entries ?? 0}</b>
+            <b title={`本轮写入 ${roundWritten(currentScan.counters)} 条：新增 ${roundNew(currentScan.id)} 张，其余是既有卡被重新抽到后就地更新（仍算最早发现的那一轮）。`}>
+              {roundNew(currentScan.id)}
+            </b>
           </div>
+          {/* 全部轮次：日期与「出卡」都属于某一轮，这一模式下没有所指，换成整库的张数。
+              它和左侧「全部」同一个数，宽度钉住，右边两个 tab 不跟着挪。 */}
+          {pickedScan ? null : (
+            <div className="opp-total" title="全部轮次：列表里是各轮累计的卡">
+              <span>共</span>
+              <b>{items.filter((item) => item.user_state === "active").length}</b>
+              <span>张</span>
+            </div>
+          )}
           {/* 与列表 tab 同一套分段控件：选中态是蓝底，不是一个文字链接。 */}
           <div className="tabs">
             <span className={"tab" + (pickedScan ? "" : " on")}
@@ -995,6 +1060,8 @@ export function OpportunityView() {
             const total = group.key === "status" ? statusScope.length
               : group.key === "ecosystem" ? ecosystemItems.length
                 : group.key === "category_group" ? categoryGroupItems.length
+                  : group.key === "round" ? roundNew(pickedScan)
+                    + (roundMeasured(pickedScan) ? roundUpdated(pickedScan) : 0)
                   : group.key === "kept" ? keptScope.length
                   : group.options.find((option) => !option.value)?.count ?? null;
             const shut = !!folded[group.key];
@@ -1029,12 +1096,20 @@ export function OpportunityView() {
                     count = option.value
                       ? keptScope.filter((item) => item.kept).length
                       : keptScope.length;
+                  } else if (group.key === "round") {
+                    count = option.value === "updated" && !roundMeasured(pickedScan)
+                      ? null
+                      : option.value === "updated" ? roundUpdated(pickedScan) : roundNew(pickedScan);
                   }
+                  // 没有记录的那一档不让人点：点进去只会是一张空列表，读起来像「这一轮没更新」。
+                  const off = group.key === "round" && option.value === "updated"
+                    && !roundMeasured(pickedScan);
                   return (
                     <div
                       key={option.value || "all"}
-                      className={"fav-opt" + (value(group.key) === option.value ? " on" : "")}
-                      onClick={() => {
+                      className={"fav-opt" + (value(group.key) === option.value ? " on" : "")
+                        + (off ? " off" : "")}
+                      onClick={off ? undefined : () => {
                         setPicked((prev) => ({ ...prev, [group.key]: option.value }));
                         // 在「排队中」时点任一筛选，视为要回到列表。
                         if (tab === "queues") {
@@ -1047,9 +1122,12 @@ export function OpportunityView() {
                       {option.type ? (
                         <span className="opp-opt-type">{option.type.toUpperCase()}</span>
                       ) : null}
-                      {count === null || count === undefined
-                        ? null
-                        : <span className="opp-opt-count">{count}</span>}
+                      {off
+                        ? <span className="opp-opt-count"
+                            title="这一轮跑在记录之前，没有「更新了哪些卡」这份数据">—</span>
+                        : count === null || count === undefined
+                          ? null
+                          : <span className="opp-opt-count">{count}</span>}
                     </div>
                   );
                 })}
