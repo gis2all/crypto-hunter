@@ -947,6 +947,10 @@ div.pgroup>.pset{margin-top:auto}
 .fav-opt .ico{stroke-width:2.5}
 .fav-opt:hover{background:var(--surface-warm)}
 .fav-opt.on{border-color:var(--border);background:var(--surface);color:var(--fg)}
+/* 没有数据的那一档（本轮「更新」，跑在记录之前的那几轮）：留着位置、不让点，也不写成 0 ——
+   0 是「一个都没更新」这个答案，而这里只是没记过。 */
+.fav-opt.off{color:var(--muted);cursor:default}
+.fav-opt.off:hover{background:none}
 /* The direction is fenced off from the four keys above it - it reads as the chosen key's own
    second half rather than as a fifth key - and it is always two rows, so the panel cannot
    change height when another sort is picked. The fence is --border rather than the --hair an
@@ -1135,6 +1139,15 @@ div.pgroup>.pset{margin-top:auto}
 /* 轮次条：直接复用雷达的 .bhead / .batch / .step / .funnel，只补「回到本轮」。 */
 .opp-roundbar{padding-right:16px}
 .opp-roundbar .spacer{flex:1}
+/* 全部轮次：左边那组读数整块换掉 —— 日期与「出卡」都只属于某一轮，这一模式下没有所指。
+   宽度钉成那一组的实测宽度（257px），右边两个 tab 因此不跟着挪；分隔线与 .funnel 同一条。
+   一行只剩一个真实读数：整库多少张，与左侧「全部」同一个数。 */
+.opp-roundbar.allrows .batch,.opp-roundbar.allrows .funnel{display:none}
+.opp-total{display:flex;align-items:center;gap:7px;padding:5px 16px;white-space:nowrap;
+  flex:0 0 257px;position:relative;font-size:10.5px;color:var(--muted)}
+.opp-total b{font-weight:400;font-variant-numeric:tabular-nums}
+.opp-total::after{content:"";position:absolute;right:0;top:50%;transform:translateY(-50%);
+  width:1px;height:13px;background:var(--hair)}
 /* 两个跳转紧跟在「出卡」后面，用列表 tab 那一套分段控件。 */
 .opp-roundbar .tabs{margin-left:12px}
 .opp-roundbar .tab{height:20px;padding:0 8px;font-size:10.5px}

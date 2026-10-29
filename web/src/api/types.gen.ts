@@ -1785,6 +1785,8 @@ export interface components {
              * @default false
              */
             kept: boolean;
+            /** Updated Scan */
+            updated_scan?: string | null;
             /** Reason */
             reason?: string | null;
             /** Heat */

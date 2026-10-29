@@ -4263,6 +4263,17 @@
       "title": "Kept",
       "default": false
      },
+     "updated_scan": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated Scan"
+     },
      "reason": {
       "anyOf": [
        {

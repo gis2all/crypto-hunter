@@ -139,6 +139,16 @@ def value(key: str, default: Any = None) -> Any:
     return _file().get(key, default)
 
 
+def default(key: str) -> Any:
+    """The `FIELDS` default for one key: what a caller passes as `value(key, default)`.
+
+    Callers must pass this rather than a literal. `value()` only reads the yaml, so a wrong
+    literal is not "a value that never changes" - it is a switch that is off until somebody
+    saves that key (the auto-run clock read 0 for two days while the page printed 02:30).
+    """
+    return _BY_KEY[key]["default"]
+
+
 def write(patch: dict[str, Any]) -> dict[str, Any]:
     """Save what the 设定 page sent, and answer the effective settings.
 

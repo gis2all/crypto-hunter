@@ -53,9 +53,11 @@ def slot(now: datetime, hour: int, minute: int, interval_hours: int) -> datetime
 
 def due(now: datetime | None = None) -> tuple[bool, datetime | None]:
     """Ready when the clock is on and no scan has started since the slot."""
-    interval = int(settings.value("auto_interval_hours", 0))
-    hour = int(settings.value("auto_start_hour", 2))
-    minute = int(settings.value("auto_start_minute", 30))
+    interval = int(settings.value("auto_interval_hours",
+                                  settings.default("auto_interval_hours")))
+    hour = int(settings.value("auto_start_hour", settings.default("auto_start_hour")))
+    minute = int(settings.value("auto_start_minute",
+                                settings.default("auto_start_minute")))
     moment = now or _now()
     at = slot(moment, hour, minute, interval)
     if at is None:
