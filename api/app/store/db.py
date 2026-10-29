@@ -46,7 +46,10 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 24
+#: 25 rewrote the query catalog once more: X's `-game` only matches the whole word, so
+#: `gamers` / `gameplay` walked back in. The new terms arrive with the tracked seed and the
+#: superseded rows are retired in place, the same shape as 13.
+SCHEMA_VERSION = 25
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -375,6 +378,14 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
         renamed = _normalise_opportunity_ecosystems(conn)
         if renamed:
             log.info("opportunities: normalised %d ecosystem spellings", renamed)
+    if was < 25 and conn.execute(
+            "SELECT count(*) AS n FROM opportunity_sources").fetchone()["n"]:
+        # 2026-10-29: the catalog gained -gamers / -gameplay / -web3gaming / -派对. X's -game
+        # only matches the whole word, so "gamers" and "gameplay" walked straight through. The
+        # catalog is installed from the tracked seed and every superseded row is retired, the
+        # same rewrite the 13 bump ran; a fresh database is seeded from the file and is skipped.
+        from app.opportunity import watchlist as _watchlist
+        _watchlist.migrate_catalog(rewrite=True)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if own:
         conn.close()
