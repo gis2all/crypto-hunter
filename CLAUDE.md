@@ -60,7 +60,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/sources/`：一个源一个适配器，跨链的放根目录，只服务一条链的放 `<chain>/`。见 `README.md` 与该链 `SOURCES.md`。
 - `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
 - `api/app/search/`：挖链（识别、发现、抓取、引擎）与会话池。`x_sessions.py` 把 `x.cookies` 变成 N 条并行 lane（429 冷却、401 停用各自独立），所有 X 调用都从它借会话。见 `README.md`。
-- `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、链注册表自动核验（`chainverify` / `chain_registry`）、晋升门槛、读者自己的归档、删除与星标。与一轮的编排无关，不写 `runs`。见 `README.md`。
+- `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、链注册表自动核验（`chainverify` / `chain_registry`）、晋升门槛、抽取时的卡片级语汇剔除（游戏 / 链游 / AMA / 派对等非机会内容不落库）、读者自己的归档、删除与星标。与一轮的编排无关，不写 `runs`。见 `README.md`。
 - `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
