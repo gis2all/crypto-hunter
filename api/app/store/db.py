@@ -249,6 +249,7 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunities", "kept", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunities", "kept_at", "TEXT"),
                   ("opportunities", "ecosystem", "TEXT"),
+                  ("opportunities", "updated_scan", "TEXT"),
                   ("opportunities", "user_state", "TEXT NOT NULL DEFAULT 'active'"),
                   ("opportunities", "user_state_at", "TEXT"),
                   ("opportunity_sources", "window_hours", "INTEGER NOT NULL DEFAULT 24"),
@@ -1392,8 +1393,8 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
             " official_url, sources_json, summary, trust, trust_basis, ecosystem, source_type,"
             " risk, barrier, maturity,"
             " started_at, deadline, status, reason, heat, heat_basis, discovered_at, source_kind,"
-            " source_ref, extract_version, novelty, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " source_ref, extract_version, novelty, updated_scan, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(slug) DO UPDATE SET"
             " kind = excluded.kind, category = excluded.category, title = excluded.title,"
             " organizer = excluded.organizer, project_key = excluded.project_key,"
@@ -1410,6 +1411,7 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
             " extract_version = excluded.extract_version, novelty = excluded.novelty,"
             " event_group = NULL, dedup_at = NULL,"
             " ecosystem_checked_at = NULL,"
+            " updated_scan = excluded.updated_scan,"
             " updated_at = excluded.updated_at",
             (entry["slug"], entry["kind"], entry.get("category"), entry["title"], entry.get("organizer"),
              entry.get("project_key"), entry.get("event_key"),
@@ -1421,7 +1423,8 @@ def opportunity_put(entry: dict, steps: list[dict]) -> None:
              entry.get("deadline"), entry.get("status") or "candidate", entry.get("reason"),
              entry.get("heat"), entry.get("heat_basis"), entry["discovered_at"],
              entry.get("source_kind"), entry.get("source_ref"),
-             entry.get("extract_version"), entry.get("novelty"), now_iso()),
+             entry.get("extract_version"), entry.get("novelty"),
+             entry.get("updated_scan"), now_iso()),
         )
         conn.execute("DELETE FROM opportunity_steps WHERE slug = ?", (entry["slug"],))
         for index, step in enumerate(steps or []):

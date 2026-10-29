@@ -1132,6 +1132,37 @@ def test_an_archived_card_is_frozen(isolated_db):
     assert db.opportunity_unjudged() == [], "补链也不再问冻结的卡"
 
 
+def test_a_round_counts_what_it_created_and_what_it_rewrote(isolated_db):
+    """`discovered_at` says which round found a card; `updated_scan` says which round last wrote it.
+
+    The page splits a round into 新增 / 更新 from these two, so both are counted where the write
+    happens - `写入 - 新增` would quietly fold an archived or merged entry into 更新.
+    """
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post"}
+
+    def counters():
+        return {"materials": 0, "entries": 0, "created": 0, "updated": 0, "promoted": 0,
+                "candidate": 0, "issues": 0, "frozen": 0}
+
+    first = counters()
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s",
+                                    ecosystem="base")], [], first, "scan-1")
+    found = db.opportunity_items()[0]["discovered_at"]
+
+    second = counters()
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s2",
+                                    ecosystem="base")], [], second, "scan-2")
+
+    assert (first["created"], first["updated"]) == (1, 0)
+    assert (second["created"], second["updated"]) == (0, 1)
+    row = db.opportunity_items()[0]
+    assert row["updated_scan"] == "scan-2"
+    assert row["discovered_at"] == found, "发现那一轮不变，重新写过只记 updated_scan"
+
+
 def test_the_sweep_leaves_processed_cards_alone(isolated_db):
     from app.opportunity import lifecycle
 

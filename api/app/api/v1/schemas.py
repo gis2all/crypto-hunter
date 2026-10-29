@@ -703,6 +703,9 @@ class OpportunityItemOut(BaseModel):
     user_state: str = "active"
     #: 读者自己的星标：独立于 user_state（可参与 / 已结束 / 已归档都能带星）。
     kept: bool = False
+    #: 最近一次写过这张卡的扫描 id。`discovered_at` 是「哪一轮发现」，它是「哪一轮动过」——
+    #: 同一张卡会被后续几轮重新抽到并就地更新，页面用这一列给「本轮更新」。
+    updated_scan: str | None = None
     #: Why it is not promoted, in the reader's words (empty once it is).
     reason: str | None = None
     #: 热度：来源帖自身互动量换算的 0-100，与它读成人话的那一档。没有来源帖的材料是 None，

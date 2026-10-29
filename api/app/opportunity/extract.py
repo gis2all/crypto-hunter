@@ -55,7 +55,8 @@ def extract(material: dict) -> tuple[list[Entry], list[str]]:
     return entries, issues
 
 
-def _store(material: dict, entries: list[Entry], issues: list[str], counters: dict) -> None:
+def _store(material: dict, entries: list[Entry], issues: list[str], counters: dict,
+           scan: str | None = None) -> None:
     """Judge and write one material. Called only on the coordinator thread."""
     counters["materials"] += 1
     counters["issues"] += len(issues)
@@ -169,12 +170,17 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
             "source_ref": material.get("url") or material.get("ref"),
             "extract_version": EXTRACT_VERSION,
             "novelty": entry.novelty or None,
+            # 哪一轮动过这张卡：页面按它数「本轮更新」，与 `discovered_at`（哪一轮发现）分开。
+            "updated_scan": scan,
         }
         steps = [step.model_dump() for step in entry.steps]
         db.opportunity_put(row, steps)
         if existing and computed_slug != slug:
             db.opportunity_delete_duplicate(computed_slug, source_ref)
         counters["entries"] += 1
+        # 新增与更新分开数：`entries` 是「这一轮写了多少条」，这两个是其中各占多少。
+        counted = "created" if existing is None else "updated"
+        counters[counted] = counters.get(counted, 0) + 1
         counters["promoted" if status == promote.PROMOTED else "candidate"] += 1
     # 主题代表的那条帖与它的同组帖一起标记：否则下一轮会把它们各自再出一张卡，
     # 正是「一个项目七张卡」的成因（user, 2026-10-19）。
@@ -182,10 +188,10 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
         db.opportunity_mark(ref, "post", extracted=True)
 
 
-def run(limit: int | None = None, tell=None) -> dict:
+def run(limit: int | None = None, tell=None, scan: str | None = None) -> dict:
     """Read, judge and store. Model calls overlap; the coordinator owns every write."""
-    counters = {"materials": 0, "entries": 0, "promoted": 0, "candidate": 0, "issues": 0,
-                "frozen": 0, "offtopic": 0}
+    counters = {"materials": 0, "entries": 0, "created": 0, "updated": 0,
+                "promoted": 0, "candidate": 0, "issues": 0, "frozen": 0, "offtopic": 0}
     # 一张卡 = 一个主题（user, 2026-10-19）：同一项目的多条帖合成一份材料，官方页附在后面。
     materials = topics.materials(
         limit=limit or settings.value("extract_per_scan", MAX_EXTRACT))
@@ -211,7 +217,7 @@ def run(limit: int | None = None, tell=None) -> dict:
                 for pending in futures:
                     pending.cancel()
                 raise
-            _store(material, entries, issues, counters)
+            _store(material, entries, issues, counters, scan)
             done += 1
             if tell:
                 tell(done, total)

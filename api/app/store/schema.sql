@@ -341,6 +341,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
   heat            REAL,
   heat_basis      TEXT,                     -- 分数旁边的原始数字（浏览 / 赞 / 转 / 评）
   discovered_at   TEXT NOT NULL,
+  --: 最近一次写过这张卡的扫描 id。`discovered_at` 回答「哪一轮发现它」，这一列回答「哪一轮
+  --: 动过它」——同一张卡会被后续几轮重新抽到并就地更新，页面按这一列给「本轮更新」那一组。
+  updated_scan    TEXT,
   source_kind     TEXT,                     -- post | page
   source_ref      TEXT,                     -- the tweet id or the url it was read from
   extract_version TEXT,                     -- which prompt wrote it; a rule change is traceable

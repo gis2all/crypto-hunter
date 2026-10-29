@@ -72,6 +72,7 @@ def _item(row: dict) -> OpportunityItemOut:
         reason=promote.reason_label(row.get("reason")),
         user_state=row.get("user_state") or "active",
         kept=bool(row.get("kept")),
+        updated_scan=row.get("updated_scan"),
         heat=row.get("heat"), heat_band=heat.band(row.get("heat")),
         heat_basis=row.get("heat_basis") or None,
         discovered_at=row["discovered_at"],

@@ -209,7 +209,7 @@ def run(job: dict, say) -> None:
 
     say("extract")
     counters["extract"] = extract.run(
-        tell=lambda done, total: _tick(job, "extract", done, total))
+        tell=lambda done, total: _tick(job, "extract", done, total), scan=job["id"])
 
     # Semantic de-dupe runs after extraction: it only sees cards, and only candidate groups with
     # at least one newly written/changed card are sent to the model. A failed call leaves the
