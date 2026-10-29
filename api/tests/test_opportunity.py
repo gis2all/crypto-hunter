@@ -2798,6 +2798,21 @@ def test_the_auto_slot_is_the_latest_start_plus_interval():
     assert clock.slot(at(23, 0), 2, 30, 0) is None, "0 = 关闭"
 
 
+def test_the_clock_runs_on_the_field_defaults(isolated_db, monkeypatch):
+    """Nothing was ever saved, so the caller's default is the whole schedule.
+
+    `settings.value` only reads the yaml. A literal that is not the field's own default does
+    not mean "a value nobody changes" - it means a switch that is off until somebody saves it,
+    which is how the clock stayed asleep while the page printed 02:30 / 10:30 / 18:30.
+    """
+    from app.opportunity import schedule as clock
+
+    monkeypatch.setattr(clock.settings, "value", lambda key, default=None: default)
+    assert clock.settings.default("auto_interval_hours") == 8
+    ready, at = clock.due(datetime(2026, 10, 29, 10, 31, tzinfo=clock.TZ))
+    assert ready and at == datetime(2026, 10, 29, 10, 30, tzinfo=clock.TZ)
+
+
 def test_a_slot_counts_as_used_once_any_scan_started(isolated_db, monkeypatch):
     from app.opportunity import schedule as clock
 
