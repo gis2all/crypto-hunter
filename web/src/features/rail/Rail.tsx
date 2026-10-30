@@ -1,4 +1,4 @@
-import { Compass, Moon, Search, Settings, Star, Sun } from "lucide-react";
+import { Compass, Moon, Search, Settings, Star, Sun, Telescope } from "lucide-react";
 
 import type { Chain } from "../../api/client";
 import { Icon } from "../../components/Icon";
@@ -12,7 +12,7 @@ import type { Theme } from "../../theme";
  *  session, the log level. None of the last four is a row in the chain list: a kept card, a
  *  searched one, an activity and a gateway's key can all belong to something this app never
  *  screens. */
-export type Place = "radar" | "favorites" | "lookup" | "opportunity" | "system";
+export type Place = "radar" | "favorites" | "lookup" | "opportunity" | "monitors" | "system";
 
 /** The rail. Only the chains that are wired, as plain names: the product is one radar per
  *  chain, not a menu, and a row nobody can open is not a menu item. A chain's 设定 is a tab in
@@ -51,6 +51,15 @@ export function Rail({
         >
           <Icon as={Compass} size={14} />
           新机会
+        </div>
+        {/* 监控 sits under 新机会 because it is the same instinct read one level down: not "what
+            is new", but "answer this question again" (user, 2026-10-29). */}
+        <div
+          className={"nav-i" + (place === "monitors" ? " on" : "")}
+          onClick={() => onSelectPlace("monitors")}
+        >
+          <Icon as={Telescope} size={14} />
+          监控
         </div>
         {/* Only chains that are wired get a row. A chain nobody can open is not a menu
             item: 待接 on BSC and a 添加链 待定 placeholder both raised a question the rail
