@@ -14,7 +14,7 @@ from functools import lru_cache
 
 import httpx
 
-from ..sources import dexscreener, goplus
+from ...sources import dexscreener, goplus
 
 log = logging.getLogger("crypto-hunter.monitors")
 

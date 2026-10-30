@@ -16,19 +16,19 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..llm import client as llm
-from ..opportunity import rules, trace as trace_mod, watchlist, xread
-from ..store import db
+import httpx
+
+from ...llm import client as llm
+from ...opportunity import rules, trace as trace_mod, watchlist, xread
+from ...store import db
 from . import chain, settings
-from .registry import Monitor, MONITORS
+from ..registry import Monitor, MONITORS, prompt_dir
 
 log = logging.getLogger("crypto-hunter.monitors")
 
 TZ = ZoneInfo("Asia/Shanghai")
-PROMPT_DIR = Path(__file__).with_name("prompts")
 
 #: 月名写成 "30 October, 12:00 UTC" 的页面不少，英文月名要能认出来。
 MONTHS = {name.lower(): index for index, name in enumerate((
@@ -171,8 +171,8 @@ def _finish(scan: dict, status: str, error: str | None = None,
         _cancel.pop(scan["id"], None)
 
 
-def _read_prompt_file(name: str) -> str:
-    return (PROMPT_DIR / name).read_text(encoding="utf-8")
+def _read_prompt_file(monitor: Monitor, name: str) -> str:
+    return (prompt_dir(monitor) / name).read_text(encoding="utf-8")
 
 
 _PAGE_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
@@ -211,6 +211,19 @@ def _site_title(pages: list, names: list[str] | None = None) -> str:
     return ""
 
 
+def _page_titles(pages: list) -> str:
+    """`<title>` / `og:title` of whatever HTML was read, lowercased and unvalidated.
+
+    Type reads this rather than the page body: "ChyAI · AI Agent Launchpad" is the project's own
+    one-line description, while a launchpad link in the body may just be a partner (2026-10-30).
+    """
+    html = "\n".join(str(page) for page in pages or [])
+    return " ".join(
+        html_lib.unescape(match.group(1)).lower()
+        for pattern in (_PAGE_TITLE, _OG_TITLE)
+        if (match := pattern.search(html)))
+
+
 def _title_ok(text: str, names: list[str]) -> bool:
     low = text.lower()
     if not (1 < len(text) <= 60) or any(noise in low for noise in _TITLE_NOISE):
@@ -224,8 +237,30 @@ def _title_ok(text: str, names: list[str]) -> bool:
     return False
 
 
+def _probe_https(url: str) -> bool:
+    try:
+        reply = httpx.head(url, follow_redirects=True, timeout=8,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        return reply.status_code < 400
+    except Exception:  # noqa: BLE001 - an https that will not answer keeps the http link
+        return False
+
+
+def _secure(url: str, probe=_probe_https) -> str:
+    """Prefer https when the site answers it; keep the original link otherwise.
+
+    Trace reports whatever scheme the page was reached on (`http://danta.ai/`), and the card
+    should not keep serving a plain-http link when https works (2026-10-30, user).
+    """
+    text = str(url or "").strip()
+    if not text.lower().startswith("http://"):
+        return text
+    candidate = "https://" + text[7:]
+    return candidate if probe(candidate) else text
+
+
 def _read_prompt(monitor: Monitor) -> str:
-    return _read_prompt_file(monitor.prompt)
+    return _read_prompt_file(monitor, monitor.prompt)
 
 
 #: One sweep reads at most five batches of `max_posts` posts, and keeps at most 20 projects
@@ -346,7 +381,7 @@ def _missing(project: dict) -> bool:
     return any(_blank(project.get(key)) for key in FILL_FIELDS)
 
 
-def _fill(project: dict) -> dict:
+def _fill(monitor: Monitor, project: dict) -> dict:
     """The four card fields, read off the pages the trace already fetched.
 
     The mint page usually says the thing the post does not: "6,624 of 95,669 minted". Reading it
@@ -355,7 +390,7 @@ def _fill(project: dict) -> dict:
     text = _excerpt("\n\n".join(str(page) for page in project.get("pages") or []))
     if not text.strip():
         return {}
-    messages = [{"role": "system", "content": _read_prompt_file("fill.md")},
+    messages = [{"role": "system", "content": _read_prompt_file(monitor, "fill.md")},
                 {"role": "user", "content": text}]
     value = llm.complete_json(messages, purpose="monitor_fill", prompt_version=FILL_VERSION)
     return value if isinstance(value, dict) else {}
@@ -363,9 +398,12 @@ def _fill(project: dict) -> dict:
 
 SUMMARY_VERSION = "monitor-summary-v1"
 SUMMARY_CHARS = 4000
+#: 页面只渲染出一个壳时，模型会把「没读到内容」当成摘要写回来。这样的话不能覆盖原摘要
+#: （Nemotron / ChyAI 就因此被写成「官网原文未提供」，2026-10-30）。
+_EMPTY_SUMMARY = ("官网原文未提供", "无法确认项目内容", "未提供", "未说明参与方式", "未说明参与")
 
 
-def _rewrite(project: dict) -> str:
+def _rewrite(monitor: Monitor, project: dict) -> str:
     """Rewrite the card's summary from the official page, not from the KOL post.
 
     The extraction reads posts, and a post can call a token sale a "runes project" (BNBS).
@@ -375,11 +413,14 @@ def _rewrite(project: dict) -> str:
     text = chain.plain("\n".join(str(page) for page in project.get("pages") or []))[:SUMMARY_CHARS]
     if not text.strip():
         return ""
-    messages = [{"role": "system", "content": _read_prompt_file("summary.md")},
+    messages = [{"role": "system", "content": _read_prompt_file(monitor, "summary.md")},
                 {"role": "user", "content": text}]
     value = llm.complete_json(messages, purpose="monitor_summary",
                               prompt_version=SUMMARY_VERSION)
-    return str((value or {}).get("summary") or "").strip()
+    summary = str((value or {}).get("summary") or "").strip()
+    if any(marker in summary for marker in _EMPTY_SUMMARY):
+        return ""
+    return summary
 
 
 def _known() -> set[str]:
@@ -409,7 +450,7 @@ def _trace_one(project: dict, known: set[str]) -> dict:
     # 只有落 C 才补二次搜索：帖子里既没有 @ 也没有链接时（Synth Ape / HashOre / Niche
     # Society），这是唯一能跟的线。放在 C 之后而不是每次都给，是因为搜索会花 X 调用、也会
     # 把限流引到后面的资料页上，让本来能判 A 的卡一起掉成 C（2026-10-30 实测）。
-    from ..opportunity import chainsearch, scan as opp_scan
+    from ...opportunity import chainsearch, scan as opp_scan
 
     return trace_mod.trace_lead(lead, known=known, search=opp_scan.look_up,
                                 web_search=chainsearch.search)
@@ -500,22 +541,29 @@ def _type(info: dict, project: dict) -> str:
     facts = " ".join(str(item) for item in project.get("facts") or [])
     strong = (title + " " + facts).lower()
     page = chain.plain(" ".join(str(text) for text in project.get("pages") or [])).lower()
+    # 只看官网标题（<title> / og:title）：ChyAI、KOAI 的标题就是 "AI Agent Launchpad"，
+    # 而正文首屏或页脚里随手一个 launchpad 链接不足以说明项目是什么（2026-10-30）。
+    page_titles = str(project.get("page_title") or "").lower() \
+        or _page_titles(project.get("pages") or [])
     lead = (title + " " + summary + " " + facts).lower()
     # 铭文只看标题 / facts。摘要会引用 KOL 的措辞：BNBS 的原帖把它叫「符文项目」，官网写的却是
     # `10 shares per wallet`；官网页脚里的 runes 同样不可靠（2026-10-30）。
     if _hit(strong, INSCRIPTION_WORDS):
         return "inscription"
-    if _hit(strong, LAUNCHPAD_WORDS) or _hit(summary.lower(), LAUNCHPAD_WORDS):
+    unit = str(project.get("mint_unit") or "").strip().lower()
+    # 单位先于「发射台」：BIBIAI 按「份」卖、抽取摘要却把它叫发射平台；单位是更硬的事实
+    # （2026-10-30, user）。
+    if unit in ("份",) or _hit(unit, SHARE_WORDS):
+        return "share"
+    if _hit(strong, LAUNCHPAD_WORDS) or _hit(summary.lower(), LAUNCHPAD_WORDS) \
+            or _hit(page_titles, LAUNCHPAD_WORDS):
         return "launchpad"
     hint = str(project.get("asset_type") or "").strip().lower()
     if str(project.get("mint_kind") or "").strip().lower() == "task":
         return "task"
     if hint == "task":
         return "task"
-    unit = str(project.get("mint_unit") or "").lower()
     # 单位比「附近有没有 ERC-20」更可信：Phosphor 的铸造合约 `token()` 指向 PHOS，卖的却是 cards。
-    if _hit(unit, SHARE_WORDS):
-        return "share"
     if _hit(unit, NFT_WORDS):
         return "nft"
     if info.get("nft") is True:
@@ -538,6 +586,12 @@ def _type(info: dict, project: dict) -> str:
     if _int(project.get("mint_total")):
         return "share" if _hit(str(project.get("mint_unit") or "").lower(), SHARE_WORDS) else "nft"
     return "unknown"
+
+
+def _has_site(project: dict) -> bool:
+    """A card must point at the project's own site; an account alone is not enough
+    (Polka Agents: only a community handle, 2026-10-30, user)."""
+    return bool(str(project.get("official_url") or "").strip())
 
 
 def _rug(prev: dict, now: dict) -> dict:
@@ -600,6 +654,13 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
     pages = chain.plain("\n".join(str(page) for page in project.get("pages") or []))
     if pages:
         fields["page_excerpt"] = pages[:2000]
+    page_title = _page_titles(project.get("pages") or [])
+    if page_title:
+        fields["page_title"] = page_title
+    # 抽取阶段的摘要留档：类型判定吃的是它，事后要能回答「当初为什么这么判」
+    # （2026-10-30）。
+    if project.get("summary_extract"):
+        fields["summary_extract"] = str(project["summary_extract"])
     # 开始和截止是两个时间，不再互相顶替；带 UTC 的在这里统一换成北京时间（2026-10-30）。
     fields["start"] = _when(project.get("start"))
     fields["deadline"] = _when(project.get("deadline"))
@@ -629,6 +690,18 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
             "source": "chain" if info.get("minted") is not None
             or info.get("token_total") is not None else "site",
         }
+    # 来源为空时至少补上账号 / 官网：B 级（社区）常只有账号，页脚不能是空的
+    # （Polka Agents，2026-10-30）。
+    sources = list(project.get("sources") or [])
+    if not sources:
+        account = str(project.get("official_account") or project.get("handle") or "").lstrip("@")
+        if account:
+            label = "官方 X" if project.get("trust") == "official" else "社区 X"
+            sources.append({"kind": "official_account", "label": label,
+                            "url": "https://x.com/%s" % account})
+        if project.get("official_url"):
+            sources.append({"kind": "official_site", "label": "官网",
+                            "url": str(project["official_url"])})
     return {
         "slug": slug,
         "title": title,
@@ -645,7 +718,7 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
         "source_url": project.get("source") or None,
         "trust": project.get("trust") or "unjudged",
         "trust_basis": project.get("trust_basis") or None,
-        "sources": project.get("sources") or [],
+        "sources": sources,
         "fields": fields,
         "version": monitor.version,
         "first_seen": _stamp(),
@@ -669,7 +742,7 @@ def run(scan: dict, monitor: Monitor) -> None:
         rows = []
         calls = 0
         failed = 0
-        # 采集与过闸的三个数来自 `config/monitors/<id>.yaml`（缺了就用 registry 的默认值）。
+        # 采集与过闸的三个数来自 `monitors/<id>/settings.yaml`（缺了就用 registry 的默认值）。
         window_hours = int(settings.value(monitor, "window_hours"))
         slice_hours = int(settings.value(monitor, "slice_hours"))
         for query in settings.value(monitor, "queries"):
@@ -770,12 +843,17 @@ def run(scan: dict, monitor: Monitor) -> None:
                 project["trust_basis"] = answer.get("basis") or ""
                 project["sources"] = answer.get("sources") or []
                 project["pages"] = answer.get("pages") or []
+                # 官网统一走 https（trace 给的是它读到的 scheme，http://danta.ai/）。
+                project["official_url"] = _secure(str(project.get("official_url") or ""))
+                for source in project["sources"]:
+                    if isinstance(source, dict) and source.get("kind") == "official_site":
+                        source["url"] = _secure(str(source.get("url") or ""))
                 # 静态 HTML 只有几百字节说明这站是客户端渲染的（HODLER 的 Minted 650 / 7,221
                 # 就只在渲染后的页面里），这时再用浏览器读一次（2026-10-30）。
                 # 计数常常只在 mint 子页上（Tiny Farm 的「469 / 1000」在 /mint，首页一个数都没有），
                 # 而且都是客户端渲染的，所以首页和常见的 mint 路径都用浏览器读一遍（2026-10-30）。
                 if project.get("official_url"):
-                    from ..sources import browser
+                    from ...sources import browser
                     base = str(project["official_url"]).rstrip("/")
                     for suffix in ("", "/mint", "/mint.html"):
                         try:
@@ -793,7 +871,7 @@ def run(scan: dict, monitor: Monitor) -> None:
         # 官网正文常常写着总量 / 铸造价 / 截止，而帖子没写：抽一次补上缺的那几项。
         filled = 0
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_fill, project): project
+            futures = {pool.submit(_fill, monitor, project): project
                        for project in traced if project.get("pages") and _missing(project)}
             for future in as_completed(futures):
                 project = futures[future]
@@ -816,7 +894,7 @@ def run(scan: dict, monitor: Monitor) -> None:
         # 摘要按官网重写：帖子（尤其 KOL）会用自己的叫法，官网才是资产形态的准绳。
         rewritten = 0
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_rewrite, project): project
+            futures = {pool.submit(_rewrite, monitor, project): project
                        for project in traced if project.get("pages")}
             for future in as_completed(futures):
                 project = futures[future]
@@ -893,7 +971,12 @@ def run(scan: dict, monitor: Monitor) -> None:
         written = 0
         # 上一轮的链上那组用来判撤池：池子在不在、流动性掉了多少（2026-10-30）。
         before = {row["slug"]: row for row in db.monitor_cards(monitor.id)}
+        no_site = 0
         for project in traced:
+            # 一张卡必须有官网：只有社区号、没有站的项目不建卡（Polka Agents，2026-10-30, user）。
+            if not _has_site(project):
+                no_site += 1
+                continue
             project["type"] = _type(project.get("chain_info") or {},
                                     {**project, "summary": project.get("summary_extract") or ""})
             card = _card(monitor, project, scan["id"], before)
@@ -902,6 +985,7 @@ def run(scan: dict, monitor: Monitor) -> None:
             db.monitor_card_put(monitor.id, card, scan["id"])
             written += 1
         counters["written"] = written
+        counters["skipped_no_site"] = no_site
         # 队列是工作集，不是档案：只留 30 天（2026-10-30, user）。
         counters["pruned"] = db.monitor_posts_prune(
             monitor.id, (_now() - timedelta(days=30)).isoformat(timespec="seconds"))

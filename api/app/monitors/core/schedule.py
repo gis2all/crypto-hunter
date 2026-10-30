@@ -12,9 +12,9 @@ import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..store import db
+from ...store import db
 from . import job, settings
-from .registry import MONITORS
+from ..registry import MONITORS
 
 log = logging.getLogger("crypto-hunter.monitors")
 

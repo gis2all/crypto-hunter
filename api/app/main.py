@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, config
 from .api.v1.router import api_router
-from .monitors import schedule as monitor_schedule
+from .monitors.core import schedule as monitor_schedule
 from .opportunity import schedule as opportunity_schedule
 from .opportunity import watchlist as opportunity_watchlist
 from .pipeline import schedule

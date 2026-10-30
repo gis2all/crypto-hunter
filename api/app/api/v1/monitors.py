@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...monitors import job, settings
+from ...monitors.core import job, settings
 from ...monitors.registry import MONITORS
 from ...store import db
 from . import schemas
