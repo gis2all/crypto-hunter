@@ -11,6 +11,8 @@
 # 2026-10-27：official 行默认 enabled: false —— 不再读时间线，只作为身份库（known）；
 # 扫描只读 query 行。官网/文档刷新是下一步。
 #
+# 2026-10-29：补 -gamers / -gameplay / -web3gaming / -派对 —— X 的 -game 只认整词，
+# 「gamers」「gameplay」照样会回来。
 # 2026-10-27：query 行统一带排除词（交易大赛 / AMA / 抽奖 / 博彩 / 体育 / 娱乐 / 游戏 / 开户 /
 # 演唱会，以及 giveaway / lottery / casino / betting / sports / entertainment / gaming /
 # concert 等英文对应词），在 X 端先少占每片 40 条的名额；免费闸仍是第二层。
@@ -674,7 +676,7 @@ catalog:
 # 2026-10-22：按机会族重建。每个 query 行带 family；旧 30 条由迁移禁用，不在这里重复。
 query:
   # network
-  - target: '("run a node" OR "run your own node" OR "node sale" OR "validator node" OR "become a validator" OR restaking) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("run a node" OR "run your own node" OR "node sale" OR "validator node" OR "become a validator" OR restaking) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: network
     ecosystem: multi
@@ -683,7 +685,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 网络与安全：节点、验证者、sequencer、prover、restaking"
-  - target: '(testnet OR devnet OR faucet) ("run a node" OR "validator node" OR "test transaction") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(testnet OR devnet OR faucet) ("run a node" OR "validator node" OR "test transaction") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: network
     ecosystem: multi
@@ -692,7 +694,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 网络与安全：测试网参与与 faucet"
-  - target: '(测试网 OR 节点) (运行 OR 注册 OR 销售) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(测试网 OR 节点) (运行 OR 注册 OR 销售) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: network
     ecosystem: multi
@@ -702,7 +704,7 @@ query:
     enabled: true
     note: "2026-10-22 网络与安全：中文节点/测试网"
   # capital
-  - target: '("points program" OR "season 1" OR "season 2" OR APR OR APY) (deposit OR "provide liquidity" OR stake OR "open a vault" OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("points program" OR "season 1" OR "season 2" OR APR OR APY) (deposit OR "provide liquidity" OR stake OR "open a vault" OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: capital
     ecosystem: multi
@@ -711,7 +713,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 资本与流动性：积分、季节、收益率与资金动作"
-  - target: '("liquidity mining" OR "yield farming") (deposit OR "provide liquidity" OR stake OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("liquidity mining" OR "yield farming") (deposit OR "provide liquidity" OR stake OR restake) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: capital
     ecosystem: multi
@@ -720,7 +722,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 资本与流动性：挖矿、LP、借贷"
-  - target: '(积分 OR 流动性挖矿 OR 质押) (存入 OR 提供流动性 OR 金库 OR 复投) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(积分 OR 流动性挖矿 OR 质押) (存入 OR 提供流动性 OR 金库 OR 复投) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: capital
     ecosystem: multi
@@ -730,7 +732,7 @@ query:
     enabled: true
     note: "2026-10-22 资本与流动性：中文积分与资金动作"
   # usage
-  - target: '(testnet OR faucet OR "public beta" OR "early access") ("complete quest" OR quest OR "check-in" OR waitlist) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(testnet OR faucet OR "public beta" OR "early access") ("complete quest" OR quest OR "check-in" OR waitlist) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: usage
     ecosystem: multi
@@ -739,7 +741,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 使用与增长：测试网、积分、任务"
-  - target: '(from:Galxe OR from:Layer3xyz OR from:zealy_io OR from:TaskOn_xyz OR from:IntractHQ) (quest OR points OR check-in) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(from:Galxe OR from:Layer3xyz OR from:zealy_io OR from:TaskOn_xyz OR from:IntractHQ) (quest OR points OR check-in) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: usage
     ecosystem: multi
@@ -748,7 +750,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 使用与增长：任务平台"
-  - target: '(测试网 OR 水龙头 OR 公测) (任务 OR 积分 OR 签到) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(测试网 OR 水龙头 OR 公测) (任务 OR 积分 OR 签到) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: usage
     ecosystem: multi
@@ -758,7 +760,7 @@ query:
     enabled: true
     note: "2026-10-22 使用与增长：中文任务与测试网"
   # issuance
-  - target: '("free mint" OR mint OR allowlist OR IDO OR LBP OR launchpad OR TGE OR "token sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("free mint" OR mint OR allowlist OR IDO OR LBP OR launchpad OR TGE OR "token sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: issuance
     ecosystem: multi
@@ -767,7 +769,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 发行与分配：Mint、白名单、IDO、TGE"
-  - target: '("fair launch" OR "bonding curve" OR "node sale" OR "token sale" OR "public sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("fair launch" OR "bonding curve" OR "node sale" OR "token sale" OR "public sale") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: issuance
     ecosystem: multi
@@ -776,7 +778,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 发行与分配：公平发行、曲线、节点销售"
-  - target: '(打新 OR 认购 OR 免费铸造 OR 空投领取 OR 白名单) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(打新 OR 认购 OR 免费铸造 OR 空投领取 OR 白名单) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: issuance
     ecosystem: multi
@@ -786,7 +788,7 @@ query:
     enabled: true
     note: "2026-10-22 发行与分配：中文发行动作"
   # governance
-  - target: '("vote on" OR "delegate votes" OR "governance proposal" OR gauge) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("vote on" OR "delegate votes" OR "governance proposal" OR gauge) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: governance
     ecosystem: multi
@@ -795,7 +797,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 所有权与治理：投票、委托、ve、gauge"
-  - target: '(治理 OR 投票 OR 委托) (提案 OR Snapshot) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '(治理 OR 投票 OR 委托) (提案 OR Snapshot) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: governance
     ecosystem: multi
@@ -804,7 +806,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 所有权与治理：中文治理"
-  - target: '("governance proposal" OR "delegate votes" OR "cast your vote") (DAO OR token OR protocol) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("governance proposal" OR "delegate votes" OR "cast your vote") (DAO OR token OR protocol) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: governance
     ecosystem: multi
@@ -814,7 +816,7 @@ query:
     enabled: true
     note: "2026-10-22 所有权与治理：DAO 提案"
   # discovery
-  - target: '("new protocol" OR "new mechanism" OR "new gameplay" OR "new standard" OR "new primitive") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("new protocol" OR "new mechanism" OR "new gameplay" OR "new standard" OR "new primitive") -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: discovery
     ecosystem: multi
@@ -823,7 +825,7 @@ query:
     max_results: 40
     enabled: true
     note: "2026-10-22 独立发现：新协议、新机制、新玩法"
-  - target: '("new standard" OR "new primitive" OR "new gameplay") (protocol OR app OR SDK) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers'
+  - target: '("new standard" OR "new primitive" OR "new gameplay") (protocol OR app OR SDK) -is:retweet -is:reply -giveaway -giveaways -lottery -抽奖 -博彩 -赌博 -casino -betting -gambling -体育 -sports -sport -娱乐 -entertainment -游戏 -gaming -开户 -演唱会 -concert -AMA -交易大赛 -"trading competition" -链游 -gamefi -game-fi -playtoearn -play-to-earn -p2e -web3game -nftgame -game -games -raffle -snipers -bundlers -gamers -gameplay -web3gaming -派对'
     kind: query
     family: discovery
     ecosystem: multi

@@ -729,6 +729,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Monitors
+         * @description Every monitor this build knows, with its card count and its last sweep.
+         */
+        get: operations["list_monitors_api_v1_monitors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cards */
+        get: operations["list_cards_api_v1_monitors__monitor_id__cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Settings */
+        get: operations["read_settings_api_v1_monitors__monitor_id__settings_get"];
+        /** Write Settings */
+        put: operations["write_settings_api_v1_monitors__monitor_id__settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Scan */
+        post: operations["start_scan_api_v1_monitors__monitor_id__scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_v1_monitors__monitor_id__scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/scans/{scan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Scan */
+        post: operations["cancel_scan_api_v1_monitors__monitor_id__scans__scan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/form": {
         parameters: {
             query?: never;
@@ -1683,6 +1789,200 @@ export interface components {
              * @default
              */
             tone: string;
+        };
+        /**
+         * MonitorCardOut
+         * @description One card a monitor wrote. The common columns are the ones every monitor prints; the
+         *     monitor's own fields ride in `fields` and are rendered by that monitor's card component.
+         */
+        MonitorCardOut: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Project */
+            project?: string | null;
+            /** Handle */
+            handle?: string | null;
+            /** Chain */
+            chain?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Price */
+            price?: string | null;
+            /** Supply */
+            supply?: string | null;
+            /** Deadline */
+            deadline?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Official Url */
+            official_url?: string | null;
+            /** Official Account */
+            official_account?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Trust */
+            trust?: string | null;
+            /** Trust Basis */
+            trust_basis?: string | null;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Fields
+             * @default {}
+             */
+            fields: {
+                [key: string]: unknown;
+            };
+            /** First Seen */
+            first_seen: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** MonitorCardsOut */
+        MonitorCardsOut: {
+            /** Monitor */
+            monitor: string;
+            /**
+             * Cards
+             * @default []
+             */
+            cards: components["schemas"]["MonitorCardOut"][];
+        };
+        /** MonitorListOut */
+        MonitorListOut: {
+            /**
+             * Monitors
+             * @default []
+             */
+            monitors: components["schemas"]["MonitorOut"][];
+        };
+        /** MonitorOut */
+        MonitorOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Tagline */
+            tagline: string;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: string[];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Schedule
+             * @default true
+             */
+            schedule: boolean;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            /**
+             * Cards
+             * @default 0
+             */
+            cards: number;
+            scan?: components["schemas"]["MonitorScanOut"] | null;
+            /**
+             * Running
+             * @default false
+             */
+            running: boolean;
+            /**
+             * Settings
+             * @default {}
+             */
+            settings: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * MonitorScanOut
+         * @description One sweep of one monitor.
+         */
+        MonitorScanOut: {
+            /** Id */
+            id: string;
+            /** Monitor */
+            monitor: string;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage?: string | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Counters
+             * @default {}
+             */
+            counters: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error?: string | null;
+            /** Started At */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Trigger */
+            trigger?: string | null;
+        };
+        /** MonitorSettingsIn */
+        MonitorSettingsIn: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Schedule */
+            schedule?: boolean | null;
+            /** Interval Hours */
+            interval_hours?: number | null;
+            /** Start Hour */
+            start_hour?: number | null;
+            /** Start Minute */
+            start_minute?: number | null;
+            /** Window Hours */
+            window_hours?: number | null;
+            /** Slice Hours */
+            slice_hours?: number | null;
+            /** Min Score */
+            min_score?: number | null;
+            /** Queries */
+            queries?: string[] | null;
+        };
+        /** MonitorSettingsOut */
+        MonitorSettingsOut: {
+            /** Monitor */
+            monitor: string;
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: unknown;
+            };
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
         };
         /**
          * OpportunityFilterOptionOut
@@ -3726,6 +4026,220 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_monitors_api_v1_monitors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorListOut"];
+                };
+            };
+        };
+    };
+    list_cards_api_v1_monitors__monitor_id__cards_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorCardsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_monitors__monitor_id__settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_settings_api_v1_monitors__monitor_id__settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_scan_api_v1_monitors__monitor_id__scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_api_v1_monitors__monitor_id__scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_scan_api_v1_monitors__monitor_id__scans__scan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorScanOut"];
                 };
             };
             /** @description Validation Error */

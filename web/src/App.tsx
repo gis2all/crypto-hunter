@@ -7,6 +7,7 @@ import { useBatch, useCancelRun, useChains, useFavorites, useForgetFavorite,
 import { OverviewPanel } from "./features/overview/OverviewPanel";
 import { FavoritesView } from "./features/favorites/FavoritesView";
 import { LookupView } from "./features/lookup/LookupView";
+import { MonitorsView } from "./features/monitors/MonitorsView";
 import { OpportunityView } from "./features/opportunity/OpportunityView";
 import { Rail, type Place } from "./features/rail/Rail";
 import { ReportView } from "./features/report/ReportView";
@@ -83,7 +84,7 @@ export default function App() {
   const [place, setPlace] = useState<Place>(() => {
     const kept = readPref(PLACE_KEY);
     return kept === "favorites" || kept === "lookup" || kept === "system"
-      || kept === "opportunity" ? kept : "radar";
+      || kept === "opportunity" || kept === "monitors" ? kept : "radar";
   });
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
@@ -318,6 +319,9 @@ export default function App() {
           // list and no set of settings is passed, because neither scopes an activity - the
           // page's own read carries everything it draws.
           <OpportunityView />
+        ) : place === "monitors" ? (
+          // 监控: standing questions with their own queries, cards, page and clock.
+          <MonitorsView />
         ) : (
           <>
           <TopBar

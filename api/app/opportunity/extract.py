@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..llm import client as llm
@@ -44,6 +45,36 @@ MAX_EXTRACT = 40
 #: Four calls overlap, matching the width the classification pass already used. The model's
 #: slow tail is what this hides: one call taking a minute no longer holds the next three topics.
 EXTRACT_WORKERS = max(1, int(os.environ.get("CH_OPPORTUNITY_EXTRACT_WORKERS", "4") or 4))
+
+#: 卡片级的非机会语汇（2026-10-29, user）。查询只过滤**帖子正文**，而卡是读过链接页之后才写
+#: 的：一场访谈里的 AMA、项目页上的 referral party，正文里一个相关词都没有，`-AMA` 也拦不住。
+#: 中文按子串、英文按整词匹配 —— 后者是为了不把 Panama 当成 AMA、不把 third party 当成派对。
+CARD_NOISE = (
+    "游戏", "链游", "手游", "派对",
+    "gamefi", "game-fi", "gameplay", "play-to-earn", "play to earn", "p2e", "web3 game",
+    "ama", "访谈", "播客", "直播",
+    "interview", "podcast", "livestream",
+)
+
+#: 成对出现的说法：单独一个 party 太常见（third party），只有跟拉新绑在一起才是推荐派对。
+CARD_NOISE_PAIRS = (
+    ("referral", "party"), ("推荐", "派对"), ("邀请", "返佣"), ("affiliate", "program"),
+)
+
+
+def card_noise(*parts: str) -> str | None:
+    """Which non-opportunity word a card's own text carries, if any."""
+    text = " ".join(part for part in parts if part).lower()
+    for word in CARD_NOISE:
+        if any(ord(char) > 127 for char in word):
+            if word in text:
+                return word
+        elif re.search(r"(?<![a-z])" + re.escape(word) + r"(?![a-z])", text):
+            return word
+    for left, right in CARD_NOISE_PAIRS:
+        if left in text and right in text:
+            return left + " " + right
+    return None
 
 
 def extract(material: dict) -> tuple[list[Entry], list[str]]:
@@ -95,6 +126,13 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
     # stage's job, after the card (and its own title) exists.
     fallback = probe.from_pages([page["text"] for page in _pages_of(material)])
     for entry in entries:
+        # 卡片自己的文字里带着非机会语汇就不写：这类条目没有可执行的动作，留在列表里只会
+        # 稀释真正能参与的机会（2026-10-29, user）。
+        noise = card_noise(entry.title or "", entry.summary or "",
+                           *(step.body for step in entry.steps))
+        if noise:
+            counters["noise"] = counters.get("noise", 0) + 1
+            continue
         computed_slug = slug_for(entry)
         project = topics.normalise(material.get("project") or material.get("project_name")
                                    or entry.organizer or entry.title)
@@ -191,7 +229,8 @@ def _store(material: dict, entries: list[Entry], issues: list[str], counters: di
 def run(limit: int | None = None, tell=None, scan: str | None = None) -> dict:
     """Read, judge and store. Model calls overlap; the coordinator owns every write."""
     counters = {"materials": 0, "entries": 0, "created": 0, "updated": 0,
-                "promoted": 0, "candidate": 0, "issues": 0, "frozen": 0, "offtopic": 0}
+                "promoted": 0, "candidate": 0, "issues": 0, "frozen": 0, "offtopic": 0,
+                "noise": 0}
     # 一张卡 = 一个主题（user, 2026-10-19）：同一项目的多条帖合成一份材料，官方页附在后面。
     materials = topics.materials(
         limit=limit or settings.value("extract_per_scan", MAX_EXTRACT))

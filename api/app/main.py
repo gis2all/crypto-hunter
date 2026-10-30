@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, config
 from .api.v1.router import api_router
+from .monitors.core import schedule as monitor_schedule
 from .opportunity import schedule as opportunity_schedule
 from .opportunity import watchlist as opportunity_watchlist
 from .pipeline import schedule
@@ -25,14 +26,18 @@ from .store import db
 async def lifespan(app: FastAPI):
     del app
     db.init_db()
+    # 上一进程留下的 running 扫描没有线程在跑，启动时统一标成中断，界面不再显示僵尸。
+    db.reconcile_running_scans()
     # The watchlist seed fills the table once, on the first start, and never again: after that
     # the table is the truth, deletions included (see `opportunity/watchlist.py`).
     opportunity_watchlist.ensure_seeded()
     schedule.start()
     opportunity_schedule.start()
+    monitor_schedule.start()
     try:
         yield
     finally:
+        monitor_schedule.stop()
         opportunity_schedule.stop()
         schedule.stop()
         browser.shutdown()

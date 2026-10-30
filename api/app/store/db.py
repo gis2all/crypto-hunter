@@ -46,7 +46,14 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 11 gave the entry its own `ecosystem` / `source_type`: the page filters by both, and both
 #: live on the watchlist row rather than on the entry - so they are copied in at write time and
 #: backfilled once for the rows that predate them.
-SCHEMA_VERSION = 24
+#: 26 added the two monitor tables (cards and scans). They are new tables, so `schema.sql`
+#: alone is enough; nothing that already existed changes shape (2026-10-29).
+#: 27 gave a monitor card the same provenance an opportunity card has: official account, the
+#: trust verdict that decided it, and the sources list the footer prints (2026-10-29).
+#: 25 rewrote the query catalog once more: X's `-game` only matches the whole word, so
+#: `gamers` / `gameplay` walked back in. The new terms arrive with the tracked seed and the
+#: superseded rows are retired in place, the same shape as 13.
+SCHEMA_VERSION = 28
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -250,6 +257,10 @@ _ADDED_COLUMNS = (("runs", "progress", "INTEGER NOT NULL DEFAULT 0"),
                   ("opportunities", "kept_at", "TEXT"),
                   ("opportunities", "ecosystem", "TEXT"),
                   ("opportunities", "updated_scan", "TEXT"),
+                  ("monitor_cards", "official_account", "TEXT"),
+                  ("monitor_cards", "trust", "TEXT"),
+                  ("monitor_cards", "trust_basis", "TEXT"),
+                  ("monitor_cards", "sources_json", "TEXT"),
                   ("opportunities", "user_state", "TEXT NOT NULL DEFAULT 'active'"),
                   ("opportunities", "user_state_at", "TEXT"),
                   ("opportunity_sources", "window_hours", "INTEGER NOT NULL DEFAULT 24"),
@@ -375,6 +386,14 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
         renamed = _normalise_opportunity_ecosystems(conn)
         if renamed:
             log.info("opportunities: normalised %d ecosystem spellings", renamed)
+    if was < 25 and conn.execute(
+            "SELECT count(*) AS n FROM opportunity_sources").fetchone()["n"]:
+        # 2026-10-29: the catalog gained -gamers / -gameplay / -web3gaming / -派对. X's -game
+        # only matches the whole word, so "gamers" and "gameplay" walked straight through. The
+        # catalog is installed from the tracked seed and every superseded row is retired, the
+        # same rewrite the 13 bump ran; a fresh database is seeded from the file and is skipped.
+        from app.opportunity import watchlist as _watchlist
+        _watchlist.migrate_catalog(rewrite=True)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if own:
         conn.close()
@@ -1883,3 +1902,222 @@ def opportunity_scan_latest() -> dict | None:
 
 def _stable_id(prefix: str, key: str) -> str:
     return prefix + "_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
+# ============================================================================================
+# 监控（2026-10-29）：每个监控一套卡片与扫描行，互不共享。见 app/monitors/。
+# ============================================================================================
+
+
+def monitor_cards(monitor: str, limit: int = 0) -> list[dict]:
+    """One monitor's cards, newest first. `limit=0` is every card, like the opportunity list."""
+    sql = "SELECT * FROM monitor_cards WHERE monitor = ? ORDER BY updated_at DESC, slug"
+    params: tuple = (monitor,)
+    if limit and limit > 0:
+        sql += " LIMIT ?"
+        params = (monitor, int(limit))
+    conn = connect()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        card = dict(row)
+        card["fields"] = json.loads(card.pop("fields_json") or "{}")
+        card["sources"] = json.loads(card.pop("sources_json") or "[]")
+        out.append(card)
+    return out
+
+
+def monitor_card_put(monitor: str, card: dict, scan_id: str | None = None) -> None:
+    """Write one card. A rewrite keeps `first_seen`: that is when the question first saw it."""
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT INTO monitor_cards"
+            " (monitor, slug, title, project, handle, chain, status, price, supply, deadline,"
+            "  summary, official_url, official_account, source_url, trust, trust_basis,"
+            "  sources_json, fields_json, version, scan_id, first_seen, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(monitor, slug) DO UPDATE SET"
+            " title = excluded.title, project = excluded.project, handle = excluded.handle,"
+            " chain = excluded.chain, status = excluded.status, price = excluded.price,"
+            " supply = excluded.supply, deadline = excluded.deadline,"
+            " summary = excluded.summary, official_url = excluded.official_url,"
+            " official_account = excluded.official_account,"
+            " source_url = excluded.source_url, trust = excluded.trust,"
+            " trust_basis = excluded.trust_basis, sources_json = excluded.sources_json,"
+            " fields_json = excluded.fields_json,"
+            " version = excluded.version, scan_id = excluded.scan_id,"
+            " updated_at = excluded.updated_at",
+            (monitor, card["slug"], card["title"], card.get("project"), card.get("handle"),
+             card.get("chain"), card.get("status"), card.get("price"), card.get("supply"),
+             card.get("deadline"), card.get("summary"), card.get("official_url"),
+             card.get("official_account"), card.get("source_url"), card.get("trust"),
+             card.get("trust_basis"),
+             json.dumps(card.get("sources") or [], ensure_ascii=False),
+             json.dumps(card.get("fields") or {}, ensure_ascii=False),
+             card.get("version"), scan_id, card["first_seen"], card["updated_at"]),
+        )
+    finally:
+        conn.close()
+
+
+def monitor_card_counts() -> dict[str, int]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT monitor, count(*) AS n FROM monitor_cards GROUP BY monitor").fetchall()
+    finally:
+        conn.close()
+    return {row["monitor"]: row["n"] for row in rows}
+
+
+def monitor_scan_put(scan: dict) -> dict:
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO monitor_scans"
+            " (id, monitor, status, stage, stages_json, counters_json, error, started_at,"
+            "  finished_at, trigger)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (scan["id"], scan["monitor"], scan["status"], scan.get("stage"),
+             json.dumps(scan.get("stages") or [], ensure_ascii=False),
+             json.dumps(scan.get("counters") or {}, ensure_ascii=False), scan.get("error"),
+             scan["started_at"], scan.get("finished_at"), scan.get("trigger")),
+        )
+    finally:
+        conn.close()
+    return scan
+
+
+def _monitor_scan_out(row) -> dict:
+    scan = dict(row)
+    scan["stages"] = json.loads(scan.pop("stages_json") or "[]")
+    scan["counters"] = json.loads(scan.pop("counters_json") or "{}")
+    return scan
+
+
+def monitor_scan_get(scan_id: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM monitor_scans WHERE id = ?", (scan_id,)).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _monitor_scan_out(row)
+
+
+def monitor_scan_latest(monitor: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM monitor_scans WHERE monitor = ?"
+            " ORDER BY started_at DESC LIMIT 1", (monitor,)).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else _monitor_scan_out(row)
+
+
+def monitor_post_add(monitor: str, posts: list[dict]) -> int:
+    """Insert gated posts, ignoring the ones this monitor already saw. Returns how many are new.
+
+    The queue is what makes a second sweep read *new* posts instead of the same 24 hours again
+    (2026-10-30, user).
+    """
+    added = 0
+    conn = connect()
+    try:
+        for post in posts:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO monitor_posts"
+                " (monitor, tweet_id, author, created_at, text, score, passed, status, first_seen)"
+                " VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', ?)",
+                (monitor, str(post.get("tweet_id") or ""), post.get("author") or "",
+                 post.get("created_at") or "", str(post.get("text") or ""),
+                 int(post.get("score") or 0), post.get("first_seen") or ""),
+            )
+            added += cursor.rowcount
+    finally:
+        conn.close()
+    return added
+
+
+def monitor_posts_pending(monitor: str, limit: int = 0) -> list[dict]:
+    """Posts waiting to be read, newest first. `limit=0` is the whole queue."""
+    sql = ("SELECT * FROM monitor_posts"
+           " WHERE monitor = ? AND status = 'pending' AND passed = 1"
+           " ORDER BY created_at DESC, score DESC")
+    params: tuple = (monitor,)
+    if limit and limit > 0:
+        sql += " LIMIT ?"
+        params = (monitor, int(limit))
+    conn = connect()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def monitor_posts_mark(monitor: str, tweet_ids: list[str], status: str = "used") -> int:
+    """Retire posts from the queue once the model has read them."""
+    ids = [str(item) for item in tweet_ids if item]
+    if not ids:
+        return 0
+    conn = connect()
+    try:
+        marks = ",".join("?" for _ in ids)
+        cursor = conn.execute(
+            f"UPDATE monitor_posts SET status = ? WHERE monitor = ? AND tweet_id IN ({marks})",
+            (status, monitor, *ids))
+    finally:
+        conn.close()
+    return cursor.rowcount
+
+
+def reconcile_running_scans(reason: str = "进程重启中断") -> int:
+    """Retire scans a previous process left `running`.
+
+    The work lives in a thread inside the API process; a restart kills it and the row would
+    otherwise read as "still scanning" forever - which is exactly what the 01:51 scan did after
+    a restart (2026-10-30).
+    """
+    stamp = now_iso()
+    conn = connect()
+    try:
+        left = conn.execute(
+            "UPDATE opportunity_scans SET status = 'failed', error = ?, finished_at = ?"
+            " WHERE status = 'running'", (reason, stamp)).rowcount
+        right = conn.execute(
+            "UPDATE monitor_scans SET status = 'failed', error = ?, finished_at = ?"
+            " WHERE status = 'running'", (reason, stamp)).rowcount
+    finally:
+        conn.close()
+    return left + right
+
+
+def monitor_posts_prune(monitor: str, cutoff: str) -> int:
+    """Drop queue rows older than `cutoff` (ISO stamp). The queue is a working set, not an archive."""
+    conn = connect()
+    try:
+        removed = conn.execute(
+            "DELETE FROM monitor_posts WHERE monitor = ? AND first_seen < ?",
+            (monitor, cutoff)).rowcount
+    finally:
+        conn.close()
+    return removed
+
+
+def monitor_card_patch(monitor: str, slug: str, fields: dict,
+                       price: str | None = None, deadline: str | None = None) -> None:
+    """Refresh one card's readings (progress / price / deadline) from its own site."""
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE monitor_cards SET fields_json = ?,"
+            " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
+            " WHERE monitor = ? AND slug = ?",
+            (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(), monitor, slug))
+    finally:
+        conn.close()

@@ -341,6 +341,65 @@ export function useKeepOpportunity() {
   });
 }
 
+/** 监控列表：每条带自己的卡片数与最近一次扫描；扫描中是 15 秒一刷。 */
+export function useMonitors() {
+  return useQuery({
+    queryKey: ["monitors"],
+    queryFn: api.listMonitors,
+    refetchInterval: (query) =>
+      (query.state.data?.monitors ?? []).some((row) => row.running) ? 5000 : 30000,
+  });
+}
+
+export function useMonitorCards(monitor: string) {
+  return useQuery({
+    queryKey: ["monitor-cards", monitor],
+    queryFn: () => api.getMonitorCards(monitor),
+    enabled: Boolean(monitor),
+  });
+}
+
+export function useMonitorSettings(monitor: string) {
+  return useQuery({
+    queryKey: ["monitor-settings", monitor],
+    queryFn: () => api.getMonitorSettings(monitor),
+    enabled: Boolean(monitor),
+  });
+}
+
+export function useSaveMonitorSettings(monitor: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: api.MonitorSettingsDraft) => api.putMonitorSettings(monitor, body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["monitor-settings", monitor] });
+      client.invalidateQueries({ queryKey: ["monitors"] });
+    },
+  });
+}
+
+export function useStartMonitorScan(monitor: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.startMonitorScan(monitor),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["monitors"] });
+      client.invalidateQueries({ queryKey: ["monitor-cards", monitor] });
+    },
+  });
+}
+
+export function useCancelMonitorScan(monitor: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) => api.cancelMonitorScan(monitor, scanId),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["monitors"] });
+      client.invalidateQueries({ queryKey: ["monitor-cards", monitor] });
+    },
+  });
+}
+
 export function useCancelOpportunityScan() {
   const client = useQueryClient();
   return useMutation({

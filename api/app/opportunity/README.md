@@ -168,10 +168,11 @@ LP → `挖矿`、铸造 → `Mint`、提案 → `治理`、`project` 类型错�
 
 **X 会话池（2026-10-28）**：`search/x_sessions.py` 把 cookie 变成 N 条 lane。`config/system.yaml` 的 `x.cookies` 是一个平级列表，每一条 = 一条 lane（旧的 `x.auth_token` / `x.ct0` 只在没有列表时兜底为 `main`）；系统设置页可以增删改这一列，回给页面的只有指纹。每条 lane 单独按 `x_interval` 留间隔；`429` 让该条冷却 10 分钟，`401` 只停用该条（进程内的会话快照，重启后重新读文件）。失败的切片换一条 lane 重试一次（池子已经标记了失败的那条），仍失败才计一次失败；重试本身也计入本轮调用数，且只在预算还有余量时发生（先扣掉计划外的额度）。`401` 停用后改一次文件即恢复（换 token 或任意编辑都算）。采集按可用会话数并行：一个查询 = 6 片，17 条查询在 3 条 lane 上约 6–7 分钟（单条约 19 分钟）。流水线与溯源的调用走同一池子，并优先拿到会话（它们是一次调用，不是一组切片）。
 
-查询行统一带一组排除词：交易大赛、AMA、抽奖、博彩、体育、娱乐、游戏、开户、演唱会，以及
-giveaway / lottery / casino / betting / sports / entertainment / gaming / concert 等英文
-对应词。它们只用来少占每片 40 条的名额，免费闸仍是第二层。`-游戏 / -gaming` 可能误伤
-GameFi，先观察一轮再决定是否保留。
+查询行统一带一组排除词：交易大赛、AMA、抽奖、博彩、体育、娱乐、游戏、派对、开户、演唱会，以及
+giveaway / lottery / casino / betting / sports / entertainment / gaming / gamers / gameplay /
+web3gaming / concert 等英文对应词。它们只用来少占每片 40 条的名额，免费闸仍是第二层。
+**X 的 `-game` 只认整词**：`gamers` / `gameplay` 照样会回来，所以各列一条（2026-10-29）。
+这些词也可能误伤 GameFi 一类的真项目，先观察一轮再决定是否保留。
 
 ### 生态（面板的主轴）
 
@@ -308,6 +309,7 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
 | 免费闸 | `rules.py` + `seeds/rules.json` | 规则引擎：资格 / 加分 / 定档 / 硬排除，命中原因落在帖子上。**过闸靠资格规则，不靠总分**：只有具体动作短语（`run a node`、`deposit`、`complete quest`、`mint`）带 `qualify`；`validator`、`yield`、`lending` 这类名词只计 20 分，不能单独过闸。总分（`score >= 30`）只是下限与排序。硬排除覆盖 CEX、交易赛、CEX 活动号与理财、传统金融（信用卡 / 开户）、招聘、新闻观点、事故索赔、能力集成公告、非加密活动、订阅通知、互动抽奖、转发、发射台新币快照（`exclude-launchpad-launch`：只有上线 + 市值 / 24h 量 / 持有人 / sniper 数据、没有任何可执行动作）、事故 / 关停 / 资助通告（`exclude-notice-only`：被入侵、停止运营、敲钟、生态基金、创作者计划、黑客松、被收录，且全文没有一个动作词）、融资通告（`exclude-funding-news`）、已结束的窗口（`exclude-ended-window`：已结束 / 已发放 / 已售罄）、只有预告的帖子（`exclude-preview-only`：待公布 / 预告 / 敬请期待）—— 后三条同样只在全文没有一个动作词时生效。**2026-10-27 起先过一道加密锚点**（`exclude-noncrypto-context`）：链名、代币 / cashtag、EVM 地址、钱包、合约、NFT、DeFi、质押、gas、主网 / 测试网、crypto / web3、加密原生域名等，一个都没有就直接排除 —— 演出、书签 SaaS、健康硬件、订阅、招聘不会再靠 `public sale` / `early access` 过闸。发现机会同样要求官方来源 + 新东西描述 + 加密语境。没过的记 `classified = 'skipped'`（不是 `other`），分数与命中规则一并留着。 |
+| 卡片级语汇 | `extract.card_noise` | 抽取写完卡先看卡片自己的文字（标题 / 一句是什么 / 步骤）：游戏、链游、手游、派对、AMA、访谈、播客、直播，或 referral party / 推荐派对 / 邀请返佣 这类成对说法，命中就**不写这张卡**，计入 `extract.noise`。查询只过滤帖子正文，而卡是读过链接页之后写的 —— 访谈里的 AMA、项目页上的 referral party，正文里一个相关词都没有（2026-10-29, user）。中文按子串、英文按整词匹配，Panama 不会被当成 AMA、third party 也不会被当成派对。 |
 | 一次分组 + 一次抽取 | `group.py` + `prompts/group.md`、`prompts/extract.md`（`extract.md@8`） | 分组一次覆盖全部待分组帖，完整正文不截断；缺失/待定最多补两次，仍有剩余的归 `other`。抽取仍按主题、按每轮预算执行；材料里没有任何加密锚点时直接返回空，不写卡。抽取拒绝发射台新币快照（只有行情数据、动作只有买卖）与落不到类目的条目（`其他` 不是答案，直接丢条目），并按判定顺序归位（没有动作 → 白名单 → 一次性出钱 → 生息 → 花时间）。两次都记账进 `llm_calls`（`purpose` = `opportunity_group` / `opportunity_extract`）；抽取的 `prompt_version` 落进条目的 `extract_version`。 |
 | 类目回填 | `recategorize.py` + `prompts/recategorize.md` | 一次性重读已落库的卡：`every=True` 读全部活跃卡，否则只读停在「其他」的那些。写 `kind` 与 `category` 两列；说不清的返回 `not_opportunity`，由调用方退休（软删）。不属于扫描，不建卡、不改摘要。 |
 | 补链 | `chainsearch.py` + `probe.py` + `prompts/chain.md` | 抽取后统一处理仍是 `未判定` 的卡：卡片自己的字 → 溯源页 → Exa / Parallel 搜索（每个项目最多两种 query、5 条结果）→ 模型在给出的结果里选。链必须在引用的结果里出现；`not_onchain` 写 `retired` + `reason = offchain`。 |
@@ -386,7 +388,9 @@ api/v1/opportunity.py ──▶ opportunity/ ──▶ core/ · sources/ · sear
 | 规则 | 说明 / 反例 |
 | --- | --- |
 | **A 级账号自动进身份库**（`official` 行，`enabled=0`），B 级不进。 | 2026-10-27 起官方号不再读时间线；这行只让 handle 进入免费闸的 `known` 集合，把可能是冒充的号加进去仍会污染身份。 |
+| **资料页上挂的站优先于帖子里的链接** | 账号自己认领的官网比转发里的链接更可信：danta pixel 的帖子写 `danta.ai`（母品牌），资料页挂的是 `dantapixel.deed.page`（实际 mint 站）。资料页有可用链接时覆盖帖子里的站，并清掉旧的 `official_site` 来源。 |
 | **默认每轮溯源上限 200 个项目**（按项目去重，4 个并发；可在设定页调整）。 | 一条线索走完解析、资料页、官网和文档约一分钟；不并发会把一轮拖成数小时。超上限的留在池子里，下一轮接着溯。 |
+| **单个项目 120 秒超时**（`CH_TRACE_LEAD_TIMEOUT`） | 一个不响应的站或指向 Tor 的资料页不能占死一个 worker；超时计一次失败、继续下一个，项目留在池子里下一轮再溯。返回里的 `searched` 只表示「有没有真的发起二次搜索」，没注入搜索函数时是 false。 |
 | **溯源失败要记账**：进未晋升池，理由写「还没溯源」或「未找到官方来源」。 | 这正是"为什么它没上列表"的答案，也是以后回头看"当初太早"的凭据。 |
 | 读取器**复用 `search/`**（`identify.fetch_page` 含 Playwright 兜底、`base.links_in` / `host_of` / `handle_of`、`harvest.site_candidates`），不另写一份。 | 一个源一个适配器：读页面的那套已经写好了，第二份只会跟它漂移。 |
 | 要重写的是**验证**：`identify` 的证明是"这一页提到了这个 CA"，这里没有 CA，等价物是"官网 ↔ 账号互证"。 | 按名字匹配天然会撞上冒充号（同名、加 `_official`），所以证据必须分级。 |

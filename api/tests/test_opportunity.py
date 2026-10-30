@@ -1132,6 +1132,52 @@ def test_an_archived_card_is_frozen(isolated_db):
     assert db.opportunity_unjudged() == [], "补链也不再问冻结的卡"
 
 
+def test_a_profile_link_to_a_handle_named_domain_is_mutual_proof():
+    """tiny-farm.xyz is a canvas app: its text never says "tiny_farming".
+
+    The account links to it and the domain is the handle, which is the same claim as the site
+    naming the project - without it, every client-rendered site came back 社区（未互证）
+    (Tiny Farm, 2026-10-29).
+    """
+    from app.opportunity import trace
+
+    pages = {
+        "https://x.com/tiny_farming":
+            '<html><a href="https://tiny-farm.xyz/">site</a></html>',
+        "https://tiny-farm.xyz/":
+            "<html><title>Tiny Farm</title><body>TINY FARM BETA How to Play Farmers</body></html>",
+    }
+
+    answer = trace.trace_lead(
+        {"text": "Tiny Farming Farmer NFT free mint", "handle": "tiny_farming", "urls": [],
+         "name": "Tiny Farming Farmer NFT", "project_handle": "tiny_farming"},
+        known=set(), fetch=lambda url: pages.get(url, ""))
+
+    assert answer["level"] == "A"
+    assert answer["trust"] == "official"
+    assert answer["site"] == "https://tiny-farm.xyz/"
+
+
+def test_the_site_on_the_official_profile_wins_over_the_post_link():
+    """资料页挂的站是账号自己认领的官网；帖子里的链接可能只是母品牌（danta pixel, 2026-10-30）."""
+    from app.opportunity import trace
+
+    pages = {
+        "https://x.com/acme": '<html><a href="https://acme-mint.xyz/">site</a></html>',
+        "https://acme-mint.xyz/":
+            "<html><title>Acme Mint</title><body>Acme agent mint</body></html>",
+        "https://acme.ai/": "<html><title>Acme</title><body>Acme studio</body></html>",
+    }
+
+    answer = trace.trace_lead(
+        {"text": "Acme agent mint", "handle": "acme", "urls": ["https://acme.ai/"],
+         "name": "Acme", "project_handle": "acme"},
+        known=set(), fetch=lambda url: pages.get(url, ""))
+
+    assert answer["site"] == "https://acme-mint.xyz/", "资料页挂的站优先于帖子里的链接"
+    assert answer["level"] == "A"
+
+
 def test_a_round_counts_what_it_created_and_what_it_rewrote(isolated_db):
     """`discovered_at` says which round found a card; `updated_scan` says which round last wrote it.
 
@@ -1161,6 +1207,42 @@ def test_a_round_counts_what_it_created_and_what_it_rewrote(isolated_db):
     row = db.opportunity_items()[0]
     assert row["updated_scan"] == "scan-2"
     assert row["discovered_at"] == found, "发现那一轮不变，重新写过只记 updated_scan"
+
+
+def test_a_card_that_is_a_game_an_ama_or_a_party_is_not_written(isolated_db):
+    """The query filters the post; the card is written after the pages behind it were read.
+
+    AMA and 派对 arrived in the summary, never in the tweet, so no `-AMA` in the query could
+    have seen them - the card itself is the only place left to say no.
+    """
+    from app.opportunity import extract
+    from app.opportunity.schema import Entry
+
+    material = {"ref": "1", "text": "t", "source_kind": "post"}
+    counters = {"materials": 0, "entries": 0, "created": 0, "updated": 0, "promoted": 0,
+                "candidate": 0, "issues": 0, "frozen": 0, "noise": 0}
+
+    for title in ("Booty Wars 海盗游戏", "首个 Discord AMA", "Rarel 推荐派对",
+                  "Referral party for early believers"):
+        extract._store(material, [Entry(title=title, kind="project", summary="s",
+                                        ecosystem="base")], [], counters)
+    assert db.opportunity_items() == []
+    assert counters["noise"] == 4
+
+    extract._store(material, [Entry(title="Acme", kind="project", summary="s",
+                                    ecosystem="base")], [], counters)
+    assert len(db.opportunity_items()) == 1, "不含这些词的项目照写"
+
+
+def test_every_catalog_query_carries_the_new_exclusions():
+    """-game only matches the whole word, so gamers / gameplay needed their own terms."""
+    from app.opportunity import watchlist
+
+    queries = [row for row in watchlist.seed_rows() if row["kind"] == "query"]
+    assert queries
+    for row in queries:
+        for word in ("-gamers", "-gameplay", "-web3gaming", "-派对"):
+            assert word in row["target"], (word, row["target"][:90])
 
 
 def test_the_sweep_leaves_processed_cards_alone(isolated_db):

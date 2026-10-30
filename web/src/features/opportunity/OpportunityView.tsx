@@ -258,7 +258,8 @@ function ScanPanel({ scan, open, stopping, onCancel }: {
     if (key === "extract") {
       return extract.entries === undefined
         ? "—"
-        : `条目 ${extract.entries} · 晋升 ${extract.promoted ?? 0}`;
+        : `条目 ${extract.entries} · 晋升 ${extract.promoted ?? 0}`
+          + (extract.noise ? ` · 剔除 ${extract.noise}` : "");
     }
     if (key === "chain") {
       const chain = (counters.chain ?? {}) as Record<string, number>;

@@ -417,3 +417,67 @@ CREATE TABLE IF NOT EXISTS opportunity_sites (
 
 CREATE INDEX IF NOT EXISTS idx_opportunity_sites_turn
   ON opportunity_sites(enabled, last_refresh_at);
+
+-- Monitors (2026-10-29): one standing question per row-set, answered on its own clock.
+-- Nothing is shared between two monitors on purpose: a project may be a card in two of them.
+-- The card keeps the monitor's own fields in `fields_json`; its columns are the ones every
+-- monitor prints, so the list can be drawn without knowing which monitor it came from.
+CREATE TABLE IF NOT EXISTS monitor_cards (
+  monitor      TEXT NOT NULL,
+  slug         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  project      TEXT,
+  handle       TEXT,
+  chain        TEXT,
+  status       TEXT,
+  price        TEXT,
+  supply       TEXT,
+  deadline     TEXT,
+  summary      TEXT,
+  official_url TEXT,
+  official_account TEXT,
+  source_url   TEXT,
+  trust        TEXT,
+  trust_basis  TEXT,
+  sources_json TEXT,
+  fields_json  TEXT,
+  version      TEXT,
+  scan_id      TEXT,
+  first_seen   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  PRIMARY KEY (monitor, slug)
+);
+
+CREATE TABLE IF NOT EXISTS monitor_scans (
+  id            TEXT PRIMARY KEY,
+  monitor       TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'running',
+  stage         TEXT,
+  stages_json   TEXT,
+  counters_json TEXT,
+  error         TEXT,
+  started_at    TEXT NOT NULL,
+  finished_at   TEXT,
+  trigger       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitor_scans_monitor
+  ON monitor_scans(monitor, started_at DESC);
+
+-- 监控的帖子队列：抓到的帖子先落库，抽取按 pending 消费，下一轮不会把同一批重读一遍
+-- （2026-10-30, user）。
+CREATE TABLE IF NOT EXISTS monitor_posts (
+  monitor    TEXT NOT NULL,
+  tweet_id   TEXT NOT NULL,
+  author     TEXT,
+  created_at TEXT,
+  text       TEXT NOT NULL,
+  score      INTEGER NOT NULL DEFAULT 0,
+  passed     INTEGER NOT NULL DEFAULT 0,
+  status     TEXT NOT NULL DEFAULT 'pending',
+  first_seen TEXT NOT NULL,
+  PRIMARY KEY (monitor, tweet_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitor_posts_pending
+  ON monitor_posts(monitor, status, passed, created_at DESC);
