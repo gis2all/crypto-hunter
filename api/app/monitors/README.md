@@ -6,12 +6,14 @@
 
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
-| 注册表 | `registry.py` | 每个监控的 id / 名称 / 默认查询 / 提示词 / 卡片字段 / 默认节奏。加一个监控先加一条。 |
-| 查询 | `seeds/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退注册表的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
-| 提示词 | `prompts/<id>.md` + `prompts/summary.md` | 抽取提示词读的时候才打开，改完下一轮生效；`summary.md` 是溯源拿到官网后、用官网正文重写摘要的那一次调用。 |
-| 设定 | `settings.py` + `seeds/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个文件按监控分块，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退注册表默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
-| 一次扫描 | `job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡。可中止。 |
-| 时钟 | `schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
+| 项目目录 | `monitors/<id>/` | 一个监控一个目录：`monitor.py`（`Monitor` 定义）、`prompts/`、`settings.yaml`。加项目 = 加目录，注册表自动发现。 |
+| 注册表 | `registry.py` | `Monitor` 类型 + 扫描 `monitors/*/monitor.py` 的发现逻辑；`package()` / `prompt_dir()` 给引擎定位项目文件。 |
+| 引擎 | `core/` | `job.py` 扫描、`chain.py` 链上、`schedule.py` 时钟、`settings.py` 设定。公共代码，不随项目走；新项目不复制。 |
+| 查询 | `<id>/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退 `monitor.py` 的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
+| 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写的 `summary.md`。读的时候才打开，改完下一轮生效。 |
+| 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个监控一个文件，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退 `monitor.py` 默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
+| 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡。可中止。 |
+| 时钟 | `core/schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
 | 接口 | `api/v1/monitors.py` | 列表、卡片、设定、`POST .../scan`、轮询、中止。 |
 | 表 | `monitor_cards` / `monitor_scans` / `monitor_posts` | 卡按 `(monitor, slug)` 唯一，重写保留 `first_seen`；扫描是回执；`monitor_posts` 是待读帖子队列（按 `tweet_id` 去重）。 |
 
@@ -44,25 +46,31 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 | key | 中文 | 判定 | 卡面 |
 | --- | --- | --- | --- |
 | `nft` | NFT | 单位是 card / egg / farmer / NFT；或 ERC-721；或正文出现 NFT / profile card / collectible | 铸造价 + 进度 |
-| `share` | 代币份额 | 单位是 shares / 份额 / token；或验证过的 ERC-20（含铸造合约 `token()` 指向的） | 铸造价 + 进度 + 安全 + GMGN/Debot |
+| `share` | 代币份额 | 单位是 份 / shares / 份额 / token；或验证过的 ERC-20（含铸造合约 `token()` 指向的） | 铸造价 + 进度 + 安全 + GMGN/Debot |
 | `inscription` | 铭文 / 符文 | 标题 / facts 出现 runes / inscription / ordinals / brc-20 / 铭文 / 符文 | 铸造价 + 进度 |
-| `launchpad` | 发射台 | 标题 / facts / 摘要出现 launchpad / 发射台 / 发射平台 / 发币平台 / 发行平台 / 打新平台 | 只有说明 |
+| `launchpad` | 发射台 | 标题 / facts / 摘要，或官网 `<title>` / `og:title` 出现 launchpad / 发射台 / 发射平台 / 发币平台 / 发行平台 / 打新平台 | 只有说明 |
 | `task` | 任务 / 积分 | `mint_kind` / `asset_type = task`，或摘要出现 quest / 签到 / 打卡 / 积分 / 任务 | 只有说明 |
 | `unknown` | — | 都不命中 | 有什么显示什么 |
 
-顺序：铭文（标题 / facts）→ 发射台 → 任务（`mint_kind` / `asset_type`）→ 单位份额 → 单位物件（NFT）
+顺序：铭文（标题 / facts）→ 单位份额 → 发射台 → 任务（`mint_kind` / `asset_type`）→ 单位物件（NFT）
 → 链上 ERC-721 → 验证过的 ERC-20 → 模型给的 `asset_type` → 任务动词 → NFT 字样 / profile card
 → 只有摘要提到铭文 → 有分母的按份铸造（单位写 shares 记份额，否则记 NFT）→ unknown。
 
-三条约束：
+判定约束：
 
-- **单位优先于链上**：单位写着 shares 的就是份额（BNBS），写着 cards / farmers 的就是 NFT（Phosphor、
-  Tiny Farm），哪怕旁边有 ERC-20、哪怕铸造合约的 `token()` 指向另一个币。
+- **单位优先于链上和平台**：单位写着 份 / shares 的就是份额（BIBIAI 按份卖，摘要把它叫发射平台也
+  不改判），写着 cards / farmers 的就是 NFT（Phosphor、Tiny Farm），哪怕旁边有 ERC-20、哪怕铸造
+  合约的 `token()` 指向另一个币。
+- **官网标题优先于摘要**：GANG 的页面标题就是 `Agent-only launchpad on BNB Chain`，抽取摘要没写；
+  标题存进 `fields.page_title`（老卡也回填过一次）。
 - **摘要不进第一梯队**：摘要是模型写的，会照抄 KOL 的叫法（BNBS 被原帖叫「符文项目」，官网写的是
   `10 shares per wallet`）。铭文只看标题 / facts，摘要在最后才作为兜底；判定用的是**抽取阶段**的摘要
-  （`summary_extract`），不是溯源后重写的那份。
+  （`summary_extract`，现在会随卡片落库，误判时可回看），不是溯源后重写的那份。
 - **官网原文只用于** `profile card` / `collectible` 这一档；前 2000 字存进 `fields.page_excerpt`，回填时
   直接复用，不必再抓一次站。
+- **没有官网不建卡**：只有社区号、没有站的项目直接跳过，扫描计数记 `skipped_no_site`（Polka Agents）。
+- **摘要重写不覆盖空话**：模型写回「官网原文未提供 / 无法确认项目内容 / 未说明参与」时丢弃，保留原摘要；
+  官网链接在 https 可用时统一升级。
 
 报告页左栏是四组：项目 / 类型 / 状态 / 排序。类型计数按全量；状态计数跟着已选类型收敛（选了 NFT，
 下面只剩 NFT 的未开始 / 铸造中 / 已结束），发射台与任务单列「不适用」。排序是 发现时间 / 截止时间 +
@@ -101,8 +109,9 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 卡面时间行是 `发现 / 开始 / 截止`，缺哪个写未公布。
 
 **溯源**：每个项目先取候选官网与候选账号，再读官网和账号资料页。官网提到项目名或 handle、
-且账号资料页链回同一域名才算 `A`（官方）；只有同名账号是 `B`（社区，未互证，卡片上标出来）；
-找不到官方来源是 `C`，**不写卡**。这条规则与「新机会」是同一条（`trace.verdict()`），所以两页
+且账号资料页链回同一域名才算 `A`（官方）；只有同名账号是 `B`（社区，未互证，卡片上标出来）。
+**B 也必须带官网才建卡**：只有社区号、没有站的项目直接跳过（Polka Agents，2026-10-30, user）。
+找不到官方来源是 `C`，不写卡。这条规则与「新机会」是同一条（`trace.verdict()`），所以两页
 对「官方」的说法不会分叉。
 
 常规溯源落 `C` 之后才补**二次 X 搜索 + 网页搜索**：帖子里既没有 @ 也没有链接时，这是唯一能跟的线。
@@ -118,8 +127,9 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 
 ## 加一个监控
 
-1. `registry.py` 加一条 `Monitor`（默认查询、提示词、卡片字段），再到 `seeds/settings.yaml` 加这个 id 的块（查询 + 开关 / 节奏 / 采集参数）。
-2. 写 `prompts/<id>.md`，说明只输出什么 JSON。
-3. `web/src/features/monitors/MonitorsView.tsx` 的 `CARDS` 里注册这个监控的卡片组件。
+1. 新建 `monitors/<id>/`，在 `monitor.py` 里写 `MONITOR = Monitor(...)`（默认查询、卡片字段、节奏）；注册表会自动发现它。
+2. 在 `<id>/prompts/` 放三份提示词：`<id>.md`（只输出什么 JSON）、`fill.md`（补价格 / 进度 / 截止）、`summary.md`（按官网重写摘要）。
+3. 在 `<id>/settings.yaml` 按默认值写查询、开关、节奏、采集参数（不写也行，第一次读取会自动生成）。
+4. `web/src/features/monitors/MonitorsView.tsx` 的 `CARDS` 里注册这个监控的卡片组件。
 
 这也正是「每个监控一个定制前端页面」的代价：一次代码改动，而不是一份配置。
