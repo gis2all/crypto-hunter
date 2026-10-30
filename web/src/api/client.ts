@@ -33,6 +33,13 @@ export type Job = components["schemas"]["JobOut"];
 export type JobStage = components["schemas"]["JobStageOut"];
 export type OpportunityList = components["schemas"]["OpportunityListOut"];
 export type OpportunityItem = components["schemas"]["OpportunityItemOut"];
+export type Monitor = components["schemas"]["MonitorOut"];
+export type MonitorList = components["schemas"]["MonitorListOut"];
+export type MonitorCard = components["schemas"]["MonitorCardOut"];
+export type MonitorCards = components["schemas"]["MonitorCardsOut"];
+export type MonitorScan = components["schemas"]["MonitorScanOut"];
+export type MonitorSettings = components["schemas"]["MonitorSettingsOut"];
+export type MonitorSettingsDraft = components["schemas"]["MonitorSettingsIn"];
 export type OpportunityStep = components["schemas"]["OpportunityStepOut"];
 export type OpportunitySource = components["schemas"]["OpportunitySourceOut"];
 export type OpportunityScan = components["schemas"]["OpportunityScanOut"];
@@ -301,6 +308,29 @@ export type XSessionDraft = {
  *  which is why this is a Place of its own rather than a tab under a radar. */
 /** `limit=0` is every card: the page draws the whole library, oldest rounds included. */
 export const getOpportunity = () => request<OpportunityList>("/opportunity?limit=0");
+
+/** 监控：每一条都是一个长期问题，卡片、扫描与节奏各自独立（2026-10-29）。 */
+export const listMonitors = () => request<MonitorList>("/monitors");
+
+export const getMonitorCards = (monitor: string) =>
+  request<MonitorCards>("/monitors/" + encodeURIComponent(monitor) + "/cards");
+
+export const getMonitorSettings = (monitor: string) =>
+  request<MonitorSettings>("/monitors/" + encodeURIComponent(monitor) + "/settings");
+
+export const putMonitorSettings = (monitor: string, body: MonitorSettingsDraft) =>
+  request<MonitorSettings>("/monitors/" + encodeURIComponent(monitor) + "/settings", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const startMonitorScan = (monitor: string) =>
+  request<MonitorScan>("/monitors/" + encodeURIComponent(monitor) + "/scan", { method: "POST" });
+
+export const cancelMonitorScan = (monitor: string, scanId: string) =>
+  request<MonitorScan>(
+    "/monitors/" + encodeURIComponent(monitor) + "/scans/" + encodeURIComponent(scanId) + "/cancel",
+    { method: "POST" });
 
 /** The watchlist: what the next scan will read, and what verified each row. */
 export const listOpportunitySources = () =>
