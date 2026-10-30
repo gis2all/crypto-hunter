@@ -1158,6 +1158,26 @@ def test_a_profile_link_to_a_handle_named_domain_is_mutual_proof():
     assert answer["site"] == "https://tiny-farm.xyz/"
 
 
+def test_the_site_on_the_official_profile_wins_over_the_post_link():
+    """资料页挂的站是账号自己认领的官网；帖子里的链接可能只是母品牌（danta pixel, 2026-10-30）."""
+    from app.opportunity import trace
+
+    pages = {
+        "https://x.com/acme": '<html><a href="https://acme-mint.xyz/">site</a></html>',
+        "https://acme-mint.xyz/":
+            "<html><title>Acme Mint</title><body>Acme agent mint</body></html>",
+        "https://acme.ai/": "<html><title>Acme</title><body>Acme studio</body></html>",
+    }
+
+    answer = trace.trace_lead(
+        {"text": "Acme agent mint", "handle": "acme", "urls": ["https://acme.ai/"],
+         "name": "Acme", "project_handle": "acme"},
+        known=set(), fetch=lambda url: pages.get(url, ""))
+
+    assert answer["site"] == "https://acme-mint.xyz/", "资料页挂的站优先于帖子里的链接"
+    assert answer["level"] == "A"
+
+
 def test_a_round_counts_what_it_created_and_what_it_rewrote(isolated_db):
     """`discovered_at` says which round found a card; `updated_scan` says which round last wrote it.
 

@@ -386,12 +386,20 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
 
     # 帖子里没有官网时，从资料页里找：官方号链到的那个站就是它的官网，读它并与账号互证。
     site_from_profile = False
-    if not site and profile_links:
+    # 官方号资料页上挂的站优先级最高：那是账号自己认领的官网，帖子里的链接可能只是转发或短链
+    # （danta pixel 的资料页挂 dantapixel.deed.page，帖子里的 by danta.ai 只是母品牌）。
+    if profile_links:
         for candidate in _page_candidates(profile_links):
+            if site and candidate.rstrip("/") == site.rstrip("/"):
+                break
             body, links = _page(candidate, fetch=fetch)
             host = (urlsplit(candidate).hostname or "").lower()
             if body and (mentions(body, name, account)
                          or _domain_matches_handle(account or author, host)):
+                if site:
+                    sources = [row for row in sources if row.get("kind") != "official_site"]
+                    site_texts = []
+                    page_sources = [row for row in page_sources if row.get("url") != site]
                 site, site_host, site_texts = candidate, \
                     host, [body]
                 site_from_profile = True
