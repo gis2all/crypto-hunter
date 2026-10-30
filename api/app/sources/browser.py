@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import re
 import threading
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -127,12 +128,43 @@ class Chromium:
                 await tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
                 await tab.wait_for_timeout(self.settle)
                 document = await tab.content()
+                # 计数常常在首屏之后才由脚本填进来（BNBS 的「29 / 7,000」）。只在还没有
+                # 「数字 / 数字」时多等一会儿，已经有的页面不为它付这个时间（2026-10-30）。
+                if not re.search(r"\d[\d,]*\s*/\s*\d[\d,]*", document):
+                    try:
+                        await tab.wait_for_function(
+                            "() => /\\d[\\d,]*\\s*\\/\\s*\\d[\\d,]*/.test(document.body.innerText)",
+                            timeout=6000)
+                        document = await tab.content()
+                    except Exception:  # noqa: BLE001 - a page without a pair simply waits
+                        pass
             finally:
                 # Written even when the navigation itself failed, which is the case worth
                 # reading most: a document the machine refused never gets this far, and the
                 # address it was refused at is the one line that answers "which URL".
                 _record(url, tab.url, failed)
             return document
+        finally:
+            await tab.close()
+
+    async def _text(self, url: str) -> str:
+        """The page's visible text, which is what a reader would see.
+
+        `page()` answers the document, and a counter split across elements is not a
+        `数字 / 数字` string in that HTML even though it reads as one on screen
+        (BNBS: "29 / 7,000 shares", 2026-10-30).
+        """
+        tab = await self._context.new_page()
+        try:
+            await tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
+            await tab.wait_for_timeout(self.settle)
+            # 计数往往在首屏几秒后才由脚本填进来（BNBS 的 29 / 7,000 大约在第 6–8 秒），
+            # 等一个固定的 8 秒比等“任意一对数字”可靠：页面上早有别的分数会提前放行。
+            await tab.wait_for_timeout(8000)
+            return await tab.inner_text("body")
+        except Exception as exc:  # noqa: BLE001
+            log.info("render of %s did not answer: %r", url, exc)
+            return ""
         finally:
             await tab.close()
 
@@ -181,6 +213,18 @@ class Renderer:
             future.cancel()
             return ""
 
+    def text(self, url: str) -> str:
+        loop = self._start()
+        if loop is None:
+            return ""
+        future = asyncio.run_coroutine_threadsafe(self._render_text(url), loop)
+        try:
+            return future.result(self.timeout + 20)
+        except Exception as exc:  # noqa: BLE001
+            log.info("render of %s did not answer: %r", url, exc)
+            future.cancel()
+            return ""
+
     def close(self) -> None:
         """Stop the browser and the thread that runs it. Safe to call twice."""
         with self._lock:
@@ -196,6 +240,11 @@ class Renderer:
         assert self._gate is not None
         async with self._gate:
             return await self._one.page(url)
+
+    async def _render_text(self, url: str) -> str:
+        assert self._gate is not None
+        async with self._gate:
+            return await self._one._text(url)
 
     def _start(self) -> asyncio.AbstractEventLoop | None:
         with self._lock:
@@ -264,6 +313,17 @@ def render(url: str) -> str:
     return renderer.page(url)
 
 
+def text(url: str) -> str:
+    """The visible text of a rendered page. Same browser, same lock as `render`."""
+    global _default
+    with _default_lock:
+        if _default is None:
+            _default = Renderer()
+            atexit.register(_default.close)
+        renderer = _default
+    return renderer.text(url)
+
+
 def shutdown() -> None:
     """Close the browser if one was ever started. For the app lifespan, and for tests."""
     global _default
@@ -271,3 +331,4 @@ def shutdown() -> None:
         renderer, _default = _default, None
     if renderer is not None:
         renderer.close()
+
