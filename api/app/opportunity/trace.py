@@ -28,6 +28,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
@@ -133,19 +134,24 @@ def shares_topic(profile_text: str, lead_text: str, *, extra=()) -> bool:
 
 def verdict(*, name: str, handle: str, lead_text: str, site_texts: list[str],
             profile_texts: list[str], site_host: str = "", profile_links=(),
-            from_mention: bool = False) -> dict:
+            from_mention: bool = False, site_from_profile: bool = False) -> dict:
     """A, B or C from the evidence - pure, so the rules can be argued with in a test.
 
     `site_texts` and `profile_texts` are what was actually read; empty lists mean nothing was
     read, which is a C rather than a B: "we did not look" is never a proof.
     """
-    site_side = any(mentions(text, name, handle) for text in site_texts)
     linked_hosts = {(urlsplit(link).hostname or "").lower() for link in profile_links}
     # 账号那一侧有两条路：资料页**正文里提到**这个域名，或资料页**链到**它 —— 后者正是我们
     # 找到这个官网的方式，也同样是"账号自己认领了这个站"。
     linked = bool(site_host) and (
         any(mentions(text, site_host) for text in profile_texts) or site_host in linked_hosts)
     domain_match = bool(site_host) and _domain_matches_handle(handle, site_host)
+    # 官网这一侧有两条路：正文里写到项目名 / handle，或者站点是从**官方号的资料页**点进去的、
+    # 且域名就是账号名的那个。后一条是为 JS 站点留的：tiny-farm.xyz 的首页全是 canvas 与导航，
+    # 一个字都不提 "tiny_farming"，但账号自己链到了它，这已经是"账号认领了这个站"（2026-10-29,
+    # user 拿 Tiny Farm 指出的）。
+    site_side = any(mentions(text, name, handle) for text in site_texts) \
+        or (site_from_profile and domain_match)
     account_side = linked or domain_match
     plausible = similar(name, handle) if name else from_mention
     if site_texts and profile_texts and site_side and account_side and plausible:
@@ -243,6 +249,31 @@ def _add_source(sources: list[dict], kind: str, label: str, url: str) -> None:
     sources.append({"kind": kind, "label": label, "url": url})
 
 
+_IMAGE = re.compile(r"\.(?:jpe?g|png|gif|webp|svg|ico)(?:[?#]|$)", re.I)
+
+
+def _page_candidates(links, limit: int = 4) -> list[str]:
+    """The profile links worth fetching: no social hosts, no CDN images.
+
+    A profile page is mostly avatars and banners; taking `links[:2]` read two `pbs.twimg.com`
+    JPEGs and never reached the site the account was pointing at (Tiny Farm, 2026-10-29).
+    """
+    out: list[str] = []
+    for link in links:
+        host = (urlsplit(link).hostname or "").lower()
+        if not host or host in NOT_A_HOME:
+            continue
+        if any(host == bad or host.endswith("." + bad) for bad in NOT_A_HOME):
+            continue
+        if host.endswith("twimg.com") or _IMAGE.search(link):
+            continue
+        if link not in out:
+            out.append(link)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _domain_matches_handle(handle: str, host: str) -> bool:
     """Does the site's base name equal the handle without punctuation?"""
     def word(value: str) -> str:
@@ -256,7 +287,9 @@ def _domain_matches_handle(handle: str, host: str) -> bool:
         labels.pop(0)
     if not labels:
         return False
-    base = word(".".join(labels[:2]))
+    # The registrable name is the first label after www/docs/beta - joining the first two labels
+    # spelled `tiny-farm.xyz` as "tinyfarmxyz" and no handle could ever match it (2026-10-29).
+    base = word(labels[0])
     return name == base or name.startswith(base) or base.startswith(name)
 
 
@@ -305,7 +338,9 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
                    *pointers["handles"]]:
         if handle and handle != author and handle not in accounts:
             accounts.append(handle)
-    searched = True
+    # 没有注入搜索函数时不能写「搜过」：监控之前没接二次搜索，诊断里却一直显示 searched=true
+    # （2026-10-30）。
+    searched = search is not None
     if not accounts and name and search is not None:
         # The post named nothing to follow, so the name is asked about: a search answers with
         # posts, and the accounts are read off their authors.
@@ -341,18 +376,25 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
     if not account and name and similar(name, author):
         # The post's own author may be the project: a lead from `@SpoutFi` about Spout Finance.
         account = author
-        text = read_site("https://x.com/%s" % author, fetch=fetch)
-        if text:
-            profile_texts.append(text)
+        page = read_site("https://x.com/%s" % author, fetch=fetch, raw=True)
+        if page:
+            profile_texts.append(visible_text(page))
+            # 帖子的作者就是项目号时，资料页的链接同样要读出来：官网常常只挂在这一页，帖子正文
+            # 里一个字都没有（Tiny Farm：@tiny_farming 的资料页链到 tiny-farm.xyz，2026-10-29）。
+            profile_links.extend(links_of(page))
             _add_source(sources, "official_account", "官方 X", "https://x.com/%s" % author)
 
     # 帖子里没有官网时，从资料页里找：官方号链到的那个站就是它的官网，读它并与账号互证。
+    site_from_profile = False
     if not site and profile_links:
-        for candidate in profile_links[:MAX_SITES]:
+        for candidate in _page_candidates(profile_links):
             body, links = _page(candidate, fetch=fetch)
-            if body and mentions(body, name, account):
+            host = (urlsplit(candidate).hostname or "").lower()
+            if body and (mentions(body, name, account)
+                         or _domain_matches_handle(account or author, host)):
                 site, site_host, site_texts = candidate, \
-                    (urlsplit(candidate).hostname or "").lower(), [body]
+                    host, [body]
+                site_from_profile = True
                 page_sources.append({"url": candidate, "text": body})
                 is_doc = any(hint in candidate.lower() for hint in _DOC_HINTS)
                 _add_source(sources, "official_doc" if is_doc else "official_site",
@@ -406,7 +448,8 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
     answer = verdict(name=name, handle=account or author, lead_text=str(lead.get("text") or ""),
                      site_texts=site_texts, profile_texts=profile_texts, site_host=site_host,
                      profile_links=profile_links,
-                     from_mention=bool(account) and account in set(pointers["handles"]))
+                     from_mention=bool(account) and account in set(pointers["handles"]),
+                     site_from_profile=site_from_profile)
     level = answer["level"]
     labels = {"A": {"official_account": "官方 X", "official_site": "官网", "official_doc": "文档"},
               "B": {"official_account": "候选 X（未互证）", "official_site": "候选官网（未互证）",
@@ -425,6 +468,10 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
 #: one trace. Four traces overlap, and the setting is the safety cap rather than a page size.
 MAX_TRACES = 200
 TRACE_WORKERS = 4
+#: One lead may not hold a worker forever: a page that never answers (or an X profile that
+#: redirects to a Tor address) used to stall the whole stage - the 01:51 scan sat in trace for
+#: ten hours until the process was restarted (2026-10-30).
+LEAD_TIMEOUT = float(os.environ.get("CH_TRACE_LEAD_TIMEOUT", "120") or 120)
 
 
 def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
@@ -479,10 +526,20 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
         raise RuntimeError("scan cancelled")
     with ThreadPoolExecutor(max_workers=max(1, min(TRACE_WORKERS, total))) as pool:
         futures = [pool.submit(ask, group) for group in selected]
-        for future in futures:
+        for index, future in enumerate(futures):
             if cancel is not None and cancel.is_set():
                 raise RuntimeError("scan cancelled")
-            materials, answer, error = future.result()
+            try:
+                materials, answer, error = future.result(timeout=LEAD_TIMEOUT)
+            except TimeoutError:
+                material = selected[index][0]
+                counters["failed"] += 1
+                log.info("opportunity: trace timed out after %ss for %r", LEAD_TIMEOUT,
+                         material.get("project_name") or material.get("handle"))
+                done += 1
+                if tell:
+                    tell(done, total)
+                continue
             material = materials[0]
             key = str(material.get("project_name") or "").strip().lower() or \
                 str(material.get("handle") or "").lower()

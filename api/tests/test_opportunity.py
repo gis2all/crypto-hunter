@@ -1132,6 +1132,32 @@ def test_an_archived_card_is_frozen(isolated_db):
     assert db.opportunity_unjudged() == [], "补链也不再问冻结的卡"
 
 
+def test_a_profile_link_to_a_handle_named_domain_is_mutual_proof():
+    """tiny-farm.xyz is a canvas app: its text never says "tiny_farming".
+
+    The account links to it and the domain is the handle, which is the same claim as the site
+    naming the project - without it, every client-rendered site came back 社区（未互证）
+    (Tiny Farm, 2026-10-29).
+    """
+    from app.opportunity import trace
+
+    pages = {
+        "https://x.com/tiny_farming":
+            '<html><a href="https://tiny-farm.xyz/">site</a></html>',
+        "https://tiny-farm.xyz/":
+            "<html><title>Tiny Farm</title><body>TINY FARM BETA How to Play Farmers</body></html>",
+    }
+
+    answer = trace.trace_lead(
+        {"text": "Tiny Farming Farmer NFT free mint", "handle": "tiny_farming", "urls": [],
+         "name": "Tiny Farming Farmer NFT", "project_handle": "tiny_farming"},
+        known=set(), fetch=lambda url: pages.get(url, ""))
+
+    assert answer["level"] == "A"
+    assert answer["trust"] == "official"
+    assert answer["site"] == "https://tiny-farm.xyz/"
+
+
 def test_a_round_counts_what_it_created_and_what_it_rewrote(isolated_db):
     """`discovered_at` says which round found a card; `updated_scan` says which round last wrote it.
 
