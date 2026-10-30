@@ -12,15 +12,16 @@
 | 查询 | `<id>/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退 `monitor.py` 的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
 | 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写的 `summary.md`。读的时候才打开，改完下一轮生效。 |
 | 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个监控一个文件，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退 `monitor.py` 默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
-| 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡。可中止。 |
+| 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡 → 官网刷新。可中止。 |
 | 时钟 | `core/schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
 | 接口 | `api/v1/monitors.py` | 列表、卡片、设定、`POST .../scan`、轮询、中止。 |
 | 表 | `monitor_cards` / `monitor_scans` / `monitor_posts` | 卡按 `(monitor, slug)` 唯一，重写保留 `first_seen`；扫描是回执；`monitor_posts` 是待读帖子队列（按 `tweet_id` 去重）。 |
 
-## 一条扫描的六个阶段
+## 一条扫描的七个阶段
 
-`collect` 搜 X → `gate` 免费闸 → `extract` 模型读成项目 → `trace` 找官方入口 → `chain` 读链上 → `store` 落卡。
-计数写在扫描行上（帖子 / 过闸 / 入队 / 项目 / 批次 / 写入 / 清理），页面只轮询那一行。
+`collect` 搜 X → `gate` 免费闸 → `extract` 模型读成项目 → `trace` 找官方入口 → `chain` 读链上 →
+`store` 落卡 → `refresh` 刷新官网。
+计数写在扫描行上（帖子 / 过闸 / 入队 / 项目 / 批次 / 写入 / 刷新 / 未变 / 清理），页面只轮询那一行。
 
 **帖子先入队**（`monitor_posts`）：抓到的帖子过闸后按 `tweet_id` 写进队列，`status = pending`；
 抽取只消费 `pending`，读完置 `used`。所以第二轮读的是“9:15 之后的新帖”，而不是把 24 小时再读一遍
@@ -30,6 +31,13 @@
 **抽取是分批的**：过闸帖子按 `max_posts`（100）切批，一轮最多 5 批（500 条），四个批次并发跑模型；
 每批最多 20 条项目，合并去重（同一 handle 只留一条，空字段补齐、facts 并集）后**整轮最多 20 张新卡**
 ——宁缺毋滥。扫描计数里多记 `batches` 和 `posts_sent`。
+
+**官网刷新是每轮的最后一段**（`refresh`）：按每张卡自己的 `official_url` 重读官网，只更新铸造进度、
+价格、截止与 `fields.site_checked_at`；标题、类型、摘要、信任等级都不动——这次抓取失败也不会把卡片
+写坏。本轮刚写入的卡跳过（刚落库时已经读过站）；页面内容与 `fields.site_hash` 相同就只更新时间，
+**不调模型**，只有页面真的变了才解析进度并补价格 / 截止。进度以**模型读整页为主、正则兜底**；
+进度只向前（比上一轮小就丢弃），「每钱包上限 / limit」附近的 `x / y` 不算铸造进度。它不消耗 X 调用，计数记
+`refreshed`（变了）与 `unchanged`（没变）。老卡因此不必等“再有人发帖”才会更新进度。
 
 **链上**：合约地址来自模型字段、摘要 / 事实或官网正文；页面上常同时印着 mint pass、forge、
 emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第一个答上「已铸造」的当铸造合约。
