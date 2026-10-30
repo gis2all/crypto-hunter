@@ -255,7 +255,7 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
     from . import settings
 
     definition = ruleset or load()
-    # 监控有自己的闸门下限（`config/monitors/<id>.yaml` 的 min_score），新机会用全局那一档。
+    # 监控有自己的闸门下限（`monitors/<id>/settings.yaml` 的 min_score），新机会用全局那一档。
     threshold = int(min_score if min_score is not None
                     else settings.value("pass_score", PASS_SCORE))
     facts = features(text, author=author, metrics=metrics, created_at=created_at, now=now,
