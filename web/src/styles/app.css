@@ -908,7 +908,7 @@ div.pgroup>.pset{margin-top:auto}
    Both groups are the same list of rows (2026-10-02, user): 来源 was a segmented row of chips
    and is now a list of the same rows 排序 uses, so a chain the rail does not list is one more
    row rather than a chip that has to fit inside the one above it. */
-#view-favorites .fav-body,#view-lookup .look-body,#view-opportunity .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
+#view-favorites .fav-body,#view-lookup .look-body,#view-opportunity .fav-body,#view-monitors .fav-body{grid-template-columns:320px repeat(auto-fill,minmax(345px,1fr))}
 .fav-side{display:flex;flex-direction:column;width:320px}
 .fav-side .look-h{margin:10px 0 6px}
 /* 左侧筛选分组可以收起（2026-10-27, user）：生态有 49 条，铺开看完太费劲。
@@ -951,6 +951,52 @@ div.pgroup>.pset{margin-top:auto}
    0 是「一个都没更新」这个答案，而这里只是没记过。 */
 .fav-opt.off{color:var(--muted);cursor:default}
 .fav-opt.off:hover{background:none}
+
+/* ---------- 监控 ---------- */
+/* 每个监控一页：左边是监控列表（与 收藏 / 搜索 同一条 320px 轨道），右边是它的卡或设定。
+   卡沿用新机会卡的头 / 元信息 / 时间 / 页脚，只把正文换成这个监控自己的读数
+   （铸造价、供应）—— 形状是同一个产品，字段是这一页的（2026-10-29, user）。 */
+#view-monitors .mon-name{font-size:12.5px}
+.mon-strip{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:2px 0 10px;
+  font-family:var(--mono);font-size:11px;color:var(--muted)}
+.mon-card .mon-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;
+  margin:10px 0 8px;padding-top:10px;border-top:1px solid var(--hair);font-size:11.5px}
+.mon-card .mon-facts span{color:var(--muted)}
+.mon-card .mon-chain{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;
+  margin:0 0 8px;font-size:11.5px}
+.mon-card .mon-chain>span{color:var(--muted)}
+/* 安全三枚 chip：貔貅 / LP / 权限，读不到的那枚写未判定（2026-10-30, user）。 */
+.mon-card .mon-sec b{display:flex;flex-wrap:wrap;gap:6px}
+/* 铸造状态：绿=现在能做，黄=值得等，灰=已结束，虚线灰=未判定（2026-10-30, user）。 */
+.chips .chip.chip-live{border-color:var(--ok-border);color:var(--ok-fg)}
+.chips .chip.chip-soon{border-color:var(--warn-border);color:var(--warn-fg)}
+.chips .chip.chip-done{opacity:.65}
+.chips .chip.chip-dashed{border-style:dashed}
+/* 页脚永远贴着卡片底边：卡片是 flex 列，正文短的时候不能把来源行留在半空（2026-10-30, user）。 */
+.mon-card .opp-foot{margin-top:auto}
+.mon-risk{color:var(--danger-fg)}
+/* 铸造进度：分子只认链上（721 的 totalSupply / 合约上限），没有分母就只写已铸造。 */
+.mon-mint{margin:0 0 8px;font-size:11.5px}
+.mon-mint-line{display:flex;align-items:baseline;gap:10px}
+.mon-mint-line span{color:var(--muted)}
+.mon-mint-line b{font-weight:400;font-variant-numeric:tabular-nums}
+.mon-bar{display:block;height:3px;margin:6px 0 5px;background:var(--hair)}
+.mon-bar u{display:block;height:100%;background:var(--accent);text-decoration:none}
+/* 正文只有一段「是什么」，三行就够；折叠态与展开态的行高、按钮都走新机会卡那一套，
+   所以两页的卡片高度行为是同一条（2026-10-29, user）。 */
+.mon-card{--opp-body-lines:3}
+#view-monitors .fav-body .grid{align-items:stretch}
+#view-monitors .fav-body .grid:has(.opp-body-wrap.single){align-items:start}
+/* 设定页沿用 .params / .blk / .pgroup / .prow —— 与新机会、雷达、系统设置同一套控件；
+   这里只补两件：项目关掉时的置灰，和查询框的行高（2026-10-29, user）。 */
+.blk.off .pgroup-h,.blk.off .prow label,.blk.off .field{opacity:.5}
+/* 新机会的设定页把 `.blk-cols` 钉成一列（它每块都很高）；监控这一页要的是三个大块并排：
+   开关 / 运行节奏 / 查询，每块里的行仍然从上往下排（2026-10-30, user）。查询要多一点宽度。 */
+.mon-settings .blk-cols.mon-blk-cols{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.6fr)}
+.mon-query{width:100%;min-height:86px;padding:8px;border:1px solid var(--border);
+  background:var(--surface);color:var(--fg);font-family:var(--mono);font-size:11px;
+  line-height:1.6;resize:vertical}
 /* The direction is fenced off from the four keys above it - it reads as the chosen key's own
    second half rather than as a fifth key - and it is always two rows, so the panel cannot
    change height when another sort is picked. The fence is --border rather than the --hair an
