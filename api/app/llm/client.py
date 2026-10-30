@@ -581,16 +581,29 @@ def _call_payload(current: dict, endpoint: str, body: dict, timeout: float | Non
 def _record(*, purpose: str, run_id: str | None, model: str, prompt_version: str | None,
             latency_ms: int, prompt_tokens: int | None, completion_tokens: int | None,
             ok: bool, error: str | None) -> None:
-    conn = db.connect()
-    try:
-        conn.execute(
-            "INSERT INTO llm_calls (run_id, purpose, model, prompt_version, prompt_tokens,"
-            " completion_tokens, latency_ms, ok, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (run_id, purpose, model, prompt_version, prompt_tokens, completion_tokens,
-             latency_ms, 1 if ok else 0, error, db.now_iso()),
-        )
-    finally:
-        conn.close()
+    import sqlite3
+    import time
+
+    sql = ("INSERT INTO llm_calls (run_id, purpose, model, prompt_version, prompt_tokens,"
+           " completion_tokens, latency_ms, ok, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    params = (run_id, purpose, model, prompt_version, prompt_tokens, completion_tokens,
+              latency_ms, 1 if ok else 0, error, db.now_iso())
+    # Bookkeeping must never fail the call it is recording: concurrent writers can hit
+    # "database is locked" for a moment, and a lost row is cheaper than a lost answer.
+    for attempt in range(3):
+        try:
+            conn = db.connect()
+            try:
+                conn.execute(sql, params)
+                conn.commit()
+            finally:
+                conn.close()
+            return
+        except sqlite3.OperationalError:
+            if attempt == 2:
+                log.warning("llm: the call could not be recorded (%s)", purpose)
+                return
+            time.sleep(0.1 * (attempt + 1))
 
 
 def _answer(current: dict, model: str, messages: list[dict], temperature: float,
