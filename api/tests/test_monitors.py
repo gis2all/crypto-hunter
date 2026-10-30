@@ -10,10 +10,10 @@ from app.store import db
 
 @pytest.fixture(autouse=True)
 def _isolated_monitor_config(tmp_path, monkeypatch):
-    """设定文件在第一次读取时落盘，测试不能往仓库的 config/monitors 里写。"""
-    from app.monitors import settings as monitor_settings
+    """设定文件在第一次读取时落盘，测试不能往仓库的 monitors/<id>/ 里写。"""
+    from app.monitors.core import settings as monitor_settings
 
-    monkeypatch.setattr(monitor_settings, "SEED", tmp_path / "settings.yaml")
+    monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
 
 
 def _card(**over) -> dict:
@@ -47,7 +47,7 @@ def test_two_monitors_never_share_a_row(isolated_db):
 
 
 def test_the_clock_owes_the_default_slot_with_nothing_saved(isolated_db):
-    from app.monitors import schedule
+    from app.monitors.core import schedule
 
     at = datetime(2026, 10, 29, 10, 0, tzinfo=schedule.TZ)
     assert schedule.due("binance-agent-id", at) == \
@@ -67,7 +67,7 @@ def test_the_page_lists_the_monitors_this_build_knows(client):
 
 def test_the_chain_reader_takes_an_address_and_merges_three_sources(monkeypatch):
     """Supply from the node, market from DexScreener, safety from GoPlus - each may be absent."""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     ca = "0x" + "a" * 40
     assert chain.first_address("no address here", "mint at " + ca.upper().replace("0X", "0x")) == ca
@@ -130,7 +130,7 @@ def _word(value: int) -> str:
 
 def test_the_token_behind_a_sale_contract_is_read_from_the_contract(monkeypatch):
     """JAGENT 的铸造合约只会 `totalMinted()`；代币是它 `token()` 指的那个地址（2026-10-30）。"""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     mint = "0x" + "1" * 40
     token = "0x" + "2" * 40
@@ -155,7 +155,7 @@ def test_the_token_behind_a_sale_contract_is_read_from_the_contract(monkeypatch)
 
 def test_an_address_from_the_site_still_has_to_pass_the_chain_check(monkeypatch):
     """官网印的地址不算数，symbol / decimals / totalSupply 齐了才算（2026-10-30, user）。"""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     pass_only = "0x" + "3" * 40
     real = "0x" + "4" * 40
@@ -177,7 +177,7 @@ def test_an_address_from_the_site_still_has_to_pass_the_chain_check(monkeypatch)
 
 def test_the_lp_chip_reads_the_lp_table_not_the_dollar_size():
     """能不能撤池看 LP 在谁手里：锁住 / 烧掉多少，不是流动性有多少钱（2026-10-30）。"""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     class Metrics:
         def __init__(self, rows):
@@ -199,7 +199,7 @@ def test_the_lp_chip_reads_the_lp_table_not_the_dollar_size():
 
 def test_a_pool_that_vanishes_between_two_rounds_is_a_rug():
     """撤池只有跨轮才判得出来：上一轮的池子 / 流动性对不上这一轮（2026-10-30, user）。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     assert job._rug({"pool": "0xpair", "pools": 1}, {"pools": 0})["state"] == "gone"
     assert job._rug({"pool": "0xpair", "pools": 1}, {}) == {}, "没回答不是撤池"
@@ -212,7 +212,7 @@ def test_a_pool_that_vanishes_between_two_rounds_is_a_rug():
 
 def test_a_count_without_a_total_is_still_progress():
     """agentsea 只写「3,073 cards claimed」，没有分母；这也是开卖的证据（2026-10-30）。"""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     assert chain.parse_mint("3,073 cards claimed\n3,050 verified with a Binance Agent ID") \
         == {"done": 3073}
@@ -225,7 +225,7 @@ def test_a_count_without_a_total_is_still_progress():
 
 def test_the_fill_excerpt_keeps_the_price_line():
     """价格和进度写在同一张表里，取窗口时不能只认「minted」（Phosphor 的 Price 1 USDT）。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     text = "Minted 6 / 10000\n" + ("filler " * 400) + "\nPrice 1 USDT\nLimit 5 cards"
     assert "1 USDT" in job._excerpt(text)
@@ -233,7 +233,7 @@ def test_the_fill_excerpt_keeps_the_price_line():
 
 def test_the_page_title_wins_over_the_model_title():
     """官网 <title> 稳定，模型的叫法每轮会变（JAGENT → JAGENT Mint Pass，2026-10-30）。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     assert job._site_title(["<title>agentsea — profile pre-registration</title>"]) == "agentsea"
     assert job._site_title(["<title>$JAGENT Mint — BNB Smart Chain</title>"]) == "$JAGENT Mint"
@@ -250,7 +250,8 @@ def test_the_page_title_wins_over_the_model_title():
 
 def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
     """帖子里的叫法会被官网原文覆盖：摘要重写只吃官网正文（2026-10-30, user）。"""
-    from app.monitors import job
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
 
     seen = {}
 
@@ -259,15 +260,31 @@ def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
         return {"summary": "官网口径：每钱包 10 份，每份 10 万 BNBS。"}
 
     monkeypatch.setattr(job.llm, "complete_json", fake)
-    out = job._rewrite({"pages": ["<p>Send 0.01 BNB to receive 100,000 BNBS. 10 shares per wallet</p>"]})
+    out = job._rewrite(BINANCE_AGENT_ID,
+                       {"pages": ["<p>Send 0.01 BNB to receive 100,000 BNBS. 10 shares per wallet</p>"]})
     assert out.startswith("官网口径")
     assert "10 shares per wallet" in seen["text"], "喂给模型的是官网原文"
-    assert job._rewrite({"pages": []}) == "", "没有官网就不重写"
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": []}) == "", "没有官网就不重写"
+
+
+def test_a_rewrite_that_found_nothing_keeps_the_old_summary(monkeypatch):
+    """页面只有壳时模型会写「官网原文未提供」；这句话不能覆盖原摘要（Nemotron / ChyAI）."""
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+
+    monkeypatch.setattr(
+        job.llm, "complete_json",
+        lambda messages, **kw: {"summary": "官网原文未提供，无法确认项目内容。"})
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>loading</p>"]}) == ""
+    monkeypatch.setattr(
+        job.llm, "complete_json",
+        lambda messages, **kw: {"summary": "HODLER 是像素宇航员项目，官方原文未说明参与方式与门槛。"})
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>hodler</p>"]}) == ""
 
 
 def test_an_unjudged_field_is_still_missing():
     """模型写的「未判定」不是答案，补字段阶段必须继续找（Phosphor 的 Price 1 USDT）。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     assert job._blank("未判定") and job._blank(" unknown ") and job._blank("")
     assert not job._blank("1 USDT")
@@ -278,7 +295,7 @@ def test_an_unjudged_field_is_still_missing():
 
 def test_mintable_is_a_risk_only_when_someone_owns_the_contract():
     """公开铸造不是后门：合约没有 owner 时，把 is_mintable 标红会把每个铸造中的项目都涂红。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     public = {"perms": ["mintable"]}
     job._mint_capability(public)
@@ -292,7 +309,7 @@ def test_mintable_is_a_risk_only_when_someone_owns_the_contract():
 
 
 def test_the_owner_is_read_on_chain_and_zero_means_renounced(monkeypatch):
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     ca = "0x" + "a" * 40
     monkeypatch.setattr(chain.goplus.GoPlus, "fetch_token", lambda self, c, a: (None, None))
@@ -312,7 +329,7 @@ def test_the_owner_is_read_on_chain_and_zero_means_renounced(monkeypatch):
 
 def test_the_pair_answers_when_goplus_has_no_lp_table(monkeypatch):
     """GoPlus 没有 LP 表时问池子自己：空池、烧掉多少。核对不到就什么都不说。"""
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     pair = "0x" + "b" * 40
     monkeypatch.setattr(chain, "_call", lambda address, data, **kw: None)
@@ -332,7 +349,7 @@ def test_the_pair_answers_when_goplus_has_no_lp_table(monkeypatch):
 
 def test_the_card_type_says_what_the_buyer_gets():
     """类型按资产形态分：铭文 / 平台 / 任务的说法优先于链上，链上再分份额和 NFT。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     # 链上是 NFT 的合约，页面写着 runes，仍然是铭文。
     assert job._type({"nft": True}, {"title": "Bolt Runes", "summary": "8192 runestone"}) \
@@ -342,6 +359,16 @@ def test_the_card_type_says_what_the_buyer_gets():
     # 中文同义写法（发射平台 / 发币平台）也要认。
     assert job._type({}, {"title": "SoulBoard", "summary": "链上的发射平台"}) == "launchpad"
     assert job._type({}, {"title": "KOAI", "summary": "面向 Agent 的发币平台"}) == "launchpad"
+    # 官网首屏写着 Launchpad，即使抽取摘要写成任务平台也按发射台（ChyAI / KOAI）。
+    assert job._type({}, {"title": "ChyAI", "summary": "做任务换凭证", "mint_kind": "task",
+                          "pages": ["<title>ChyAI · AI Agent Launchpad</title>"]}) == "launchpad"
+    # 官网没有 launchpad、但有验证过的代币：BIBIAI 是份额，不是发射台。
+    assert job._type({"token": "0x" + "6" * 40},
+                     {"title": "BIBIAI", "summary": "铸造通行证", "mint_unit": "份",
+                      "pages": ["BIBIAI Agent ID 铸造"]}) == "share"
+    # 单位是「份」时压过摘要里的「发射平台」：BIBIAI 按份卖，不是发射台。
+    assert job._type({"token": "0x" + "7" * 40},
+                     {"title": "BIBIAI", "summary": "发射平台", "mint_unit": "份"}) == "share"
     # 任务平台也发凭证 NFT，但 mint_kind 写着 task。
     assert job._type({"nft": True}, {"title": "ChyAI", "mint_kind": "task"}) == "task"
     # 每天「打卡」mint 的是 NFT，别因为一个动作词把收藏品判成任务平台。
@@ -385,7 +412,7 @@ def test_the_card_type_says_what_the_buyer_gets():
 
 def test_a_utc_time_is_written_once_in_local_time():
     """页面写 15:00 UTC，卡上就该是 23:00；开卖时间也不能被当成截止（SWARM, 2026-10-30）。"""
-    from app.monitors import job
+    from app.monitors.core import job
 
     assert job._when("2026-10-29 15:00 UTC") == "2026-10-29 23:00"
     assert job._when("2026-10-29T15:00Z") == "2026-10-29 23:00"
@@ -397,7 +424,7 @@ def test_a_utc_time_is_written_once_in_local_time():
 
 
 def test_a_chain_named_in_the_prose_is_not_left_unjudged():
-    from app.monitors import chain
+    from app.monitors.core import chain
 
     assert chain.guess_chain("Robinhood Chain 上的 launchpad") == "Robinhood"
     assert chain.guess_chain("BNB Chain 上 8192 个 runestone") == "BSC"
@@ -407,9 +434,10 @@ def test_a_chain_named_in_the_prose_is_not_left_unjudged():
 def test_the_clock_respects_the_project_switch_and_the_schedule_switch(
         isolated_db, monkeypatch, tmp_path):
     """两个开关各管一件事：项目关掉 → 整个监控不跑；计划任务关掉 → 只停时钟。"""
-    from app.monitors import registry, schedule, settings as monitor_settings
+    from app.monitors import registry
+    from app.monitors.core import schedule, settings as monitor_settings
 
-    monkeypatch.setattr(monitor_settings, "SEED", tmp_path / "settings.yaml")
+    monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
     monitor = registry.MONITORS["binance-agent-id"]
     at = datetime(2026, 10, 29, 10, 0, tzinfo=schedule.TZ)
 
@@ -425,13 +453,13 @@ def test_the_clock_respects_the_project_switch_and_the_schedule_switch(
 
 def test_settings_are_always_written_in_full(client, monkeypatch, tmp_path):
     """文件常驻：六项都写着，改回默认也不消失（2026-10-30, user）。"""
-    from app.monitors import settings as monitor_settings
+    from app.monitors.core import settings as monitor_settings
 
-    monkeypatch.setattr(monitor_settings, "SEED", tmp_path / "settings.yaml")
+    monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
     body = client.put("/api/v1/monitors/binance-agent-id/settings",
                       json={"interval_hours": 6}).json()
     assert body["values"]["interval_hours"] == 6
-    path = tmp_path / "settings.yaml"
+    path = tmp_path / "binance-agent-id" / "settings.yaml"
     assert path.exists()
 
     body = client.put("/api/v1/monitors/binance-agent-id/settings",
@@ -445,14 +473,14 @@ def test_settings_are_always_written_in_full(client, monkeypatch, tmp_path):
 
 
 def test_the_three_collection_knobs_live_in_the_yaml(client, monkeypatch, tmp_path):
-    """窗口 / 切片 / 闸分住在 config/monitors/<id>.yaml，设置页只是把它们显示出来。"""
-    from app.monitors import settings as monitor_settings
+    """窗口 / 切片 / 闸分住在 monitors/<id>/settings.yaml，设置页只是把它们显示出来。"""
+    from app.monitors.core import settings as monitor_settings
 
-    monkeypatch.setattr(monitor_settings, "SEED", tmp_path / "settings.yaml")
+    monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
     body = client.put("/api/v1/monitors/binance-agent-id/settings",
                       json={"window_hours": 48, "slice_hours": 6, "min_score": 45}).json()
     assert body["values"]["window_hours"] == 48
-    path = tmp_path / "settings.yaml"
+    path = tmp_path / "binance-agent-id" / "settings.yaml"
     text = path.read_text(encoding="utf-8")
     assert "window_hours: 48" in text and "min_score: 45" in text
 
@@ -461,25 +489,26 @@ def test_the_three_collection_knobs_live_in_the_yaml(client, monkeypatch, tmp_pa
 
 def test_the_queries_live_in_the_same_settings_file(monkeypatch, tmp_path):
     """查询和其它设定是同一条记录，手写的那条不会因为一次保存而丢。"""
-    from app.monitors import settings as monitor_settings
+    from app.monitors.core import settings as monitor_settings
     from app.monitors.registry import BINANCE_AGENT_ID
 
-    seed = tmp_path / "settings.yaml"
-    monkeypatch.setattr(monitor_settings, "SEED", seed)
-    seed.write_text("binance-agent-id:\n  queries:\n    - 'custom query'\n", encoding="utf-8")
+    monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
+    seed = tmp_path / "binance-agent-id" / "settings.yaml"
+    seed.parent.mkdir(parents=True)
+    seed.write_text("queries:\n  - 'custom query'\n", encoding="utf-8")
     assert monitor_settings.values(BINANCE_AGENT_ID)["queries"] == ("custom query",)
 
     monitor_settings.write(BINANCE_AGENT_ID, {"interval_hours": 6})
     text = seed.read_text(encoding="utf-8")
     assert "custom query" in text, "保存别的键不能覆盖查询"
 
-    seed.write_text("binance-agent-id:\n  queries: []\n", encoding="utf-8")
+    seed.write_text("queries: []\n", encoding="utf-8")
     assert monitor_settings.values(BINANCE_AGENT_ID)["queries"] == BINANCE_AGENT_ID.queries
 
 
 def test_posts_are_read_in_batches_and_merged_to_the_round_cap(monkeypatch):
     """一轮最多 4 批 × max_posts 条，合并后最多 20 个项目；同一项目两批里出现只留一条。"""
-    from app.monitors import job
+    from app.monitors.core import job
     from app.monitors.registry import BINANCE_AGENT_ID as monitor
 
     calls = []
@@ -550,6 +579,24 @@ def test_the_post_queue_keeps_only_thirty_days(isolated_db):
     db.monitor_post_add("m1", [old, new])
     assert db.monitor_posts_prune("m1", "2026-10-01T00:00:00+08:00") == 1
     assert [row["tweet_id"] for row in db.monitor_posts_pending("m1")] == ["new"]
+
+
+def test_a_card_needs_an_official_site():
+    """只有社区号、没有官网的项目不建卡（Polka Agents，2026-10-30, user）。"""
+    from app.monitors.core import job
+
+    assert job._has_site({"official_url": "https://example.com/"})
+    assert not job._has_site({})
+    assert not job._has_site({"official_url": "  "})
+
+
+def test_a_plain_http_site_is_upgraded_when_https_answers():
+    """官网优先 https：trace 给 http://danta.ai/，卡上应该给 https（2026-10-30, user）."""
+    from app.monitors.core import job
+
+    assert job._secure("http://danta.ai/", probe=lambda url: True) == "https://danta.ai/"
+    assert job._secure("http://danta.ai/", probe=lambda url: False) == "http://danta.ai/"
+    assert job._secure("https://example.com/", probe=lambda url: False) == "https://example.com/"
 
 
 def test_the_collection_knobs_default_to_the_registry(client):
