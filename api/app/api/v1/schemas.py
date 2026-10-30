@@ -847,3 +847,88 @@ class OpportunityListOut(BaseModel):
     sorts: list[OpportunitySortOut] = []
     #: The page's own copy - 口径、watchlist 说明、空态与 trust 的说法。
     form: dict = {}
+
+
+# ------------------------------------------------------------------------------- 监控
+
+
+class MonitorScanOut(BaseModel):
+    """One sweep of one monitor."""
+
+    id: str
+    monitor: str
+    status: str
+    stage: str | None = None
+    stages: list[dict] = []
+    counters: dict = {}
+    error: str | None = None
+    started_at: str
+    finished_at: str | None = None
+    trigger: str | None = None
+
+
+class MonitorCardOut(BaseModel):
+    """One card a monitor wrote. The common columns are the ones every monitor prints; the
+    monitor's own fields ride in `fields` and are rendered by that monitor's card component."""
+
+    slug: str
+    title: str
+    project: str | None = None
+    handle: str | None = None
+    chain: str | None = None
+    status: str | None = None
+    price: str | None = None
+    supply: str | None = None
+    deadline: str | None = None
+    summary: str | None = None
+    official_url: str | None = None
+    official_account: str | None = None
+    source_url: str | None = None
+    trust: str | None = None
+    trust_basis: str | None = None
+    sources: list[dict] = []
+    fields: dict = {}
+    first_seen: str
+    updated_at: str
+
+
+class MonitorOut(BaseModel):
+    id: str
+    name: str
+    tagline: str
+    fields: list[str] = []
+    enabled: bool = True
+    schedule: bool = True
+    notes: list[str] = []
+    cards: int = 0
+    scan: MonitorScanOut | None = None
+    running: bool = False
+    #: 这个监控的设定（启用 / 计划任务 / 间隔 / 起始 / 查询），设定页一次读全。
+    settings: dict = {}
+
+
+class MonitorListOut(BaseModel):
+    monitors: list[MonitorOut] = []
+
+
+class MonitorCardsOut(BaseModel):
+    monitor: str
+    cards: list[MonitorCardOut] = []
+
+
+class MonitorSettingsOut(BaseModel):
+    monitor: str
+    values: dict = {}
+    notes: list[str] = []
+
+
+class MonitorSettingsIn(BaseModel):
+    enabled: bool | None = None
+    schedule: bool | None = None
+    interval_hours: int | None = None
+    start_hour: int | None = None
+    start_minute: int | None = None
+    window_hours: int | None = None
+    slice_hours: int | None = None
+    min_score: int | None = None
+    queries: list[str] | None = None
