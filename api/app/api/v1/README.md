@@ -1,6 +1,6 @@
 # HTTP 层与页面文案
 
-`api/v1/` 是全仓唯一 HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health`。页面上的解释性文案只在 `forms.py`；一轮的「口径」三行在 `core/caliber.py`（落库与页面要输出同一句）。系统设置页读写 `config/system.yaml`。
+`api/v1/` 是全仓唯一 HTTP 层：`chains` / `runs` / `lexicon` / `settings` / `favorites` / `lookup` / `system` / `health` / `opportunity` / `monitors`。页面上的解释性文案只在 `forms.py`；一轮的「口径」三行在 `core/caliber.py`（落库与页面要输出同一句）。系统设置页读写 `config/system.yaml`。
 
 ## 设定页
 
@@ -62,3 +62,13 @@
 | --- | --- |
 | 设定 patch 在两层嵌套组上做浅合并 → 同一次保存改两个权重只留下最后一个 | 本文件 · 设定页 |
 | 设定页曾有一组四个「提醒」开关，没有任何代码读取它；勾选与否，一轮的结果完全相同 | 本文件 · 设定页 |
+
+## 监控
+
+左栏「新机会」下面那一行。端点：`GET /monitors`（列表 + 每个监控的设定与最近扫描）、
+`GET /monitors/{id}/cards`、`GET|PUT /monitors/{id}/settings`、`POST /monitors/{id}/scan`、
+`GET /monitors/{id}/scans/{scan_id}`、`POST /monitors/{id}/scans/{scan_id}/cancel`。
+
+设定不在 `config/`：每个监控一个目录 `api/app/monitors/<id>/`（`monitor.py` + `prompts/` +
+`settings.yaml`），HTTP 层只读写其中的 `settings.yaml`；扫描引擎在 `monitors/core/`（见
+`api/app/monitors/README.md`）。
