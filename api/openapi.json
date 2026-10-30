@@ -1874,6 +1874,318 @@
     }
    }
   },
+  "/api/v1/monitors": {
+   "get": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "List Monitors",
+    "description": "Every monitor this build knows, with its card count and its last sweep.",
+    "operationId": "list_monitors_api_v1_monitors_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorListOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/monitors/{monitor_id}/cards": {
+   "get": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "List Cards",
+    "operationId": "list_cards_api_v1_monitors__monitor_id__cards_get",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 0,
+       "default": 0,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorCardsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/monitors/{monitor_id}/settings": {
+   "get": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "Read Settings",
+    "operationId": "read_settings_api_v1_monitors__monitor_id__settings_get",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorSettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "Write Settings",
+    "operationId": "write_settings_api_v1_monitors__monitor_id__settings_put",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MonitorSettingsIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorSettingsOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/monitors/{monitor_id}/scan": {
+   "post": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "Start Scan",
+    "operationId": "start_scan_api_v1_monitors__monitor_id__scan_post",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorScanOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/monitors/{monitor_id}/scans/{scan_id}": {
+   "get": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "Get Scan",
+    "operationId": "get_scan_api_v1_monitors__monitor_id__scans__scan_id__get",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     },
+     {
+      "name": "scan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scan Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorScanOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/monitors/{monitor_id}/scans/{scan_id}/cancel": {
+   "post": {
+    "tags": [
+     "monitors"
+    ],
+    "summary": "Cancel Scan",
+    "operationId": "cancel_scan_api_v1_monitors__monitor_id__scans__scan_id__cancel_post",
+    "parameters": [
+     {
+      "name": "monitor_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Monitor Id"
+      }
+     },
+     {
+      "name": "scan_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scan Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MonitorScanOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/system/form": {
    "get": {
     "tags": [
@@ -4000,6 +4312,526 @@
      "value"
     ],
     "title": "MetricOut"
+   },
+   "MonitorCardOut": {
+    "properties": {
+     "slug": {
+      "type": "string",
+      "title": "Slug"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project"
+     },
+     "handle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Handle"
+     },
+     "chain": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chain"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     },
+     "price": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Price"
+     },
+     "supply": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Supply"
+     },
+     "deadline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deadline"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "official_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Official Url"
+     },
+     "official_account": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Official Account"
+     },
+     "source_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Url"
+     },
+     "trust": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trust"
+     },
+     "trust_basis": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trust Basis"
+     },
+     "sources": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Sources",
+      "default": []
+     },
+     "fields": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Fields",
+      "default": {}
+     },
+     "first_seen": {
+      "type": "string",
+      "title": "First Seen"
+     },
+     "updated_at": {
+      "type": "string",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "slug",
+     "title",
+     "first_seen",
+     "updated_at"
+    ],
+    "title": "MonitorCardOut",
+    "description": "One card a monitor wrote. The common columns are the ones every monitor prints; the\nmonitor's own fields ride in `fields` and are rendered by that monitor's card component."
+   },
+   "MonitorCardsOut": {
+    "properties": {
+     "monitor": {
+      "type": "string",
+      "title": "Monitor"
+     },
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/MonitorCardOut"
+      },
+      "type": "array",
+      "title": "Cards",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "monitor"
+    ],
+    "title": "MonitorCardsOut"
+   },
+   "MonitorListOut": {
+    "properties": {
+     "monitors": {
+      "items": {
+       "$ref": "#/components/schemas/MonitorOut"
+      },
+      "type": "array",
+      "title": "Monitors",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "MonitorListOut"
+   },
+   "MonitorOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "tagline": {
+      "type": "string",
+      "title": "Tagline"
+     },
+     "fields": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fields",
+      "default": []
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "schedule": {
+      "type": "boolean",
+      "title": "Schedule",
+      "default": true
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Notes",
+      "default": []
+     },
+     "cards": {
+      "type": "integer",
+      "title": "Cards",
+      "default": 0
+     },
+     "scan": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/MonitorScanOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "running": {
+      "type": "boolean",
+      "title": "Running",
+      "default": false
+     },
+     "settings": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Settings",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "tagline"
+    ],
+    "title": "MonitorOut"
+   },
+   "MonitorScanOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "monitor": {
+      "type": "string",
+      "title": "Monitor"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "stages": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Stages",
+      "default": []
+     },
+     "counters": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Counters",
+      "default": {}
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "started_at": {
+      "type": "string",
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "trigger": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Trigger"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "monitor",
+     "status",
+     "started_at"
+    ],
+    "title": "MonitorScanOut",
+    "description": "One sweep of one monitor."
+   },
+   "MonitorSettingsIn": {
+    "properties": {
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "schedule": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schedule"
+     },
+     "interval_hours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Interval Hours"
+     },
+     "start_hour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Start Hour"
+     },
+     "start_minute": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Start Minute"
+     },
+     "window_hours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Window Hours"
+     },
+     "slice_hours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slice Hours"
+     },
+     "min_score": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Min Score"
+     },
+     "queries": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Queries"
+     }
+    },
+    "type": "object",
+    "title": "MonitorSettingsIn"
+   },
+   "MonitorSettingsOut": {
+    "properties": {
+     "monitor": {
+      "type": "string",
+      "title": "Monitor"
+     },
+     "values": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Values",
+      "default": {}
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Notes",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "monitor"
+    ],
+    "title": "MonitorSettingsOut"
    },
    "OpportunityFilterOptionOut": {
     "properties": {
