@@ -242,7 +242,8 @@ def describe(condition: dict) -> str:
 def judge(text: str, *, author: str = "", metrics: dict | None = None,
           created_at: str | None = None, ruleset: dict | None = None,
           now: datetime | None = None, known: set[str] | None = None,
-          family: str | None = None, source_official: bool = False) -> dict:
+          family: str | None = None, source_official: bool = False,
+          min_score: int | None = None) -> dict:
     """One post against the rule set: does it pass, how does it score, and why.
 
     Two ways to fail. An `exclude` rule is a refusal - read in order, the first one ends the
@@ -254,7 +255,9 @@ def judge(text: str, *, author: str = "", metrics: dict | None = None,
     from . import settings
 
     definition = ruleset or load()
-    threshold = int(settings.value("pass_score", PASS_SCORE))
+    # 监控有自己的闸门下限（`config/monitors/<id>.yaml` 的 min_score），新机会用全局那一档。
+    threshold = int(min_score if min_score is not None
+                    else settings.value("pass_score", PASS_SCORE))
     facts = features(text, author=author, metrics=metrics, created_at=created_at, now=now,
                      known=known, source_official=source_official)
     score = 0
