@@ -206,6 +206,11 @@ function MonitorPanel({ scan, open, onCancel }: {
     }
     if (key === "chain") return counters.probed === undefined ? "—" : `已查 ${counters.probed}`;
     if (key === "store") return counters.written === undefined ? "—" : `写入 ${counters.written}`;
+    if (key === "refresh") {
+      return counters.refreshed === undefined
+        ? "—"
+        : `更新 ${counters.refreshed} · 未变 ${counters.unchanged ?? 0}`;
+    }
     return "—";
   };
 

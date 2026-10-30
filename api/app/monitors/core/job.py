@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import html as html_lib
+import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,7 +38,7 @@ MONTHS = {name.lower(): index for index, name in enumerate((
 
 #: The stages the page prints, in order.
 STAGES = (("collect", "搜 X"), ("gate", "过闸"), ("extract", "抽取"), ("trace", "溯源"),
-          ("chain", "链上"), ("store", "落库"))
+          ("chain", "链上"), ("store", "落库"), ("refresh", "刷新官网"))
 
 _worker = ThreadPoolExecutor(max_workers=2, thread_name_prefix="monitor")
 _cancel: dict[str, threading.Event] = {}
@@ -594,6 +595,108 @@ def _has_site(project: dict) -> bool:
     return bool(str(project.get("official_url") or "").strip())
 
 
+REFRESH_WORKERS = 4
+
+
+_TIME_NOISE = re.compile(
+    r"\b\d{1,2}:\d{2}(?::\d{2})?\b|\b\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}(?::\d{2})?\b", re.I)
+_ADDRESS_NOISE = re.compile(r"0x[0-9a-fA-F]{6,}")
+
+
+def _fingerprint(text: str) -> str:
+    """A page's readable text without clocks and addresses.
+
+    A countdown would otherwise change every round and buy a model call each time; the mint
+    counts themselves are digits we need, so only time-like and address-like runs are dropped.
+    """
+    body = _ADDRESS_NOISE.sub(" ", str(text or ""))
+    body = _TIME_NOISE.sub(" ", body.lower())
+    body = re.sub(r"\s+", " ", body).strip()
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
+
+
+def _refresh_card(monitor: Monitor, card: dict) -> str:
+    """Re-read one card's site and write back progress / price / deadline.
+
+    Only the readings move: title, type, summary and trust are left to the X sweep, so a failed
+    render can never rewrite what the card *is*. An unchanged page costs one render, no model
+    call (2026-10-30, user).
+    """
+    url = str(card.get("official_url") or "").strip()
+    if not url:
+        return "skip"
+    from ...sources import browser
+
+    try:
+        page = browser.render(url) or ""
+    except Exception:  # noqa: BLE001 - a site that will not answer keeps the card as it was
+        return "skip"
+    if len(page) < 200:
+        return "skip"
+    text = chain.plain(page)
+    fields = dict(card.get("fields") or {})
+    digest = _fingerprint(text)
+    if fields.get("site_hash") == digest:
+        fields["site_checked_at"] = _stamp()
+        db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields)
+        return "unchanged"
+    mint = dict(fields.get("mint") or {})
+
+    parsed = chain.parse_mint(text)
+    price = deadline = None
+    try:
+        data = _fill(monitor, {"pages": [page], "price": "", "deadline": "", "contract": "",
+                               "token_total": ""})
+    except Exception:  # noqa: BLE001 - the regex reading above still counts
+        data = {}
+    old_done = _int(mint.get("done"))
+    old_total = _int(mint.get("total"))
+    llm_done, llm_total = _int(data.get("mint_done")), _int(data.get("mint_total"))
+    re_done, re_total = _int(parsed.get("done")), _int(parsed.get("total"))
+
+    def sane(done: int | None, total: int | None) -> bool:
+        if done is None and total is None:
+            return False
+        if done is not None and old_done is not None and done < old_done:
+            # 进度只在往前：变小说明抓到的是“每钱包上限 / 关卡数”这类别的表。
+            return False
+        if done is not None and total is not None and done > total:
+            return False
+        if old_total and total and total < old_total * 0.5:
+            return False
+        return True
+
+    # 模型读整页优先（它能分清上限表与进度表），正则只做兜底；两边都不可信就保留原值。
+    done = llm_done if llm_done is not None else re_done
+    total = llm_total if llm_total is not None else re_total
+    if not sane(done, total):
+        if sane(re_done, re_total):
+            done, total = re_done, re_total
+        else:
+            done, total = old_done, old_total
+    if done is not None:
+        mint["done"] = done
+    if total is not None:
+        mint["total"] = total
+    if mint.get("done") is not None and mint.get("total"):
+        mint["state"] = "sold_out" if int(mint["done"]) >= int(mint["total"]) else "live"
+        if (done, total) != (old_done, old_total):
+            mint["source"] = "site"
+    if mint:
+        fields["mint"] = mint
+    if not _blank(data.get("price")):
+        price = str(data["price"]).strip()
+        fields["price"] = price
+    if not _blank(data.get("deadline")):
+        deadline = _when(data["deadline"])
+        if deadline:
+            fields["deadline"] = deadline
+    fields["site_hash"] = digest
+    fields["site_checked_at"] = _stamp()
+    db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields, price, deadline)
+    return "changed"
+
+
 def _rug(prev: dict, now: dict) -> dict:
     """Did the pool go away since the last sweep? Only two rounds can answer that.
 
@@ -969,6 +1072,7 @@ def run(scan: dict, monitor: Monitor) -> None:
 
         _save(scan, stage="store", starts=starts)
         written = 0
+        touched: set[str] = set()
         # 上一轮的链上那组用来判撤池：池子在不在、流动性掉了多少（2026-10-30）。
         before = {row["slug"]: row for row in db.monitor_cards(monitor.id)}
         no_site = 0
@@ -983,9 +1087,33 @@ def run(scan: dict, monitor: Monitor) -> None:
             if not card["title"]:
                 continue
             db.monitor_card_put(monitor.id, card, scan["id"])
+            touched.add(card["slug"])
             written += 1
         counters["written"] = written
         counters["skipped_no_site"] = no_site
+        _save(scan, stage="refresh", starts=starts)
+        # 官网刷新是每轮的一段：本轮刚写的卡跳过；页面没变的卡只记时间，不调模型。
+        refreshed = unchanged = skipped = 0
+        cards = [card for card in db.monitor_cards(monitor.id) if card["slug"] not in touched]
+        if cards:
+            with ThreadPoolExecutor(max_workers=REFRESH_WORKERS) as pool:
+                futures = [pool.submit(_refresh_card, monitor, card) for card in cards
+                           if str(card.get("official_url") or "").strip()]
+                for future in as_completed(futures):
+                    try:
+                        status = future.result()
+                    except Exception:  # noqa: BLE001 - one bad site must not fail the sweep
+                        log.exception("monitor: site refresh failed")
+                        continue
+                    if status == "changed":
+                        refreshed += 1
+                    elif status == "unchanged":
+                        unchanged += 1
+                    else:
+                        skipped += 1
+        counters["refreshed"] = refreshed
+        counters["unchanged"] = unchanged
+        counters["refresh_skipped"] = skipped
         # 队列是工作集，不是档案：只留 30 天（2026-10-30, user）。
         counters["pruned"] = db.monitor_posts_prune(
             monitor.id, (_now() - timedelta(days=30)).isoformat(timespec="seconds"))

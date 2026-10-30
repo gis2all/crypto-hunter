@@ -78,6 +78,8 @@ _MINT_SINGLE = re.compile(
     r"(?<![\d.])([\d][\d,]{1,})\s*(?:[a-z]{2,12}\s+)?(?:claimed|minted|issued|sold)\b",
     re.I)
 _MINT_WORDS = ("minted", "shares", "supply", "confirmed", "progress", "铸造", "已铸", "total")
+#: 每钱包上限、单地址限制这类附近的「x / y」不是铸造进度（BNBS 的 10 shares per wallet）。
+_LIMIT_WORDS = ("per wallet", "per address", "每钱包", "每地址", "limit", "max ", "上限")
 
 
 def plain(value) -> str:
@@ -106,6 +108,10 @@ def parse_mint(text: str) -> dict:
             continue
         window = body[max(0, match.start() - 120):match.end() + 80].lower()
         if not any(word in window for word in _MINT_WORDS):
+            continue
+        # 上限词跟着这一对走（"1 / 10 shares per wallet"）；隔壁表里的 limit 不影响它。
+        near = body[max(0, match.start() - 15):match.end() + 40].lower()
+        if any(word in near for word in _LIMIT_WORDS):
             continue
         # 一页上常有好几对（池子进度、格子进度），铸造那一对的分母最大。
         if best is None or total > best[1]:

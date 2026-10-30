@@ -1,7 +1,7 @@
 """监控：一个监控一套卡、一个自己的时钟（2026-10-29, user）。"""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -221,6 +221,9 @@ def test_a_count_without_a_total_is_still_progress():
     assert chain.parse_mint("8,210 minted") == {"done": 8210}
     assert chain.parse_mint("9,004 / 444,000 shares") == {"done": 9004, "total": 444000}
     assert chain.parse_mint("nothing here") == {}
+    # 每钱包上限旁边的 x / y 不是铸造进度（BNBS 的 10 shares per wallet）。
+    assert chain.parse_mint("Tier 1 / 10 shares per wallet\nMinted 29 / 7,000") \
+        == {"done": 29, "total": 7000}
 
 
 def test_the_fill_excerpt_keeps_the_price_line():
@@ -602,3 +605,52 @@ def test_a_plain_http_site_is_upgraded_when_https_answers():
 def test_the_collection_knobs_default_to_the_registry(client):
     values = client.get("/api/v1/monitors/binance-agent-id/settings").json()["values"]
     assert (values["window_hours"], values["slice_hours"], values["min_score"]) == (24, 4, 30)
+
+
+def test_the_refresh_fingerprint_ignores_clocks_but_not_counts():
+    from app.monitors.core import job
+
+    one = job._fingerprint("Minted 6 / 10,000 at 21:00:01")
+    same = job._fingerprint("Minted 6 / 10,000 at 21:00:02")
+    moved = job._fingerprint("Minted 7 / 10,000 at 21:00:02")
+    assert one == same, "时钟抖动不算页面变化"
+    assert one != moved, "计数变化必须算"
+
+
+def test_the_refresh_stage_skips_an_unchanged_page(monkeypatch, isolated_db):
+    """页面没变时只记时间，不调模型（2026-10-30, user）."""
+    from app.monitors.core import job, chain
+    from app.monitors.registry import BINANCE_AGENT_ID
+    from app.sources import browser
+
+    page = ("<html><title>Acme</title><body>"
+            + "Acme agent mint. " * 20
+            + "Minted 6 / 10,000 at 21:00:01</body></html>")
+    monkeypatch.setattr(browser, "render", lambda url: page)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("an unchanged page must not call the model")
+
+    monkeypatch.setattr(job.llm, "complete_json", boom)
+    card = {"slug": "acme", "official_url": "https://acme/",
+            "fields": {"site_hash": job._fingerprint(chain.plain(page))}}
+    assert job._refresh_card(BINANCE_AGENT_ID, card) == "unchanged"
+
+
+def test_a_site_number_below_the_chain_reading_is_ignored(monkeypatch, isolated_db):
+    """进度只往前：站点给 4,474 / 10,000 时不能覆盖链上读到的 8,867."""
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+    from app.sources import browser
+
+    page = "<html><body>" + "mint " * 60 + "Minted 4474 / 10,000</body></html>"
+    monkeypatch.setattr(browser, "render", lambda url: page)
+    monkeypatch.setattr(job, "_fill", lambda monitor, project: {})
+    captured = {}
+    monkeypatch.setattr(job.db, "monitor_card_patch",
+                        lambda *args, **kwargs: captured.update({"fields": args[2]}))
+    card = {"slug": "x", "official_url": "https://x/",
+            "fields": {"mint": {"done": 8867, "total": 10000, "source": "chain"}}}
+    assert job._refresh_card(BINANCE_AGENT_ID, card) == "changed"
+    assert captured["fields"]["mint"]["done"] == 8867
+    assert captured["fields"]["mint"]["source"] == "chain"

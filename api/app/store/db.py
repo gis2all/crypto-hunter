@@ -2107,3 +2107,17 @@ def monitor_posts_prune(monitor: str, cutoff: str) -> int:
     finally:
         conn.close()
     return removed
+
+
+def monitor_card_patch(monitor: str, slug: str, fields: dict,
+                       price: str | None = None, deadline: str | None = None) -> None:
+    """Refresh one card's readings (progress / price / deadline) from its own site."""
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE monitor_cards SET fields_json = ?,"
+            " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
+            " WHERE monitor = ? AND slug = ?",
+            (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(), monitor, slug))
+    finally:
+        conn.close()
