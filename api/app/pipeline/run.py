@@ -227,7 +227,7 @@ def _set_status(run_id: str, status: str, error: str | None = None) -> None:
         conn.close()
 
 
-def _roster_symbols(conn, cas: list[str]) -> dict[str, str]:
+def _roster_symbols(conn, chain_id: str, cas: list[str]) -> dict[str, str]:
     """CA -> name, from the token roster rather than from the round that saw it.
 
     A snapshot carries the symbol its round knew, and a round that never learned a name
@@ -238,8 +238,9 @@ def _roster_symbols(conn, cas: list[str]) -> dict[str, str]:
         return {}
     marks = ",".join("?" * len(cas))
     rows = conn.execute(
-        "SELECT ca, symbol FROM tokens WHERE ca IN (%s) AND symbol IS NOT NULL" % marks,
-        cas,
+        "SELECT ca, symbol FROM tokens WHERE chain_id = ? AND ca IN (%s)"
+        " AND symbol IS NOT NULL" % marks,
+        (chain_id, *cas),
     ).fetchall()
     return {ca_key(row["ca"]): row["symbol"] for row in rows}
 
@@ -285,7 +286,7 @@ def previous_picks(chain_id: str, run_id: str, config_id: str | None = None) -> 
         rows = conn.execute(
             "SELECT ca FROM reports WHERE run_id = ? ORDER BY rank", (last["id"],)
         ).fetchall()
-        names = _roster_symbols(conn, [ca_key(row["ca"]) for row in rows])
+        names = _roster_symbols(conn, chain_id, [ca_key(row["ca"]) for row in rows])
         for item in rows:
             snap = conn.execute(
                 "SELECT metrics_json FROM snapshots WHERE run_id = ? AND ca = ?",

@@ -217,7 +217,7 @@ def store_round(conn, result: RoundResult) -> None:
             "INSERT INTO tokens (ca, chain_id, symbol, decimals, launchpad, created_at,"
             " first_seen_run, updated_at, peak_market_cap_usd, peak_market_cap_at)"
             " VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)"
-            " ON CONFLICT(ca) DO UPDATE SET"
+            " ON CONFLICT(chain_id, ca) DO UPDATE SET"
             " symbol=excluded.symbol, launchpad=excluded.launchpad,"
             " first_seen_run=excluded.first_seen_run, updated_at=excluded.updated_at,"
             " peak_market_cap_usd=MAX(tokens.peak_market_cap_usd, excluded.peak_market_cap_usd),"

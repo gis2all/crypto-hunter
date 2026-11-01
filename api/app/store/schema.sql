@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS settings_versions (
 
 -- Token master record (first seen + static facts). Editable.
 CREATE TABLE IF NOT EXISTS tokens (
-  ca            TEXT PRIMARY KEY,
+  ca            TEXT NOT NULL,
   chain_id      TEXT NOT NULL,
   symbol        TEXT,
   decimals      INTEGER,
@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS tokens (
   --: for this CA in any round, written for every scanned token, not only the candidates.
   peak_market_cap_usd REAL,
   peak_market_cap_at  TEXT,
-  updated_at    TEXT NOT NULL
+  updated_at    TEXT NOT NULL,
+  PRIMARY KEY (chain_id, ca)
 );
 
 -- One screening round. Immutable. run_key makes the scheduled tick idempotent.

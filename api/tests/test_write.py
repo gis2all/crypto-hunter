@@ -13,26 +13,27 @@ from app.store import db
 CA = "0xabc0000000000000000000000000000000000001"
 
 
-def _round(run_id, item, **settings):
+def _round(run_id, item, chain_id="arc", **settings):
     return RoundResult(
-        chain_id="arc", run_id=run_id, universe=1,
+        chain_id=chain_id, run_id=run_id, universe=1,
         items={item.ca: item}, survivors=[item], scored=[item], picked=[item],
         rule_counts=[], sources=[], reports=[], changes=[], notes=[],
         settings=settings,
     )
 
 
-def _run_row(conn, run_id):
+def _run_row(conn, run_id, chain_id="arc"):
     conn.execute(
         "INSERT INTO runs (id, run_key, chain_id, trigger, status, selected, started_at)"
-        " VALUES (?, ?, 'arc', 'manual', 'researched', 0, '2026-09-27T10:00:00+08:00')",
-        (run_id, run_id),
+        " VALUES (?, ?, ?, 'manual', 'researched', 0, '2026-09-27T10:00:00+08:00')",
+        (run_id, run_id, chain_id),
     )
 
 
-def _peak(conn, ca=CA):
+def _peak(conn, ca=CA, chain_id="arc"):
     row = conn.execute(
-        "SELECT peak_market_cap_usd FROM tokens WHERE ca = ?", (ca,)).fetchone()
+        "SELECT peak_market_cap_usd FROM tokens WHERE ca = ? AND chain_id = ?",
+        (ca, chain_id)).fetchone()
     return row[0] if row else None
 
 
@@ -77,3 +78,38 @@ def test_the_peak_never_goes_back_down(isolated_db):
         assert _peak(conn) == 5_048_753
     finally:
         conn.close()
+
+
+def test_the_same_ca_on_two_chains_keeps_two_independent_token_rows(isolated_db):
+    """A CREATE2 address can exist twice; chain identity belongs in the token key."""
+    conn = db.connect()
+    try:
+        _run_row(conn, "arc-run", "arc")
+        arc = Candidate(
+            ca=CA,
+            metrics=TokenMetrics(ca=CA, symbol="ARC", market_cap_usd=113_800,
+                                 high_market_cap_usd=5_048_753),
+            decision="selected",
+        )
+        write.store_round(conn, _round("arc-run", arc, chain_id="arc",
+                                       pipeline={"prefilter": {}}))
+        _run_row(conn, "base-run", "base")
+        base = Candidate(
+            ca=CA,
+            metrics=TokenMetrics(ca=CA, symbol="BASE", market_cap_usd=80_000,
+                                 high_market_cap_usd=900_000),
+            decision="selected",
+        )
+        write.store_round(conn, _round("base-run", base, chain_id="base",
+                                       pipeline={"prefilter": {}}))
+        conn.commit()
+        rows = conn.execute(
+            "SELECT chain_id, symbol, peak_market_cap_usd FROM tokens"
+            " WHERE ca = ? ORDER BY chain_id", (CA,)
+        ).fetchall()
+    finally:
+        conn.close()
+    assert [tuple(row) for row in rows] == [
+        ("arc", "ARC", 5_048_753),
+        ("base", "BASE", 900_000),
+    ]

@@ -53,7 +53,9 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 25 rewrote the query catalog once more: X's `-game` only matches the whole word, so
 #: `gamers` / `gameplay` walked back in. The new terms arrive with the tracked seed and the
 #: superseded rows are retired in place, the same shape as 13.
-SCHEMA_VERSION = 28
+#: 29 rekeys tokens by (chain_id, ca): the same EVM address can be deployed on two chains,
+#: and a CA-only key let one chain's symbol and peak overwrite the other's.
+SCHEMA_VERSION = 29
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -340,6 +342,7 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     # cannot hold two sets of settings' judgements about the same token.
     _rekey_lexicon_for_configs(conn)
     _rekey_lexicon_sources_for_configs(conn)
+    _rekey_tokens_for_chain(conn)
     for table, column in _DROPPED_COLUMNS:
         have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
         if column in have:
@@ -493,6 +496,44 @@ def _rekey_lexicon_sources_for_configs(conn: sqlite3.Connection) -> int:
         DROP TABLE lexicon_sources;
         ALTER TABLE lexicon_sources_rekeyed RENAME TO lexicon_sources;
     """)
+    return before
+
+
+def _rekey_tokens_for_chain(conn: sqlite3.Connection) -> int:
+    """Move the token roster from a CA-only key to (chain_id, ca)."""
+    info = {row["name"]: row["pk"] for row in conn.execute("PRAGMA table_info(tokens)")}
+    if not info.get("ca"):
+        return 0
+    if info.get("chain_id") == 1 and info.get("ca") == 2:
+        return 0
+    before = conn.execute("SELECT COUNT(*) AS n FROM tokens").fetchone()["n"]
+    conn.executescript("""
+        DROP TABLE IF EXISTS tokens_rekeyed;
+        CREATE TABLE tokens_rekeyed (
+          ca TEXT NOT NULL,
+          chain_id TEXT NOT NULL,
+          symbol TEXT,
+          decimals INTEGER,
+          launchpad TEXT,
+          created_at TEXT,
+          first_seen_run TEXT,
+          peak_market_cap_usd REAL,
+          peak_market_cap_at TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (chain_id, ca)
+        );
+        INSERT INTO tokens_rekeyed
+          (ca, chain_id, symbol, decimals, launchpad, created_at, first_seen_run,
+           peak_market_cap_usd, peak_market_cap_at, updated_at)
+        SELECT ca, chain_id, symbol, decimals, launchpad, created_at, first_seen_run,
+               peak_market_cap_usd, peak_market_cap_at, updated_at
+          FROM tokens;
+        DROP TABLE tokens;
+        ALTER TABLE tokens_rekeyed RENAME TO tokens;
+    """)
+    after = conn.execute("SELECT COUNT(*) AS n FROM tokens").fetchone()["n"]
+    if after != before:
+        raise RuntimeError("tokens migration changed the row count")
     return before
 
 
