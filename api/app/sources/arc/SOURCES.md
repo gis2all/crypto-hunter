@@ -28,7 +28,7 @@
 
 ## 关键结论
 
-1. **GMGN 必须走 `curl_cffi`（`impersonate="chrome"`）。** httpx / urllib 一律 403，返回的是 Cloudflare 挑战页（`text/html`），不是限频。依赖已固化为 `curl-cffi`，代码走 `sources/http.py` 的 `TRANSPORT = "browser"`。
+1. **GMGN 必须走 `curl_cffi`（`impersonate="chrome"`）。** httpx / urllib 一律 403，返回的是 Cloudflare 挑战页（`text/html`），不是限频。依赖已固化为 `curl-cffi`；`gmgn.py` 的 `TRANSPORT = "browser"` 选择 `sources/http.py` 的浏览器指纹 lane。
 2. **universe 的主源是「池」不是「币」。** GeckoTerminal 分页拉池（`FULL_PAGES = 12`，全量 ≈ 3249 个池/币），RadarDEX 一次拉全量做补充（`limit=2000`，覆盖 ≈ 4145）。
 3. **Sourcify 在 Arc 覆盖很差。** 收录很少，因此「双源验证」（GoPlus + Sourcify）会把 165 个候选淘汰到 1–2 个入选。这是入选数偏少的直接原因，不是缺陷；需要放宽时把设定页的源码验证切到「仅 GoPlus」。
 4. 没有任何源返回 `X-RateLimit-*` 头；GMGN 的拒绝是反爬，不是限频。
@@ -118,9 +118,13 @@ Sourcify 的 404 表示「我没有它的记录」，是答案而不是失败：
 两处读页面共用同一条路径：①判「这是不是项目官网」（`app/search/discover.py`）；②写卡片正文
 （`report/research.py` 的 `_read`，每卡最多 `MAX_PAGES = 8` 个外链、正文合计 `MAX_CHARS = 15000`；官方账号的推文另走 `POST_CHARS = 15000`）。
 
-`fetch_page` 先走 `sources/http.py` 的静态两条 lane（httpx → curl_cffi 伪装）；正文不足
-`SHELL_WORDS = 40` 个词（或两条 lane 都被拒）时，把同一个 URL 交给 `app/sources/browser.py` 的
-Chromium 重新抓，**两份取词多的那份**。
+`fetch_page` 先用 `sources/http.py` 的公开 httpx 会话读取页面；该会话只接受公开 URL、逐跳检查
+重定向，并把连接固定到已验证的解析地址。正文不足 `SHELL_WORDS = 40` 个词或静态读取失败时，
+把同一个 URL 交给 `app/sources/browser.py` 的 Chromium 渲染，**两份取词多的那份**。
+
+Chromium 自身不直接出网：页面、脚本、XHR 与重定向都由同一固定 IP 的 HTTP 会话代取后
+fulfill，WebSocket 一律关闭，未路由的请求落到死代理。这样浏览器重定向和子资源不会绕过公开 URL
+边界，也不会发生校验一次、Chromium 再解析一次的 DNS 重绑定缺口。
 
 - 阈值来自实测：2026-09-27 三个空壳站是 8、8、**10** 个词，同一批里次低的官网有 **94** 个词。
 - 不渲染的代价是判断错误：`usearckit.online` 曾判 none，卡片上显示成了第三方站 `myarcade.fun`。
