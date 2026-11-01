@@ -1,4 +1,4 @@
-"""The Binance Agent ID monitor: which projects take an .ai Agent ID right now."""
+"""The Binance Agent ID monitor: which AI / crypto projects use or support an Agent ID."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from ..registry import Monitor
 MONITOR = Monitor(
     id="binance-agent-id",
     name="Binance Agent ID",
-    tagline="接受 Agent ID 参与的铸造、白名单、任务与积分",
+    tagline="与 Agent ID 生态有真实关系的铸造、白名单、任务与集成",
     queries=(
         # 实体词组只留真正不同的 token：X 不分大小写、短语按连续 token 匹配，所以
         # "Binance Agent ID" / "币安 Agent ID" / ".ai Agent ID" 都被 "agent id" 覆盖；
@@ -30,7 +30,7 @@ MONITOR = Monitor(
     version="monitor-agentid-v1",
     fields=("chain", "status", "price", "supply", "deadline"),
     notes=(
-        "只收「用 Agent ID 作为参与资格」的项目；Binance 官方公告本身不建卡。",
+        "只收 AI / Agent / 加密领域中确实使用或支持 Agent ID 的项目；Binance 官方公告本身不建卡。",
         "价格 / 供应 / 截止只有材料写了才填，没写就是未判定。",
     ),
 )

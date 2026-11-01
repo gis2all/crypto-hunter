@@ -8,8 +8,12 @@ DexScreener, and the safety sheet from GoPlus. A missing answer stays missing - 
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import threading
+from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 
 import httpx
@@ -18,8 +22,65 @@ from ...sources import dexscreener, goplus
 
 log = logging.getLogger("crypto-hunter.monitors")
 
-#: BSC's public seed node. One `eth_call` per card; a mint sweep is a dozen of them.
+#: BSC public nodes. They are rotated: one rate-limited node must not turn a whole sweep into
+#: undecided (2026-10-31, after agentid-sniper's six-node rotation).
 BSC_RPC = "https://bsc-dataseed.binance.org"
+BSC_RPCS = (BSC_RPC, "https://bsc.publicnode.com", "https://bsc-rpc.publicnode.com")
+#: `bsc-dataseed` answers `eth_getLogs` with an empty array instead of an error, so it must not
+#: be the first node for logs; publicnode serves the 50k-block window (2026-10-31).
+LOG_RPCS = ("https://bsc.publicnode.com", "https://bsc-rpc.publicnode.com", BSC_RPC)
+_RPC_AT = 0
+
+#: The card stores a label ("BSC", "Robinhood"); the settings file is keyed by id.
+CHAIN_ALIASES = {
+    "bsc": "bsc", "bnb": "bsc", "bnb chain": "bsc", "binance": "bsc",
+    "binance smart chain": "bsc",
+    "robinhood": "robinhood", "robinhood chain": "robinhood",
+    "arc": "arc",
+    "solana": "solana", "sol": "solana",
+}
+_LOCAL = threading.local()
+
+
+def chain_id(label: str) -> str:
+    """The settings file's id for a card's label. Unknown chains get no id.
+
+    "未判定" stays BSC: the registry this monitor is about lives there, and a probe that
+    answers is how a card without a chain becomes "BSC" (2026-10-31).
+    """
+    text = str(label or "").strip().lower()
+    if text in ("", "未判定", "unknown", "n/a"):
+        return "bsc"
+    return CHAIN_ALIASES.get(text, "")
+
+
+@contextmanager
+def _on_chain(chain: str):
+    """Make every helper in this module read the same chain for the duration of one probe."""
+    previous = getattr(_LOCAL, "chain", "bsc")
+    _LOCAL.chain = chain or "bsc"
+    try:
+        yield
+    finally:
+        _LOCAL.chain = previous
+
+
+def _current_chain() -> str:
+    return getattr(_LOCAL, "chain", "bsc")
+
+
+def _nodes(chain: str) -> tuple[str, ...]:
+    """The nodes for one chain: BSC rotates, every other chain has the one in its settings."""
+    if chain in ("", "bsc"):
+        return BSC_RPCS
+    if chain == "solana":  # not EVM; eth_getCode has no meaning here
+        return ()
+    try:
+        from ... import config
+        rpc = str((config.load_chains().get(chain) or {}).get("rpc") or "").strip()
+    except Exception:  # noqa: BLE001 - a missing chain is an empty node list, not a crash
+        rpc = ""
+    return (rpc,) if rpc else ()
 #: `totalSupply()` - the one method ERC-20 and ERC-721 both have.
 TOTAL_SUPPLY = "0x18160ddd"
 #: `decimals()` - ERC-20 answers 18 (usually); ERC-721 has none and the call reverts.
@@ -64,6 +125,24 @@ MINT_GETTERS = (
 )
 #: Common "how many exist in total" getters. Non-standard, so each is tried and ignored.
 MAX_SELECTORS = ("0xd5abeb01", "0x355274ea", "0x32cb6b0c")
+AGENT_ID_REGISTRY = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f"
+#: Addresses that show up in posts but are never a project's own contract: the zero address and
+#: the registry every Agent ID project merely points at (2026-10-31).
+INFRA = frozenset({AGENT_ID_REGISTRY, "0x" + "0" * 40})
+AGENT_ID_SELECTOR = "9f92d0dd"
+EIP1967_IMPL = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+EIP1967_BEACON = "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50"
+IMPLEMENTATION = "0x5c60da1b"
+TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+TRANSFER_SINGLE = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62"
+TRANSFER_BATCH = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb"
+ZERO_TOPIC = "0x" + "0" * 64
+LOG_CHUNK = 50_000
+HEAT_CHUNK = 10_000
+LOG_CHUNKS = 12
+#: The deep evidence scan walks this many blocks; the card records it as the window.
+DEEP_WINDOW = LOG_CHUNK * LOG_CHUNKS
+BLOCKS_30M = 2_400
 
 _ADDRESS = re.compile(r"0x[a-fA-F0-9]{40}")
 _SCRIPT = re.compile(r"<(script|style)\b.*?</\1>", re.I | re.S)
@@ -156,26 +235,53 @@ def guess_chain(*texts: str) -> str:
 def first_address(*texts: str) -> str:
     """The first contract address in any of these texts, lowercased. Empty when there is none."""
     for text in texts:
-        found = _ADDRESS.search(str(text or ""))
-        if found:
-            return found.group(0).lower()
+        for found in _ADDRESS.finditer(str(text or "")):
+            addr = found.group(0).lower()
+            if addr not in INFRA:
+                return addr
     return ""
 
 
 def _call(ca: str, data: str, *, timeout: float = 8.0) -> str | None:
     """One `eth_call`, raw hex back. None means the node or the contract did not answer."""
-    global _CLIENT
-    body = {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-            "params": [{"to": ca, "data": data}, "latest"]}
-    try:
-        if _CLIENT is None:
-            _CLIENT = httpx.Client(timeout=timeout)
-        reply = _CLIENT.post(BSC_RPC, json=body, timeout=timeout).json()
-    except Exception as exc:  # noqa: BLE001 - an unanswered node is a reading, not a failure
-        log.info("monitor: %s(%s) did not answer: %r", data, ca, exc)
-        return None
-    value = str((reply or {}).get("result") or "")
+    value = str(_rpc("eth_call", [{"to": ca, "data": data}, "latest"], timeout=timeout) or "")
     return value if value.startswith("0x") and len(value) > 2 else None
+
+
+def _rpc(method: str, params: list, *, timeout: float = 8.0, chain: str | None = None):
+    """One JSON-RPC call, rotated across that chain's nodes."""
+    global _CLIENT, _RPC_AT
+    chain = chain or _current_chain()
+    nodes = LOG_RPCS if (method == "eth_getLogs" and chain == "bsc") else _nodes(chain)
+    if not nodes:
+        return None
+    if _CLIENT is None:
+        _CLIENT = httpx.Client(timeout=timeout)
+    body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    last = None
+    for offset in range(len(nodes)):
+        at = (_RPC_AT + offset) % len(nodes)
+        try:
+            reply = _CLIENT.post(nodes[at], json=body, timeout=timeout).json()
+            if (reply or {}).get("error"):
+                message = str(reply["error"].get("message") or "rpc error")
+                # A revert is the contract answering "no such getter". Every node reverts
+                # alike, so trying the other two buys nothing and fills the log (2026-10-31).
+                if "revert" in message.lower():
+                    return None
+                raise RuntimeError(message)
+            _RPC_AT = at
+            return reply.get("result")
+        except Exception as exc:  # noqa: BLE001 - try the next node
+            last = exc
+    log.info("monitor: %s did not answer on any node: %r", method, last)
+    return None
+
+
+def _code(ca: str, *, timeout: float = 8.0, chain: str | None = None) -> str | None:
+    """Runtime bytecode. `None` = no node answered; `"0x"` = the address has no code."""
+    result = _rpc("eth_getCode", [ca, "latest"], timeout=timeout, chain=chain)
+    return None if result is None else str(result).lower()
 
 
 def _uint(ca: str, data: str, *, timeout: float = 8.0) -> int | None:
@@ -227,6 +333,17 @@ def is_erc721(ca: str, *, timeout: float = 8.0) -> bool | None:
     return None if value is None else bool(value)
 
 
+#: A share / mint count above this is not believable; the same ceiling max_supply uses.
+SHARE_CAP = 10**12
+
+
+def _token_amount(value: int, scale: int | None) -> int:
+    """A getter answering in base units (SoulBoard: 7.245e24) is an amount, not a count."""
+    if scale is not None and value > SHARE_CAP:
+        return value // (10 ** scale)
+    return value
+
+
 def max_supply(ca: str, *, minted: int | None = None, timeout: float = 8.0) -> int | None:
     """The cap, when the contract really means a share cap.
 
@@ -236,7 +353,7 @@ def max_supply(ca: str, *, minted: int | None = None, timeout: float = 8.0) -> i
     """
     for selector in MAX_SELECTORS:
         value = _uint(ca, selector, timeout=timeout)
-        if value and 0 < value <= 10**12 and (minted is None or value >= minted):
+        if value and 0 < value <= SHARE_CAP and (minted is None or value >= minted):
             return value
     return None
 
@@ -282,21 +399,22 @@ def token_of(ca: str) -> dict:
     return token_facts(ca)
 
 
-def token_first(*addresses: str, limit: int = 6) -> dict:
+def token_first(*addresses: str, limit: int = 6, chain: str = "bsc") -> dict:
     """The first of these addresses that really is a token.
 
     A page lists many addresses (mint pass, forge, emitter, the token); only one of them is
     the token, and it is verified on-chain rather than trusted because it was printed on the
     site (2026-10-30, user).
     """
-    tried = 0
-    for ca in addresses:
-        if tried >= limit:
-            break
-        tried += 1
-        facts = token_facts(ca)
-        if facts:
-            return facts
+    with _on_chain(chain):
+        tried = 0
+        for ca in addresses:
+            if tried >= limit:
+                break
+            tried += 1
+            facts = token_facts(ca)
+            if facts:
+                return facts
     return {}
 
 
@@ -359,9 +477,290 @@ def lp_from_pair(pair: str) -> dict:
             "lp_locked_pct": share}
 
 
-def probe(ca: str, chain: str = "bsc") -> dict:
-    """Everything the card's 链上 row prints. Missing answers are simply absent."""
+def _without_metadata(body: str) -> str:
+    """Drop Solidity's CBOR metadata tail; it changes with the compiler, not the template."""
+    for marker in ("a264697066735822", "a165627a7a72305820"):
+        at = body.rfind(marker)
+        if at != -1:
+            return body[:at]
+    return body
+
+
+def fingerprint_code(code: str) -> str:
+    """Length plus the first and last 120 bytes: the same template keeps this value."""
+    body = _without_metadata(str(code or "").lower().removeprefix("0x"))
+    if len(body) < 8:
+        return ""
+    digest = hashlib.sha1((body[:240] + body[-240:]).encode("ascii", "ignore")).hexdigest()
+    return f"{len(body)}:{digest[:12]}"
+
+
+def code_fingerprint(ca: str) -> str:
+    return fingerprint_code(_code(ca))
+
+
+def agent_gate(ca: str, *, chain: str = "bsc") -> bool | None:
+    """True when bytecode embeds the Agent ID registry; False when it has code but no check.
+
+    The registry lives on BSC; asking another chain for that constant is a category mistake.
+    """
+    if chain != "bsc":
+        return None
+    code = _code(ca, chain=chain)
+    if not code or len(code) <= 2:
+        return None
+    return AGENT_ID_REGISTRY[2:] in code or AGENT_ID_SELECTOR in code
+
+
+def has_code(ca: str, *, chain: str = "bsc") -> bool | None:
+    """True / False from eth_getCode; None when no node answered."""
+    code = _code(ca, chain=chain)
+    if code is None:
+        return None
+    return len(code) > 2
+
+
+def identify(ca: str, *, chain: str = "bsc") -> dict:
+    """Bytecode identity in one round-trip: template fingerprint plus the Agent ID gate."""
+    code = _code(ca, chain=chain)
+    if not code or len(code) <= 2:
+        return {}
+    out = {"code_fp": fingerprint_code(code)}
+    if chain == "bsc":
+        out["agent_gated"] = AGENT_ID_REGISTRY[2:] in code or AGENT_ID_SELECTOR in code
+    return out
+
+
+def implementation(ca: str) -> str:
+    """The logic contract behind an EIP-1967 proxy, or empty when this is not a proxy."""
+    ca = str(ca or "").strip().lower()
+    if not _ADDRESS.fullmatch(ca):
+        return ""
+    for slot in (EIP1967_IMPL, EIP1967_BEACON):
+        raw = str(_rpc("eth_getStorageAt", [ca, slot, "latest"]) or "")
+        if not raw or not raw.startswith("0x") or int(raw, 16) == 0:
+            continue
+        target = "0x" + raw[-40:].lower()
+        if slot == EIP1967_BEACON:
+            value = _call(target, IMPLEMENTATION)
+            target = "0x" + value[-40:].lower() if value and len(value) >= 42 else ""
+        target_code = _code(target)
+        if target and target != ca and target_code and len(target_code) > 2:
+            return target
+    return ""
+
+
+def _mint_rows(ca: str, *, deep: bool = False, chunks: int = LOG_CHUNKS,
+               chunk: int = LOG_CHUNK):
+    """Mint logs, newest chunk first, as (rows, complete, latest)."""
+    head = _rpc("eth_blockNumber", [])
+    try:
+        latest = int(str(head), 16)
+    except (TypeError, ValueError):
+        return [], False, 0
+    rows = []
+    end = latest
+    complete = False
+    for index in range(chunks if deep else 1):
+        start = max(0, end - chunk + 1)
+        batch = _rpc("eth_getLogs", [{"address": ca, "fromBlock": hex(start),
+                                     "toBlock": hex(end),
+                                     "topics": [[TRANSFER, TRANSFER_SINGLE, TRANSFER_BATCH]]}])
+        if batch is None:
+            return rows, False, latest
+        if not batch:
+            if index > 0:
+                complete = True
+                break
+        else:
+            rows.extend(batch)
+        if start == 0:
+            complete = True
+            break
+        end = start - 1
+    return rows, complete, latest
+
+
+def _mint_of(row: dict):
+    """(block, to, tx) when this log is a mint; None for a normal transfer."""
+    topics = [str(item).lower() for item in row.get("topics") or []]
+    if not topics:
+        return None
+    topic0 = topics[0]
+    if topic0 == TRANSFER and len(topics) >= 3:
+        sender, receiver = topics[1], topics[2]
+    elif topic0 in (TRANSFER_SINGLE, TRANSFER_BATCH) and len(topics) >= 4:
+        sender, receiver = topics[2], topics[3]
+    else:
+        return None
+    if sender != ZERO_TOPIC or receiver == ZERO_TOPIC:
+        return None
+    try:
+        block = int(str(row.get("blockNumber") or "0x0"), 16)
+    except ValueError:
+        block = 0
+    return block, "0x" + receiver[-40:], str(row.get("transactionHash") or "")
+
+
+def mint_logs(ca: str, *, deep: bool = False) -> dict:
+    """Mint count and wallet heat from logs; mint_logs is a total only when complete."""
+    window = LOG_CHUNK if deep else HEAT_CHUNK
+    rows, complete, latest = _mint_rows(ca, deep=deep, chunk=window)
+    mints = [item for row in rows if (item := _mint_of(row))]
+    if not mints:
+        return {"mint_logs": 0} if complete else {}
+    recent_edge = latest - window + 1
+    recent = [item for item in mints if item[0] >= recent_edge]
+    thirty = [item for item in mints if item[0] >= latest - BLOCKS_30M]
+    out = {
+        "mint_recent": len(recent),
+        "mint_wallets": len({item[1] for item in recent}),
+        "mint_30m": len(thirty),
+        "mint_30m_wallets": len({item[1] for item in thirty}),
+    }
+    if complete:
+        out["mint_logs"] = len(mints)
+    return out
+
+
+def _unique(values, limit: int) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _holders(addresses: list[str]) -> int:
+    holders = 0
+    for address in addresses:
+        value = _uint(AGENT_ID_REGISTRY, BALANCE_OF + address[2:].rjust(64, "0"))
+        if value:
+            holders += 1
+    return holders
+
+
+def _stamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def agent_evidence(ca: str, *, deep: bool = False, sample: int = 8) -> dict:
+    """Who minted, and how many of them hold an Agent ID.
+
+    A backend-signed mint has the project's own hot wallet as the transaction sender, so the
+    recipients are the users and the senders are the project. Recipients first; senders only
+    when a mint does not name five distinct recipients (2026-10-31).
+    """
+    window = DEEP_WINDOW if deep else HEAT_CHUNK
+    rows, _, _ = _mint_rows(ca, deep=deep, chunk=LOG_CHUNK if deep else HEAT_CHUNK)
+    mints = [item for row in rows if (item := _mint_of(row))]
+    side, addresses = "recipients", _unique(
+        [item[1].lower() for item in reversed(mints)], sample)
+    if len(addresses) < 5:
+        hashes = _unique([item[2] for item in reversed(mints)], sample)
+        senders = []
+        for tx in hashes:
+            reply = _rpc("eth_getTransactionByHash", [tx])
+            sender = str((reply or {}).get("from") or "").lower()
+            if _ADDRESS.fullmatch(sender):
+                senders.append(sender)
+        side, addresses = "senders", _unique(senders, sample)
+    checked = _stamp()
+    if len(addresses) < 5:
+        return {"agent_source": "none", "agent_side": side,
+                "agent_samples": len(addresses), "agent_window": window,
+                "agent_checked_at": checked}
+    share = round(_holders(addresses) / len(addresses), 2)
+    return {"agent_callers": share, "agent_side": side,
+            "agent_samples": len(addresses), "agent_window": window,
+            "agent_source": "callers" if share >= 0.35 else "none",
+            "agent_checked_at": checked}
+
+
+def mint_only(ca: str, chain: str = "bsc") -> dict:
+    with _on_chain(chain):
+        return _mint_only(ca)
+
+
+def _mint_only(ca: str) -> dict:
+    """A cheap pass over one address: is it the mint contract, and how many were minted?
+
+    `_probe_first` tries up to six addresses from one page. Running the full probe (market,
+    safety, logs, bytecode) on each is minutes of round-trips; this only asks the mint getters
+    (2026-10-31).
+    """
+    ca = str(ca or "").strip().lower()
+    if not _ADDRESS.fullmatch(ca):
+        return {}
+    out: dict = {}
+    raw = total_supply(ca)
+    nft = is_erc721(ca)
+    minted = None
+    minted_by = ""
+    if nft is True:
+        out["nft"] = True
+        if raw is not None:
+            minted, minted_by = raw, "totalSupply()"
+    else:
+        for selector, getter in MINT_GETTERS:
+            value = _uint(ca, selector)
+            if value is not None:
+                minted, minted_by = value, getter
+                break
+    if minted is not None:
+        out["minted"] = minted
+        out["minted_by"] = minted_by
+        cap = max_supply(ca, minted=minted)
+        if cap:
+            out["mint_total"] = cap
+    return out
+
+
+def probe(ca: str, chain: str = "bsc", *, verify_code: bool = True,
+          read: str = "") -> dict:
+    with _on_chain(chain):
+        return _probe(ca, verify_code=verify_code, read=read)
+
+
+def _probe(ca: str, *, verify_code: bool = True, read: str = "") -> dict:
+    """Everything the card's on-chain row prints. Missing answers are simply absent.
+
+    `verify_code=False` is the refresh path: the template and Agent ID gate do not change every
+    sweep, and fetching a 40 KB bytecode costs more than every other call (2026-10-31).
+    """
+    chain = _current_chain()
+    if chain == "solana":
+        return {}
+    ca = str(ca or "").strip().lower()
     out: dict = {"contract": ca}
+    read = str(read or "").strip().lower()
+    if verify_code:
+        code = _code(ca)
+        if code is not None and len(code) <= 2:
+            return {}  # a real answer: there is no bytecode at this address
+        # A node that did not answer is a gap, not a verdict: keep reading what can be read.
+        # A full contract is not a proxy; the two storage reads cost more than most calls.
+        target = (implementation(ca)
+                  if (code and _ADDRESS.fullmatch(ca) and len(code) <= 4000) else "")
+        if target:
+            out["proxy"] = target
+            read = target
+            code = _code(read)
+        else:
+            read = ca
+        if code and len(code) > 2:
+            if chain == "bsc":
+                out["agent_gated"] = (AGENT_ID_REGISTRY[2:] in code
+                                      or AGENT_ID_SELECTOR in code)
+            fingerprint = fingerprint_code(code)
+            if fingerprint:
+                out["code_fp"] = fingerprint
+    if not read:
+        read = ca
 
     metrics = facts = None
     try:
@@ -375,43 +774,54 @@ def probe(ca: str, chain: str = "bsc") -> dict:
     except Exception as exc:  # noqa: BLE001
         log.info("monitor: dexscreener did not answer for %s: %r", ca, exc)
 
-    # 已铸造优先问合约自己：没有标准方法，所以按一组常见 getter 依次试，第一个答上来的算数。
     minted = None
     minted_by = ""
-    for selector, getter in MINT_GETTERS:
-        value = _uint(ca, selector)
-        if value is not None:
-            minted, minted_by = value, getter
-            break
-    raw = total_supply(ca)
-    scale = decimals(ca)
-    nft = is_erc721(ca)
+    raw = total_supply(read)
+    scale = decimals(read)
+    nft = is_erc721(read)
     if nft is True:
-        # 卡片的类型判定用它：721 的 totalSupply 是「份数」，不是代币总量。
+        # totalSupply() is the minted count for a 721; asking five getters first is five
+        # round-trips that cannot answer better (2026-10-31).
+        if raw is not None:
+            minted, minted_by = raw, "totalSupply()"
+    else:
+        for selector, getter in MINT_GETTERS:
+            value = _uint(read, selector)
+            if value is not None:
+                minted, minted_by = value, getter
+                break
+    if nft is True:
         out["nft"] = True
-    # 721 的 totalSupply 同样是「已铸造份数」，可以直接当分子。
     done = minted if minted is not None else (raw if nft else None)
+    if done is not None and nft is not True:
+        done = _token_amount(done, scale)
+    logs = mint_logs(read)
+    if nft is True and not done:
+        # Some 721s never update totalSupply(); the Transfer logs still know.
+        deeper = mint_logs(read, deep=True)
+        if deeper.get("mint_logs"):
+            done, minted_by = deeper["mint_logs"], "logs"
+            logs.update(deeper)
+    if logs:
+        out.update(logs)
     if done is not None:
         out["minted"] = done
         if minted_by:
             out["minted_by"] = minted_by
-        cap = max_supply(ca, minted=done)
+        cap = max_supply(read, minted=done)
         if cap:
             out["mint_total"] = cap
     if raw is not None and not nft:
-        # 20 的 totalSupply 是代币总量，不是卖出了多少份 —— 拿它当进度会差好几个数量级。
         out["kind"] = "erc20"
         out["token_total"] = raw // (10 ** scale) if scale is not None else raw
         if scale is not None:
             out["decimals"] = scale
-    # 交易站只认代币：铸造合约 ≠ 代币（JAGENT 的 `token()` 指向另一个 ERC-20，2026-10-30）。
-    token_meta = token_of(ca)
+    token_meta = token_of(read)
     if token_meta:
         out.update(token_meta)
-    # 增发要分两种：合约还有 owner（有人能单方面增发）和没有 owner（公开铸造，谁也关不掉）。
     owner = str(getattr(facts, "owner_address", "") or "") if facts is not None else ""
     if not owner:
-        value = _call(str(token_meta.get("token") or ca), OWNER)
+        value = _call(str(token_meta.get("token") or read), OWNER)
         owner = "0x" + value[-40:].lower() if value and len(value) >= 42 else ""
     try:
         if owner and int(owner, 16):
@@ -436,7 +846,6 @@ def probe(ca: str, chain: str = "bsc") -> dict:
             out["holders"] = metrics.holders
         if metrics.top10_pct is not None:
             out["top10"] = metrics.top10_pct
-        # 池子数量是「回答 0 个池子」还是「没回答」的分界，撤池要靠它分辨（2026-10-30）。
         pools = [pool for pool in (getattr(metrics, "pool_list", None) or []) if pool]
         out["pools"] = len(pools)
         if pools:
@@ -448,14 +857,12 @@ def probe(ca: str, chain: str = "bsc") -> dict:
         if lp:
             out.update(lp)
     if "lp_state" not in out and out.get("pool"):
-        # GoPlus 没给 LP 表时问池子自己：空池 / 烧掉或锁在已知锁仓合约里的份额。
         fallback = lp_from_pair(str(out["pool"]))
         if fallback:
             out.update(fallback)
     if facts is not None:
         if facts.lp_locked is not None:
             out["lp_locked"] = facts.lp_locked
-        # 空列表是「问过、没有危险权限」，不能和「没回答」混成一个空值。
         if facts.dangerous_perms is not None:
             out["perms"] = list(facts.dangerous_perms)
     return out

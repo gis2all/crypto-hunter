@@ -370,9 +370,12 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
         if page:
             profile_texts.append(visible_text(page))
             profile_links.extend(links_of(page))
-            _add_source(sources, "official_account", "官方 X", "https://x.com/%s" % handle)
             if not account:
                 account = handle
+    # Only the account this trace chose is "官方 X"; the other profiles are candidates that
+    # helped read the site, not extra official links (2026-11-01, user).
+    if account:
+        _add_source(sources, "official_account", "官方 X", "https://x.com/%s" % account)
     if not account and name and similar(name, author):
         # The post's own author may be the project: a lead from `@SpoutFi` about Spout Finance.
         account = author
@@ -468,6 +471,7 @@ def trace_lead(lead: dict, *, known: set[str], fetch=None, search=None, web_sear
             item["kind"] = item["kind"].replace("official_", "candidate_")
     answer.update({"account": account, "site": site, "version": TRACE_VERSION,
                    "searched": searched, "sources": sources, "page_sources": page_sources,
+                   "site_from_profile": site_from_profile,
                    "pages": [text for text in site_texts + profile_texts if text]})
     return answer
 
