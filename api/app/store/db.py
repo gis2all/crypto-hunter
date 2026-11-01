@@ -2110,14 +2110,87 @@ def monitor_posts_prune(monitor: str, cutoff: str) -> int:
 
 
 def monitor_card_patch(monitor: str, slug: str, fields: dict,
-                       price: str | None = None, deadline: str | None = None) -> None:
-    """Refresh one card's readings (progress / price / deadline) from its own site."""
+                       price: str | None = None, deadline: str | None = None,
+                       *, touch: bool = True) -> None:
+    """Refresh one card's readings (progress / price / deadline) from its own site.
+
+    `touch=False` is for bookkeeping flags (the duplicate mark): they must not move a card to
+    the top of the report as if its content had changed (2026-10-31).
+    """
+    conn = connect()
+    try:
+        if touch:
+            conn.execute(
+                "UPDATE monitor_cards SET fields_json = ?,"
+                " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
+                " WHERE monitor = ? AND slug = ?",
+                (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(),
+                 monitor, slug))
+        else:
+            conn.execute(
+                "UPDATE monitor_cards SET fields_json = ?,"
+                " price = COALESCE(?, price), deadline = COALESCE(?, deadline)"
+                " WHERE monitor = ? AND slug = ?",
+                (json.dumps(fields, ensure_ascii=False), price, deadline, monitor, slug))
+    finally:
+        conn.close()
+
+
+def runtime_set(key: str, value: dict) -> None:
+    """Remember one observation (a probe result) across restarts. Config stays in the file."""
     conn = connect()
     try:
         conn.execute(
-            "UPDATE monitor_cards SET fields_json = ?,"
-            " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
-            " WHERE monitor = ? AND slug = ?",
-            (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(), monitor, slug))
+            "INSERT INTO runtime_state (key, value, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value,"
+            " updated_at = excluded.updated_at",
+            (key, json.dumps(value, ensure_ascii=False), now_iso()))
     finally:
         conn.close()
+
+
+def runtime_get(key: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT value FROM runtime_state WHERE key = ?", (key,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        value = json.loads(row[0])
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def runtime_prefix(prefix: str) -> dict[str, dict]:
+    """Every observation under one prefix, in one query: the page asks for all sessions."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT key, value FROM runtime_state WHERE key LIKE ?", (prefix + "%",)).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, dict] = {}
+    for key, value in rows:
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            out[str(key)] = parsed
+    return out
+
+
+def llm_calls_recent(limit: int = 20) -> list[dict]:
+    """The last calls any screen made. The status strip reads them; it never calls a model."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT purpose, model, ok, error, created_at FROM llm_calls"
+            " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [{"purpose": row[0], "model": row[1], "ok": bool(row[2]),
+             "error": row[3] or "", "created_at": row[4] or ""} for row in rows]

@@ -481,3 +481,11 @@ CREATE TABLE IF NOT EXISTS monitor_posts (
 
 CREATE INDEX IF NOT EXISTS idx_monitor_posts_pending
   ON monitor_posts(monitor, status, passed, created_at DESC);
+
+-- 运行期读数：测试按钮和状态条要说的话，重启之后还得记得。这里只放观察，不放配置：
+-- 配置的唯一来源仍是 config/system.yaml（2026-10-31）。
+CREATE TABLE IF NOT EXISTS runtime_state (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
