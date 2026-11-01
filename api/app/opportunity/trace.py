@@ -28,9 +28,11 @@ from __future__ import annotations
 import html
 import json
 import logging
+import multiprocessing
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlsplit
 
 from ..search.base import handle_of, links_in, normalize_url
@@ -486,8 +488,51 @@ TRACE_WORKERS = 4
 LEAD_TIMEOUT = float(os.environ.get("CH_TRACE_LEAD_TIMEOUT", "120") or 120)
 
 
+def _lead_from_material(material: dict) -> dict:
+    try:
+        urls = json.loads(material.get("urls_json") or "[]")
+    except (TypeError, ValueError):
+        urls = []
+    try:
+        project_urls = json.loads(material.get("project_urls_json") or "[]")
+    except (TypeError, ValueError):
+        project_urls = []
+    return {"text": material["text"], "handle": material["handle"],
+            "urls": list(dict.fromkeys([*urls, *project_urls])),
+            "name": material.get("project_name") or "",
+            "project_handle": material.get("project_handle") or ""}
+
+
+def _trace_worker(send, lead: dict, known: set[str]) -> None:
+    """The child process half of a trace: return JSON only, never touch the database."""
+    from . import chainsearch, scan as scanner
+
+    try:
+        answer = trace_lead(
+            lead, known=known, search=scanner.look_up, web_search=chainsearch.search
+        )
+        send.send(("ok", answer))
+    except BaseException as exc:  # noqa: BLE001 - the parent records the failure
+        send.send(("error", repr(exc)))
+    finally:
+        send.close()
+
+
+def _terminate_process(process, timeout: float = 1.0) -> None:
+    """Stop a worker and reap it; a thread cannot offer this guarantee."""
+    if process.pid is None:
+        return
+    if process.is_alive():
+        process.terminate()
+    process.join(timeout)
+    if process.is_alive():
+        process.kill()
+        process.join(2.0)
+
+
 def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
-        cancel=None, fetch=None, search=None, web_search=None) -> dict:
+        cancel=None, fetch=None, search=None, web_search=None,
+        process_isolated: bool = True, lead_timeout: float | None = None) -> dict:
     """Trace what is waiting, newest first by the gate's score. Returns the pass's counters.
 
     Runs **after classification** on purpose: the project name comes from that pass, and a name is
@@ -512,21 +557,12 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
         len(group) for group in list(groups.values())[limit:])
     total = len(selected) or 1
     done = 0
+    budget = float(LEAD_TIMEOUT if lead_timeout is None else lead_timeout)
+    if budget <= 0:
+        raise ValueError("lead_timeout must be positive")
 
     def ask(materials: list[dict]) -> tuple[list[dict], dict | None, Exception | None]:
-        material = materials[0]
-        try:
-            urls = json.loads(material.get("urls_json") or "[]")
-        except (TypeError, ValueError):
-            urls = []
-        try:
-            project_urls = json.loads(material.get("project_urls_json") or "[]")
-        except (TypeError, ValueError):
-            project_urls = []
-        lead = {"text": material["text"], "handle": material["handle"],
-                "urls": list(dict.fromkeys([*urls, *project_urls])),
-                "name": material.get("project_name") or "",
-                "project_handle": material.get("project_handle") or ""}
+        lead = _lead_from_material(materials[0])
         try:
             answer = trace_lead(lead, known=known or set(), fetch=fetch, search=search,
                                 web_search=web_search)
@@ -534,36 +570,24 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
         except Exception as exc:  # noqa: BLE001
             return materials, None, exc
 
-    if cancel is not None and cancel.is_set():
-        raise RuntimeError("scan cancelled")
-    with ThreadPoolExecutor(max_workers=max(1, min(TRACE_WORKERS, total))) as pool:
-        futures = [pool.submit(ask, group) for group in selected]
-        for index, future in enumerate(futures):
-            if cancel is not None and cancel.is_set():
-                raise RuntimeError("scan cancelled")
-            try:
-                materials, answer, error = future.result(timeout=LEAD_TIMEOUT)
-            except TimeoutError:
-                material = selected[index][0]
-                counters["failed"] += 1
-                log.info("opportunity: trace timed out after %ss for %r", LEAD_TIMEOUT,
-                         material.get("project_name") or material.get("handle"))
-                done += 1
-                if tell:
-                    tell(done, total)
-                continue
-            material = materials[0]
-            key = str(material.get("project_name") or "").strip().lower() or \
-                str(material.get("handle") or "").lower()
-            if error is not None:
-                counters["failed"] += 1
-                log.info("opportunity: trace of %r failed: %r", key, error)
-                done += 1
-                if tell:
-                    tell(done, total)
-                continue
-            counters["traced"][answer["level"]] = counters["traced"].get(answer["level"], 0) + 1
-            db.opportunity_trace_put_many([row["ref"] for row in materials], answer["level"], dict(answer))
+    def absorb(materials: list[dict], answer: dict | None, error: Exception | None,
+               timed_out: bool = False) -> None:
+        nonlocal done
+        material = materials[0]
+        key = str(material.get("project_name") or "").strip().lower() or \
+            str(material.get("handle") or "").lower()
+        if timed_out:
+            counters["failed"] += 1
+            log.info("opportunity: trace timed out after %ss for %r", budget, key)
+        elif error is not None:
+            counters["failed"] += 1
+            log.info("opportunity: trace of %r failed: %r", key, error)
+        else:
+            counters["traced"][answer["level"]] = \
+                counters["traced"].get(answer["level"], 0) + 1
+            db.opportunity_trace_put_many(
+                [row["ref"] for row in materials], answer["level"], dict(answer)
+            )
             if answer["level"] == "A" and answer["account"] and \
                     answer["account"] not in (known or set()):
                 db.opportunity_source_put([{
@@ -575,7 +599,88 @@ def run(*, limit: int | None = None, known: set[str] | None = None, tell=None,
                     "added_at": db.now_iso(),
                 }])
                 counters["added"].append(answer["account"])
-            done += 1
-            if tell:
-                tell(done, total)
+        done += 1
+        if tell:
+            tell(done, total)
+
+    if cancel is not None and cancel.is_set():
+        raise RuntimeError("scan cancelled")
+
+    if process_isolated and any(fn is not None for fn in (fetch, search, web_search)):
+        raise ValueError("injected trace readers require process_isolated=False")
+
+    if process_isolated:
+        ctx = multiprocessing.get_context("spawn")
+        pending = list(enumerate(selected))
+        while pending:
+            if cancel is not None and cancel.is_set():
+                raise RuntimeError("scan cancelled")
+            wave, pending = pending[:TRACE_WORKERS], pending[TRACE_WORKERS:]
+            workers = []
+            for index, materials in wave:
+                recv, send = ctx.Pipe(duplex=False)
+                worker = ctx.Process(
+                    target=_trace_worker,
+                    args=(send, _lead_from_material(materials[0]), set(known or set())),
+                    name="opportunity-trace-%s" % index,
+                    daemon=True,
+                )
+                worker.start()
+                send.close()
+                workers.append({"materials": materials, "process": worker, "recv": recv})
+            try:
+                deadline = time.monotonic() + budget
+                unresolved = list(workers)
+                while unresolved:
+                    if cancel is not None and cancel.is_set():
+                        raise RuntimeError("scan cancelled")
+                    for item in list(unresolved):
+                        recv = item["recv"]
+                        if not recv.poll():
+                            continue
+                        try:
+                            state, value = recv.recv()
+                        except EOFError as exc:
+                            state, value = "error", repr(exc)
+                        if state == "ok":
+                            absorb(item["materials"], value, None)
+                        else:
+                            absorb(item["materials"], None, RuntimeError(str(value)))
+                        recv.close()
+                        _terminate_process(item["process"], timeout=0.5)
+                        unresolved.remove(item)
+                    if not unresolved:
+                        break
+                    if time.monotonic() >= deadline:
+                        for item in unresolved:
+                            item["recv"].close()
+                            _terminate_process(item["process"], timeout=0.5)
+                            absorb(item["materials"], None, None, timed_out=True)
+                        break
+                    time.sleep(0.05)
+            finally:
+                for item in workers:
+                    if item["process"].pid is not None:
+                        _terminate_process(item["process"], timeout=0.5)
+                    try:
+                        item["recv"].close()
+                    except OSError:
+                        pass
+    else:
+        pool = ThreadPoolExecutor(max_workers=max(1, min(TRACE_WORKERS, total)))
+        futures = {pool.submit(ask, group): group for group in selected}
+        try:
+            for future in as_completed(futures, timeout=budget):
+                if cancel is not None and cancel.is_set():
+                    raise RuntimeError("scan cancelled")
+                materials, answer, error = future.result()
+                absorb(materials, answer, error)
+        except TimeoutError:
+            for future, materials in futures.items():
+                if future.done():
+                    continue
+                future.cancel()
+                absorb(materials, None, None, timed_out=True)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     return counters
