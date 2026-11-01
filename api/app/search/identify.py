@@ -324,19 +324,15 @@ def pick_website(hits: Sequence[SearchHit], ca: str, handles: Iterable[str],
 
 
 def fetch_html(url: str) -> str:
-    """One page, as HTML, with the browser lane as the second attempt.
+    """One page, as HTML, through the public-checked transport.
 
     X serves a profile to a plain client, which is what makes the bio rule cheap. When it
-    does not - a challenge page, a redirect chain - the browser lane is the same request
-    with the fingerprints of something that renders, and it is worth one try.
+    does not - a challenge page, a redirect chain - `fetch_page` hands it to Playwright.
 
     Neither lane runs JavaScript. For a candidate site that is the whole problem - see
     fetch_page - and for a profile it is the point: the bio is in the document.
     """
-    try:
-        return http.get(url, http.UA_HTML, transport='http', tries=2, timeout=25)
-    except http.SourceError:
-        return http.get(url, http.UA_HTML, transport='browser', tries=1, timeout=30)
+    return http.get(url, http.UA_HTML, transport='http', tries=2, timeout=25, public=True)
 
 
 #: Hosts a browser cannot read any better than a plain client. X serves a profile's bio to a

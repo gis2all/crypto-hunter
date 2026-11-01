@@ -22,16 +22,20 @@ implementation - GeckoTerminal is the expensive one (a 429 costs a retry cycle).
 
 from __future__ import annotations
 
+import atexit
 import json
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
+import httpcore
 import httpx
 
 from .. import config
+from .url_safety import UnsafeUrl, require_public_url, resolve_public_host
 
 T = TypeVar("T")
 
@@ -192,6 +196,84 @@ _client: httpx.Client | None = None
 _client_lock = threading.Lock()
 
 
+class _PinnedBackend(httpcore.SyncBackend):
+    """Connect to a checked DNS answer, while keeping the original host for TLS SNI."""
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        address = resolve_public_host(host, port)
+        return super().connect_tcp(address, port, timeout, local_address, socket_options)
+
+    def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise UnsafeUrl("unix sockets are not public web endpoints")
+
+
+class _ResponseStream(httpx.SyncByteStream):
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    def __iter__(self):
+        yield from self._stream
+
+    def close(self) -> None:
+        self._stream.close()
+
+
+class _PublicTransport(httpx.BaseTransport):
+    """HTTPX transport whose TCP layer can never resolve to a private address."""
+
+    def __init__(self) -> None:
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=httpx.create_ssl_context(verify=True, trust_env=True),
+            max_connections=16,
+            max_keepalive_connections=8,
+            http1=True,
+            http2=False,
+            network_backend=_PinnedBackend(),
+        )
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        req = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.read(),
+            extensions=request.extensions,
+        )
+        resp = self._pool.handle_request(req)
+        return httpx.Response(
+            status_code=resp.status,
+            headers=resp.headers,
+            stream=_ResponseStream(resp.stream),
+            extensions=resp.extensions,
+        )
+
+    def close(self) -> None:
+        self._pool.close()
+
+
+_public: httpx.Client | None = None
+_public_lock = threading.Lock()
+
+
+def _public_client() -> httpx.Client:
+    global _public
+    with _public_lock:
+        if _public is None:
+            _public = httpx.Client(
+                transport=_PublicTransport(),
+                timeout=40.0,
+                follow_redirects=False,
+                trust_env=False,
+            )
+            atexit.register(_public.close)
+        return _public
+
+
 def _httpx_client() -> httpx.Client:
     global _client
     with _client_lock:
@@ -224,6 +306,143 @@ LANES: dict[str, Callable[[str, dict, float], tuple[int, str]]] = {
 }
 
 
+_REDIRECTS = frozenset((301, 302, 303, 307, 308))
+_MAX_REDIRECTS = 5
+
+
+@dataclass(frozen=True)
+class PublicResponse:
+    status: int
+    headers: dict[str, str]
+    content: bytes
+    text: str
+    url: str
+
+
+class PublicSession:
+    """A cookie-isolated public client used by plain fetches and browser request routing."""
+
+    def __init__(self, *, timeout: float = 40.0, client: httpx.Client | None = None) -> None:
+        self.timeout = timeout
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            transport=_PublicTransport(),
+            timeout=timeout,
+            follow_redirects=False,
+            trust_env=False,
+        )
+        self._state = threading.Condition()
+        self._active = 0
+        self._close_requested = False
+        self._closed = False
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict | None = None,
+        content: bytes | None = None,
+        timeout: float | None = None,
+    ) -> PublicResponse:
+        with self._state:
+            if self._close_requested:
+                raise SourceError("public session is closed")
+            self._active += 1
+        try:
+            current = url
+            current_method = method.upper()
+            current_body = content
+            seen: set[str] = set()
+            for _ in range(_MAX_REDIRECTS + 1):
+                current = require_public_url(current)
+                if current in seen:
+                    raise UnsafeUrl("redirect loop")
+                seen.add(current)
+                pacer(current).wait()
+                reply = self._client.request(
+                    current_method,
+                    current,
+                    headers=headers or UA_HTML,
+                    content=current_body,
+                    timeout=timeout if timeout is not None else self.timeout,
+                )
+                if reply.status_code not in _REDIRECTS:
+                    return PublicResponse(
+                        status=reply.status_code,
+                        headers={key: value for key, value in reply.headers.items()},
+                        content=reply.content,
+                        text=reply.text,
+                        url=str(reply.url),
+                    )
+                location = reply.headers.get("location")
+                if not location:
+                    raise SourceError("HTTP %s without Location" % reply.status_code)
+                current = urljoin(current, location)
+                if reply.status_code == 303 or (
+                        reply.status_code in (301, 302) and current_method == "POST"):
+                    current_method = "GET"
+                    current_body = None
+            raise UnsafeUrl("too many redirects")
+        finally:
+            with self._state:
+                self._active -= 1
+                self._state.notify_all()
+                close = self._owns_client and self._close_requested and self._active == 0 \
+                    and not self._closed
+                if close:
+                    self._closed = True
+            if close:
+                self._client.close()
+
+    def close(self, *, wait: float = 0.0) -> None:
+        with self._state:
+            self._close_requested = True
+            if self._active and wait:
+                self._state.wait_for(lambda: self._active == 0, timeout=wait)
+            close = self._owns_client and self._active == 0 and not self._closed
+            if close:
+                self._closed = True
+        if close:
+            self._client.close()
+
+
+def _public_request(
+    method: str,
+    url: str,
+    headers: dict,
+    *,
+    timeout: float,
+    tries: int,
+    sleep: float,
+) -> tuple[int, str]:
+    """One public request with a manual redirect loop and a per-hop boundary check."""
+    last = "no attempt"
+    started = time.monotonic()
+    original_host = urlsplit(url).netloc or "?"
+    for attempt in range(max(1, tries)):
+        session = PublicSession(client=_public_client(), timeout=timeout)
+        try:
+            reply = session.request(method, url, headers=headers, timeout=timeout)
+            if method == "HEAD" and reply.status < 400:
+                _tally(original_host, "ok", time.monotonic() - started)
+                return reply.status, ""
+            if reply.status == 200:
+                _tally(original_host, "ok", time.monotonic() - started)
+                return reply.status, reply.text
+            last = "HTTP %s" % reply.status
+        except UnsafeUrl as exc:
+            _tally(original_host, "fail", time.monotonic() - started)
+            raise SourceError("%s -> %s" % (url, exc)) from exc
+        except Exception as exc:
+            last = repr(exc)[:120]
+        _tally(original_host, "retry")
+        if attempt + 1 < tries:
+            time.sleep(sleep)
+    _tally(original_host, "fail", time.monotonic() - started)
+    raise SourceError("%s -> %s" % (url, last))
+
+
 def get(
     url: str,
     headers: dict | None = None,
@@ -232,8 +451,15 @@ def get(
     timeout: float = 30.0,
     tries: int = 3,
     sleep: float = 0.8,
+    public: bool = False,
 ) -> str:
     """Fetch a URL as text, retrying transient failures. Raises SourceError at the end."""
+    if public:
+        if transport != "http":
+            raise SourceError("public fetches use the checked HTTP transport only")
+        return _public_request(
+            "GET", url, headers or UA_HTML, timeout=timeout, tries=tries, sleep=sleep
+        )[1]
     lane = LANES.get(transport)
     if lane is None:
         raise SourceError("unknown transport: %r" % (transport,))
@@ -257,6 +483,20 @@ def get(
     raise SourceError("%s -> %s" % (url, last))
 
 
+def head(
+    url: str,
+    headers: dict | None = None,
+    *,
+    timeout: float = 8.0,
+    tries: int = 1,
+    sleep: float = 0.8,
+) -> int:
+    """A public HEAD check, used only to prefer HTTPS for a displayed project link."""
+    return _public_request(
+        "HEAD", url, headers or UA_HTML, timeout=timeout, tries=tries, sleep=sleep
+    )[0]
+
+
 def json_get(
     url: str,
     headers: dict | None = None,
@@ -265,9 +505,11 @@ def json_get(
     timeout: float = 30.0,
     tries: int = 3,
     sleep: float = 0.8,
+    public: bool = False,
 ) -> Any:
     """Fetch a URL and parse it. A body that is not JSON is a failure, not a result."""
-    text = get(url, headers, transport=transport, timeout=timeout, tries=tries, sleep=sleep)
+    text = get(url, headers, transport=transport, timeout=timeout, tries=tries, sleep=sleep,
+               public=public)
     try:
         return json.loads(text)
     except ValueError as exc:
@@ -327,6 +569,15 @@ def json_post(
         return json.loads(text)
     except ValueError as exc:
         raise SourceError("%s -> not JSON: %s" % (url, repr(exc)[:80])) from exc
+
+
+def shutdown() -> None:
+    """Close the process-wide public client. The app lifespan and tests both call it."""
+    global _public
+    with _public_lock:
+        client, _public = _public, None
+    if client is not None:
+        client.close()
 
 
 _cache: dict[str, dict] | None = None

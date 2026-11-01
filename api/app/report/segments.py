@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from html import unescape
 
+from ..sources.url_safety import safe_http_url
+
 ANCHOR = re.compile(r'<a\s+href="([^"]+)"\s*>(.*?)</a>', re.S)
 BOLD = re.compile(r"<b>(.*?)</b>", re.S)
 CODE = re.compile(r"<code>(.*?)</code>", re.S)
@@ -36,7 +38,10 @@ def segments(text: str | None) -> list[dict]:
     for m in ANCHOR.finditer(text):
         if m.start() > pos:
             out.extend(_plain(text[pos:m.start()]))
-        out.append({"kind": "link", "text": unescape(_strip(m.group(2))), "url": m.group(1)})
+        label = unescape(_strip(m.group(2)))
+        url = safe_http_url(unescape(m.group(1)))
+        out.append({"kind": "link", "text": label, "url": url} if url else
+                   {"kind": "text", "text": label})
         pos = m.end()
     if pos < len(text):
         out.extend(_plain(text[pos:]))
@@ -56,10 +61,14 @@ def _plain(chunk: str) -> list[dict]:
                 out.append({"kind": "text", "text": unescape(_strip(chunk[pos:m.start()]))})
             if kind == "link":
                 if m.lastindex:
-                    out.append({"kind": "link", "text": unescape(_strip(m.group(1))),
-                                "url": m.group(2)})
+                    label = unescape(_strip(m.group(1)))
+                    url = safe_http_url(m.group(2))
+                    out.append({"kind": "link", "text": label, "url": url} if url else
+                               {"kind": "text", "text": label})
                 else:
-                    out.append({"kind": "link", "text": m.group(0), "url": m.group(0)})
+                    url = safe_http_url(m.group(0))
+                    out.append({"kind": "link", "text": m.group(0), "url": url} if url else
+                               {"kind": "text", "text": m.group(0)})
             else:
                 out.append({"kind": kind, "text": unescape(_strip(m.group(1)))})
             pos = m.end()

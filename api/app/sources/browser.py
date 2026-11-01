@@ -21,17 +21,26 @@ leaves off by default - stays on. See SANDBOX.
 Playwright's synchronous API cannot be driven from several threads - it raises and takes the
 browser down under them - so the one event loop lives on a thread of its own and callers hand
 it work from wherever they are. The application runs fifteen of those threads at a time.
+
+The browser is not a network client. Every HTTP(S) request it generates is routed back through
+the pinned public HTTP session, fulfilled with the response body, and WebSockets are closed
+without connecting. The launch also points at a dead proxy so a route that ever escapes this
+path fails closed rather than reaching a private address.
 """
 
 from __future__ import annotations
 
 import asyncio
 import atexit
+import html as html_lib
 import logging
 import re
 import threading
 from typing import Any, Callable
 from urllib.parse import urlsplit
+
+from . import http
+from .url_safety import UnsafeUrl, require_public_url
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +113,7 @@ class Chromium:
         self._playwright: Any = None
         self._browser: Any = None
         self._context: Any = None
+        self._sessions: dict[int, http.PublicSession] = {}
 
     async def start(self) -> None:
         # Imported here, not at module scope: the dependency is optional, and a missing one
@@ -111,12 +121,99 @@ class Chromium:
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True,
-                                                              chromium_sandbox=SANDBOX)
-        self._context = await self._browser.new_context(user_agent=UA)
+        self._browser = await self._playwright.chromium.launch(
+            headless=True,
+            chromium_sandbox=SANDBOX,
+            # Every HTTP request is fulfilled by `_serve_public_request`. If routing ever
+            # misses a request, the dead proxy makes it fail instead of reaching the host.
+            proxy={"server": "http://127.0.0.1:9"},
+            args=[
+                "--disable-background-networking",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            ],
+        )
+        self._context = await self._browser.new_context(
+            user_agent=UA,
+            service_workers="block",
+            accept_downloads=False,
+        )
+        # Chromium never opens an external socket. Every request is fulfilled by the
+        # pinned HTTP transport, so redirects and subresources are checked at the same
+        # boundary as a plain page read.
+        await self._context.route("**/*", self._serve_public_request)
+        await self._context.route_web_socket("**/*", self._block_websocket)
+
+    async def _block_websocket(self, websocket) -> None:
+        await websocket.close(code=1008, reason="public fetch policy")
+
+    def _session_for(self, route) -> http.PublicSession | None:
+        try:
+            page = route.request.frame.page
+        except Exception:  # noqa: BLE001 - detached frames and popups have no session
+            return None
+        return self._sessions.get(id(page))
+
+    @staticmethod
+    def _request_headers(request) -> dict[str, str]:
+        blocked = {"host", "content-length", "connection", "proxy-connection"}
+        return {
+            str(key): str(value)
+            for key, value in request.headers.items()
+            if str(key).lower() not in blocked
+        }
+
+    @staticmethod
+    def _response_headers(reply: http.PublicResponse) -> dict[str, str]:
+        blocked = {"connection", "content-encoding", "content-length", "transfer-encoding"}
+        return {
+            key: value for key, value in reply.headers.items()
+            if key.lower() not in blocked
+        }
+
+    @staticmethod
+    def _with_base(reply: http.PublicResponse) -> tuple[bytes, dict[str, str]]:
+        headers = Chromium._response_headers(reply)
+        if "text/html" not in reply.headers.get("content-type", "").lower():
+            return reply.content, headers
+        base = '<base href="%s">' % html_lib.escape(reply.url, quote=True)
+        page = reply.text
+        if re.search(r"<head\b[^>]*>", page, re.I):
+            page = re.sub(r"(<head\b[^>]*>)", r"\1" + base, page, count=1, flags=re.I)
+        else:
+            page = base + page
+        headers["content-type"] = "text/html; charset=utf-8"
+        return page.encode("utf-8"), headers
+
+    async def _serve_public_request(self, route) -> None:
+        """Fetch through the pinned session and fulfill; Chromium never dials the URL."""
+        session = self._session_for(route)
+        if session is None:
+            await route.abort("blockedbyclient")
+            return
+        request = route.request
+        if urlsplit(request.url).scheme not in ("http", "https"):
+            await route.abort("blockedbyclient")
+            return
+        body = request.post_data_buffer
+        try:
+            reply = await asyncio.to_thread(
+                session.request,
+                request.method,
+                request.url,
+                headers=self._request_headers(request),
+                content=body,
+                timeout=self.timeout / 1000,
+            )
+        except Exception:  # noqa: BLE001 - an unreadable request is blocked, not retried
+            await route.abort("blockedbyclient")
+            return
+        content, headers = self._with_base(reply)
+        await route.fulfill(status=reply.status, headers=headers, body=content)
 
     async def page(self, url: str) -> str:
         tab = await self._context.new_page()
+        session = http.PublicSession(timeout=self.timeout / 1000)
+        self._sessions[id(tab)] = session
         # Attached before the navigation, not after: a request the machine refuses is
         # answered before the document finishes loading, and a listener attached afterwards
         # would miss exactly the events this line exists for.
@@ -145,7 +242,9 @@ class Chromium:
                 _record(url, tab.url, failed)
             return document
         finally:
+            self._sessions.pop(id(tab), None)
             await tab.close()
+            await asyncio.to_thread(session.close, wait=3.0)
 
     async def _text(self, url: str) -> str:
         """The page's visible text, which is what a reader would see.
@@ -155,6 +254,8 @@ class Chromium:
         (BNBS: "29 / 7,000 shares", 2026-10-30).
         """
         tab = await self._context.new_page()
+        session = http.PublicSession(timeout=self.timeout / 1000)
+        self._sessions[id(tab)] = session
         try:
             await tab.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
             await tab.wait_for_timeout(self.settle)
@@ -166,7 +267,9 @@ class Chromium:
             log.info("render of %s did not answer: %r", url, exc)
             return ""
         finally:
+            self._sessions.pop(id(tab), None)
             await tab.close()
+            await asyncio.to_thread(session.close, wait=3.0)
 
     async def stop(self) -> None:
         try:
@@ -304,6 +407,11 @@ _default_lock = threading.Lock()
 
 def render(url: str) -> str:
     """The process's own browser, started the first time a page has to be drawn."""
+    try:
+        url = require_public_url(url)
+    except UnsafeUrl as exc:
+        log.info("render of %s refused: %s", url, exc)
+        return ""
     global _default
     with _default_lock:
         if _default is None:
@@ -315,6 +423,11 @@ def render(url: str) -> str:
 
 def text(url: str) -> str:
     """The visible text of a rendered page. Same browser, same lock as `render`."""
+    try:
+        url = require_public_url(url)
+    except UnsafeUrl as exc:
+        log.info("render of %s refused: %s", url, exc)
+        return ""
     global _default
     with _default_lock:
         if _default is None:

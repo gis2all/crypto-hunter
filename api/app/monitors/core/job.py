@@ -19,10 +19,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import httpx
-
 from ...llm import client as llm
 from ...opportunity import rules, trace as trace_mod, watchlist, xread
+from ...sources import http
 from ...store import db
 from . import chain, settings
 from ..registry import Monitor, MONITORS, prompt_dir
@@ -245,9 +244,8 @@ def _title_ok(text: str, names: list[str]) -> bool:
 
 def _probe_https(url: str) -> bool:
     try:
-        reply = httpx.head(url, follow_redirects=True, timeout=8,
-                            headers={"User-Agent": "Mozilla/5.0"})
-        return reply.status_code < 400
+        return http.head(url, headers={"User-Agent": "Mozilla/5.0"},
+                         timeout=8, tries=1) < 400
     except Exception:  # noqa: BLE001 - an https that will not answer keeps the http link
         return False
 

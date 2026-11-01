@@ -50,6 +50,19 @@ def test_an_address_is_recognised_whatever_case_or_prefix_it_was_typed_with():
     assert not mentions("some other text", CA)
 
 
+def test_fetch_html_uses_the_public_checked_transport(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers=None, **kwargs):
+        calls.append((url, headers, kwargs))
+        return "<html>ok</html>"
+
+    monkeypatch.setattr(http, "get", fake_get)
+    assert identify_mod.fetch_html("https://example.com/") == "<html>ok</html>"
+    assert calls == [("https://example.com/", http.UA_HTML,
+                      {"transport": "http", "tries": 2, "timeout": 25, "public": True})]
+
+
 def test_the_bio_is_what_makes_an_account_official():
     page = _profile_page("The First AI studio for Creators on Arc\n\n" + CA)
     assert classify(page, CA) == (OWN, "The First AI studio for Creators on Arc\n\n" + CA)

@@ -18,7 +18,7 @@ from .monitors.core import schedule as monitor_schedule
 from .opportunity import schedule as opportunity_schedule
 from .opportunity import watchlist as opportunity_watchlist
 from .pipeline import schedule
-from .sources import browser
+from .sources import browser, http
 from .store import db
 
 
@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         monitor_schedule.stop()
         opportunity_schedule.stop()
         schedule.stop()
+        http.shutdown()
         browser.shutdown()
 
 
