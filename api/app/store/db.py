@@ -2077,11 +2077,11 @@ def monitor_posts_mark(monitor: str, tweet_ids: list[str], status: str = "used")
 
 
 def reconcile_running_scans(reason: str = "进程重启中断") -> int:
-    """Retire scans a previous process left `running`.
+    """Retire every job a previous process left `running`.
 
     The work lives in a thread inside the API process; a restart kills it and the row would
-    otherwise read as "still scanning" forever - which is exactly what the 01:51 scan did after
-    a restart (2026-10-30).
+    otherwise read as "still running" forever. This covers every pollable job shape, including
+    CA searches whose worker disappeared before the page stopped polling.
     """
     stamp = now_iso()
     conn = connect()
@@ -2092,9 +2092,12 @@ def reconcile_running_scans(reason: str = "进程重启中断") -> int:
         right = conn.execute(
             "UPDATE monitor_scans SET status = 'failed', error = ?, finished_at = ?"
             " WHERE status = 'running'", (reason, stamp)).rowcount
+        jobs = conn.execute(
+            "UPDATE search_jobs SET status = 'failed', error = ?, finished_at = ?"
+            " WHERE status = 'running'", (reason, stamp)).rowcount
     finally:
         conn.close()
-    return left + right
+    return left + right + jobs
 
 
 def monitor_posts_prune(monitor: str, cutoff: str) -> int:

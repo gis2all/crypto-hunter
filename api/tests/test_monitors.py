@@ -573,14 +573,67 @@ def test_posts_are_read_in_batches_and_merged_to_the_round_cap(monkeypatch):
     monkeypatch.setattr(job.llm, "complete_json", fake)
     posts = [{"author": "@a", "text": "x"}
              for _ in range(monitor.max_posts * (job.MAX_BATCHES + 1))]
-    projects, batches, failed = job._extract(monitor, posts)
+    projects, batches, failed, successful = job._extract(monitor, posts)
 
     assert batches == job.MAX_BATCHES and len(calls) == job.MAX_BATCHES, "超出批数的帖子不读，省成本"
     assert failed == 0
+    assert successful == list(range(job.MAX_BATCHES))
     assert all(len(chunk) <= monitor.max_posts for chunk in calls)
     assert len(projects) == job.ROUND_PROJECTS, "宁缺毋滥：整轮最多 20 张新卡"
     dup = [row for row in projects if row["handle"] == "dup"]
     assert len(dup) == 1 and dup[0]["summary"] == "a much longer summary"
+
+
+def test_a_failed_monitor_batch_does_not_reconsume_successful_batches(
+        isolated_db, monkeypatch):
+    """One unreadable batch must not put every successful batch back in the queue."""
+    from dataclasses import replace
+
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+    from app.store import db
+
+    monitor = replace(BINANCE_AGENT_ID, max_posts=2)
+    pending = [
+        {"tweet_id": str(index), "author": "a", "created_at": "2026-10-30T10:00:00",
+         "text": "bad" if index == 2 else "ok", "score": 40,
+         "first_seen": "2026-10-30T10:00:00"}
+        for index in range(4)
+    ]
+    db.monitor_post_add("m1", pending)
+
+    def fake(messages, **kwargs):
+        chunk = json.loads(messages[1]["content"])
+        if any(row["text"] == "bad" for row in chunk):
+            raise ValueError("unreadable batch")
+        return {"projects": [{"title": "Read %s" % chunk[0]["text"], "handle": "read"}]}
+
+    monkeypatch.setattr(job.llm, "complete_json", fake)
+    payload = [{"author": row["author"], "text": row["text"]} for row in pending]
+    projects, batches, failed, successful = job._extract(monitor, payload)
+
+    assert batches == 2 and failed == 1 and successful == [0]
+    marked = job._retire_batches("m1", pending, successful, monitor.max_posts)
+    assert marked == 2
+    assert sorted(row["tweet_id"] for row in db.monitor_posts_pending("m1")) == ["2", "3"]
+
+
+def test_the_site_title_must_share_a_word_with_the_model_title():
+    from dataclasses import replace
+
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+
+    monitor = replace(BINANCE_AGENT_ID)
+    project = {
+        "title": "Current Project",
+        "handle": "current",
+        "pages": ["<html><title>Unrelated Marketing Page</title></html>"],
+    }
+    assert job._card(monitor, project, "scan")["title"] == "Current Project"
+
+    project["pages"] = ["<html><title>Current Project Mint</title></html>"]
+    assert job._card(monitor, project, "scan")["title"] == "Current Project Mint"
 
 
 def test_posts_are_queued_once_and_retired_after_use(isolated_db):
@@ -613,9 +666,20 @@ def test_a_restart_retires_scans_left_running(isolated_db):
     db.monitor_scan_put({"id": "ms1", "monitor": "m1", "status": "running", "stages": [],
                          "counters": {}, "started_at": db.now_iso()})
     db.opportunity_scan_put({"id": "os1", "status": "running", "started_at": db.now_iso()})
-    assert db.reconcile_running_scans() == 2
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO search_jobs (id, ca, status, stages_json, started_at)"
+            " VALUES ('js1', '0xabc', 'running', '[]', ?)",
+            (db.now_iso(),),
+        )
+    finally:
+        conn.close()
+    assert db.reconcile_running_scans() == 3
     assert db.monitor_scan_get("ms1")["status"] == "failed"
     assert db.opportunity_scan_get("os1")["status"] == "failed"
+    assert db.job_get("js1")["status"] == "failed"
+    assert db.job_get("js1")["finished_at"]
 
 
 def test_the_post_queue_keeps_only_thirty_days(isolated_db):

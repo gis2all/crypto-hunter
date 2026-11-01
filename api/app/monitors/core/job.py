@@ -315,18 +315,20 @@ def _merge(batches: list[list[dict]]) -> list[dict]:
     return out
 
 
-def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int]:
+def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int, list[int]]:
     """Read the gated posts in batches, merging what the model returns per batch.
 
-    The third value is how many batches failed: the caller keeps those posts in the queue
-    instead of retiring them.
+    The third value is how many batches failed; the fourth names the batches that were
+    successfully read. The caller retires those successful batches and leaves only failed
+    ones in the queue.
     """
     limit = monitor.max_posts * MAX_BATCHES
     chunks = [posts[index:index + monitor.max_posts]
               for index in range(0, min(len(posts), limit), monitor.max_posts)]
     if not chunks:
-        return [], 0, 0
+        return [], 0, 0, []
     batches: list[list[dict]] = [[] for _ in chunks]
+    successful: list[int] = []
     failed = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_extract_batch, monitor, chunk): index
@@ -335,10 +337,23 @@ def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int]
             index = futures[future]
             try:
                 batches[index] = future.result()
+                successful.append(index)
             except Exception:  # noqa: BLE001 - one unreadable batch must not drop the sweep
                 failed += 1
                 log.exception("monitor: batch %s failed", index)
-    return _merge(batches)[:ROUND_PROJECTS], len(chunks), failed
+    return _merge(batches)[:ROUND_PROJECTS], len(chunks), failed, sorted(successful)
+
+
+def _retire_batches(monitor_id: str, pending: list[dict], successful: list[int],
+                    size: int) -> int:
+    """Retire exactly the posts belonging to batches the model successfully read."""
+    retired = 0
+    for index in successful:
+        chunk = pending[index * size:(index + 1) * size]
+        retired += db.monitor_posts_mark(
+            monitor_id, [str(row.get("tweet_id") or "") for row in chunk]
+        )
+    return retired
 
 
 FILL_FIELDS = ("mint_done", "mint_total", "mint_unit", "token_total", "price", "deadline",
@@ -1229,7 +1244,11 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
     model_title = str(project.get("title") or "").strip()
     # The official page is the authority; the model's name is only the fallback when the site
     # has no usable title (2026-11-01, user).
-    site_title = _site_title(project.get("pages") or [])
+    site_title = _site_title(
+        project.get("pages") or [],
+        [model_title, str(project.get("handle") or ""),
+         str(project.get("official_account") or "")],
+    )
     title = site_title or model_title
     # 账号优先：模型每轮给的项目名会变（"Tiny Farming" / "Tiny Farming Farmer NFT"），
     # 按名字做 slug 会让同一个项目每轮多一张卡；handle 稳定得多（2026-10-29）。
@@ -1420,10 +1439,14 @@ def run(scan: dict, monitor: Monitor) -> None:
                                                            row.get("tweet_id") or ""),
                     "text": str(row.get("text") or "")[:1200]}
                    for row in pending]
-        projects, batches, failed = _extract(monitor, payload) if payload else ([], 0, 0)
-        if payload and not failed:
-            db.monitor_posts_mark(monitor.id, [str(row.get("tweet_id") or "") for row in pending])
+        projects, batches, failed, successful = (
+            _extract(monitor, payload) if payload else ([], 0, 0, [])
+        )
+        counters["retired"] = _retire_batches(
+            monitor.id, pending, successful, monitor.max_posts
+        ) if payload else 0
         counters["batches"] = batches
+        counters["extract_failed"] = failed
         counters["posts_sent"] = len(payload)
         counters["queue"] = len(pending)
         counters["projects"] = len(projects)
