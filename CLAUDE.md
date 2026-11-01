@@ -66,6 +66,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
 - `api/app/system_settings.py`：系统设置页那张表，读写 `config/system.yaml` 并写入 `os.environ`；X 会话列表也在这里（增删改、只回指纹、`was_label` 让改名保留原 cookie、逐条探测、合并池子的冷却/停用状态）；每次保存先把旧文件复制成 `system.yaml.bak`。
+- `api/app/service_health.py`：左栏状态条的两条读数——模型取 `llm_calls` 最新记录与匹配当前接线的测试结果（保存新端点会让更早的调用过期），X 取会话池的 `state`，重启后复用仍匹配当前 cookie 指纹的上次测试；只读本机数据，不发网关 / X 请求。见 `api/v1/README.md` · 系统设置。
 - `api/app/logging_setup.py`：本项目 logger 的唯一出口（stderr）＋进程内最近 500 条的环形缓冲；`GET /api/v1/system/log` 与 `/system/logs` 读它。
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
