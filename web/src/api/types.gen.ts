@@ -1546,6 +1546,8 @@ export interface components {
             llm: boolean;
             /** Llm Model */
             llm_model: string;
+            llm_state: components["schemas"]["ServiceStateOut"];
+            x_state: components["schemas"]["ServiceStateOut"];
             /** Chains */
             chains: string[];
         };
@@ -2538,6 +2540,26 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /**
+         * ServiceStateOut
+         * @description One line of the rail's status strip. `level` is ok / warn / down.
+         */
+        ServiceStateOut: {
+            /** Level */
+            level: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** At */
+            at?: string | null;
+        };
         /** SettingsFormOut */
         SettingsFormOut: {
             /** Chain Id */
@@ -2796,6 +2818,28 @@ export interface components {
              * @default
              */
             state: string;
+            last_test?: components["schemas"]["XTestOut"] | null;
+        };
+        /**
+         * XTestOut
+         * @description What the test button last heard from one session, kept across restarts.
+         */
+        XTestOut: {
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * At
+             * @default
+             */
+            at: string;
         };
     };
     responses: never;

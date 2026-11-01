@@ -21,6 +21,15 @@ from pydantic import BaseModel, Field
 Scalar = str | float | int | bool | list[str] | None
 
 
+class ServiceStateOut(BaseModel):
+    """One line of the rail's status strip. `level` is ok / warn / down."""
+
+    level: str
+    label: str = ""
+    detail: str = ""
+    at: str | None = None
+
+
 class HealthOut(BaseModel):
     status: str
     version: str
@@ -34,6 +43,8 @@ class HealthOut(BaseModel):
     #: "why is there no text", and it belongs next to the other environment probes.
     llm: bool
     llm_model: str
+    llm_state: ServiceStateOut
+    x_state: ServiceStateOut
     chains: list[str]
 
 
@@ -524,6 +535,14 @@ class SettingsFormOut(BaseModel):
     blocked: list[str]
 
 
+class XTestOut(BaseModel):
+    """What the test button last heard from one session, kept across restarts."""
+
+    ok: bool = False
+    note: str = ""
+    at: str = ""
+
+
 class XSessionOut(BaseModel):
     """One X session as the 系统设置 page may see it: a label, a mask, a switch."""
 
@@ -534,6 +553,8 @@ class XSessionOut(BaseModel):
     #: The pool's reading, not the file's: "" (nothing to report), "cooling" (429 rest) or
     #: "disabled" (401 retired it).
     state: str = ""
+    #: The last probe, so a 401 still reads as one after the process restarted.
+    last_test: XTestOut | None = None
 
 
 class SystemFormOut(BaseModel):

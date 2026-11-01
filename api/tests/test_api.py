@@ -21,6 +21,9 @@ def test_health_reports_environment(client):
     assert body["status"] == "ok"
     assert body["db"] is True
     assert ARC in body["chains"]
+    # The rail reads these two without asking a gateway or X anything.
+    assert body["llm_state"]["level"] in {"ok", "warn", "down"}
+    assert body["x_state"]["level"] in {"ok", "warn", "down"}
 
 
 def test_chains_come_from_config(client):

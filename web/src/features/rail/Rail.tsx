@@ -5,6 +5,8 @@ import { Icon } from "../../components/Icon";
 import { Mark } from "../../components/Mark";
 import { chainIdMark } from "../../components/chainMark";
 import type { Theme } from "../../theme";
+import { askSystemBlock } from "../system/focus";
+import { ServiceStatus } from "./ServiceStatus";
 
 /** The places this page has. 雷达 is per chain and carries 报告 / 设定; 收藏 is one shelf for
  *  every chain; 搜索 reads one address from any chain; 新机会 is what the outside world is
@@ -107,6 +109,12 @@ export function Rail({
             it is a Place all the same - so exactly one row lights and it can be left
             for on a reload (prefs). */}
         <div className="nav-foot">
+          {/* Above 系统设置, because that is where the answer lives. Hidden while both
+              readings are ok: a green light nobody needs is one more row in a narrow rail. */}
+          <ServiceStatus onOpen={(anchor) => {
+            onSelectPlace("system");
+            askSystemBlock(anchor);
+          }} />
           <div
             className={"nav-i" + (place === "system" ? " on" : "")}
             onClick={() => onSelectPlace("system")}
