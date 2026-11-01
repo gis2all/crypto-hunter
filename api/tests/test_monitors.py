@@ -11,9 +11,11 @@ from app.store import db
 @pytest.fixture(autouse=True)
 def _isolated_monitor_config(tmp_path, monkeypatch):
     """设定文件在第一次读取时落盘，测试不能往仓库的 monitors/<id>/ 里写。"""
-    from app.monitors.core import settings as monitor_settings
+    from app.monitors.core import chain, settings as monitor_settings
 
     monkeypatch.setattr(monitor_settings, "ROOT", tmp_path)
+    # No test may reach a public node: every chain reading is either stubbed or absent.
+    monkeypatch.setattr(chain, "_rpc", lambda *args, **kwargs: None)
 
 
 def _card(**over) -> dict:
@@ -251,6 +253,45 @@ def test_the_page_title_wins_over_the_model_title():
                            ["Moribundus"]) == "Moribundus"
 
 
+def test_a_tagline_or_profile_title_is_not_a_name_even_without_the_model():
+    from app.monitors.core import job
+
+    assert job._site_title(["<title>Weave ideas into markets.</title>"]) == ""
+    assert job._site_title(["<title>alice (@alice) / X</title>"]) == ""
+
+
+def test_a_card_title_is_frozen_until_the_site_renames_it_twice():
+    from app.monitors.core import job
+
+    head = {"title": "$JAGENT Mint",
+            "fields": {"site_title": "$JAGENT Mint", "title_source": "site"}}
+    row = {"title": "$JAGENT", "fields": {}}
+    job._settle_title(row, head, "$JAGENT Mint")
+    assert row["title"] == "$JAGENT Mint"
+    assert row["fields"]["title_source"] == "site"
+
+    once = {"title": "$JAGENT", "fields": {}}
+    job._settle_title(once, head, "$JAGENT MINT v2")
+    assert once["title"] == "$JAGENT Mint"
+    assert once["fields"]["site_title_pending"] == "$JAGENT MINT v2"
+
+    head2 = {"title": "$JAGENT Mint", "fields": dict(once["fields"])}
+    twice = {"title": "$JAGENT", "fields": {}}
+    job._settle_title(twice, head2, "$JAGENT MINT v2")
+    assert twice["title"] == "$JAGENT MINT v2"
+    assert "site_title_pending" not in twice["fields"]
+
+
+def test_a_model_named_card_adopts_the_site_name_once():
+    from app.monitors.core import job
+
+    legacy = {"title": "JAGENT", "fields": {"title_source": "model"}}
+    row = {"title": "JAGENT", "fields": {}}
+    job._settle_title(row, legacy, "$JAGENT Mint")
+    assert row["title"] == "$JAGENT Mint"
+    assert row["fields"]["site_title"] == "$JAGENT Mint"
+
+
 def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
     """帖子里的叫法会被官网原文覆盖：摘要重写只吃官网正文（2026-10-30, user）。"""
     from app.monitors.core import job
@@ -260,14 +301,15 @@ def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
 
     def fake(messages, **kw):
         seen["text"] = messages[1]["content"]
-        return {"summary": "官网口径：每钱包 10 份，每份 10 万 BNBS。"}
+        return {"summary": "官网口径：每钱包 10 份，每份 10 万 BNBS。", "domain": "crypto"}
 
     monkeypatch.setattr(job.llm, "complete_json", fake)
     out = job._rewrite(BINANCE_AGENT_ID,
                        {"pages": ["<p>Send 0.01 BNB to receive 100,000 BNBS. 10 shares per wallet</p>"]})
-    assert out.startswith("官网口径")
+    assert out["summary"].startswith("官网口径")
+    assert out["domain"] == "crypto"
     assert "10 shares per wallet" in seen["text"], "喂给模型的是官网原文"
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": []}) == "", "没有官网就不重写"
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": []}) == {}, "没有官网就不重写"
 
 
 def test_a_rewrite_that_found_nothing_keeps_the_old_summary(monkeypatch):
@@ -278,11 +320,11 @@ def test_a_rewrite_that_found_nothing_keeps_the_old_summary(monkeypatch):
     monkeypatch.setattr(
         job.llm, "complete_json",
         lambda messages, **kw: {"summary": "官网原文未提供，无法确认项目内容。"})
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>loading</p>"]}) == ""
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>loading</p>"]}).get("summary", "") == ""
     monkeypatch.setattr(
         job.llm, "complete_json",
         lambda messages, **kw: {"summary": "HODLER 是像素宇航员项目，官方原文未说明参与方式与门槛。"})
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>hodler</p>"]}) == ""
+    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>hodler</p>"]}).get("summary", "") == ""
 
 
 def test_an_unjudged_field_is_still_missing():
@@ -372,6 +414,10 @@ def test_the_card_type_says_what_the_buyer_gets():
     # 单位是「份」时压过摘要里的「发射平台」：BIBIAI 按份卖，不是发射台。
     assert job._type({"token": "0x" + "7" * 40},
                      {"title": "BIBIAI", "summary": "发射平台", "mint_unit": "份"}) == "share"
+    # 摘要写明 NFT 时压过附带奖励币：Moribundus 是 NFT，SOUL 只是铸造后发放。
+    assert job._type({"token": "0x" + "8" * 40},
+                     {"title": "Moribundus", "summary": "Moribundus NFT 最后 444 枚",
+                      "mint_total": "4444"}) == "nft"
     # 任务平台也发凭证 NFT，但 mint_kind 写着 task。
     assert job._type({"nft": True}, {"title": "ChyAI", "mint_kind": "task"}) == "task"
     # 每天「打卡」mint 的是 NFT，别因为一个动作词把收藏品判成任务平台。
@@ -527,14 +573,67 @@ def test_posts_are_read_in_batches_and_merged_to_the_round_cap(monkeypatch):
     monkeypatch.setattr(job.llm, "complete_json", fake)
     posts = [{"author": "@a", "text": "x"}
              for _ in range(monitor.max_posts * (job.MAX_BATCHES + 1))]
-    projects, batches, failed = job._extract(monitor, posts)
+    projects, batches, failed, successful = job._extract(monitor, posts)
 
     assert batches == job.MAX_BATCHES and len(calls) == job.MAX_BATCHES, "超出批数的帖子不读，省成本"
     assert failed == 0
+    assert successful == list(range(job.MAX_BATCHES))
     assert all(len(chunk) <= monitor.max_posts for chunk in calls)
     assert len(projects) == job.ROUND_PROJECTS, "宁缺毋滥：整轮最多 20 张新卡"
     dup = [row for row in projects if row["handle"] == "dup"]
     assert len(dup) == 1 and dup[0]["summary"] == "a much longer summary"
+
+
+def test_a_failed_monitor_batch_does_not_reconsume_successful_batches(
+        isolated_db, monkeypatch):
+    """One unreadable batch must not put every successful batch back in the queue."""
+    from dataclasses import replace
+
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+    from app.store import db
+
+    monitor = replace(BINANCE_AGENT_ID, max_posts=2)
+    pending = [
+        {"tweet_id": str(index), "author": "a", "created_at": "2026-10-30T10:00:00",
+         "text": "bad" if index == 2 else "ok", "score": 40,
+         "first_seen": "2026-10-30T10:00:00"}
+        for index in range(4)
+    ]
+    db.monitor_post_add("m1", pending)
+
+    def fake(messages, **kwargs):
+        chunk = json.loads(messages[1]["content"])
+        if any(row["text"] == "bad" for row in chunk):
+            raise ValueError("unreadable batch")
+        return {"projects": [{"title": "Read %s" % chunk[0]["text"], "handle": "read"}]}
+
+    monkeypatch.setattr(job.llm, "complete_json", fake)
+    payload = [{"author": row["author"], "text": row["text"]} for row in pending]
+    projects, batches, failed, successful = job._extract(monitor, payload)
+
+    assert batches == 2 and failed == 1 and successful == [0]
+    marked = job._retire_batches("m1", pending, successful, monitor.max_posts)
+    assert marked == 2
+    assert sorted(row["tweet_id"] for row in db.monitor_posts_pending("m1")) == ["2", "3"]
+
+
+def test_the_site_title_must_share_a_word_with_the_model_title():
+    from dataclasses import replace
+
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+
+    monitor = replace(BINANCE_AGENT_ID)
+    project = {
+        "title": "Current Project",
+        "handle": "current",
+        "pages": ["<html><title>Unrelated Marketing Page</title></html>"],
+    }
+    assert job._card(monitor, project, "scan")["title"] == "Current Project"
+
+    project["pages"] = ["<html><title>Current Project Mint</title></html>"]
+    assert job._card(monitor, project, "scan")["title"] == "Current Project Mint"
 
 
 def test_posts_are_queued_once_and_retired_after_use(isolated_db):
@@ -567,9 +666,20 @@ def test_a_restart_retires_scans_left_running(isolated_db):
     db.monitor_scan_put({"id": "ms1", "monitor": "m1", "status": "running", "stages": [],
                          "counters": {}, "started_at": db.now_iso()})
     db.opportunity_scan_put({"id": "os1", "status": "running", "started_at": db.now_iso()})
-    assert db.reconcile_running_scans() == 2
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO search_jobs (id, ca, status, stages_json, started_at)"
+            " VALUES ('js1', '0xabc', 'running', '[]', ?)",
+            (db.now_iso(),),
+        )
+    finally:
+        conn.close()
+    assert db.reconcile_running_scans() == 3
     assert db.monitor_scan_get("ms1")["status"] == "failed"
     assert db.opportunity_scan_get("os1")["status"] == "failed"
+    assert db.job_get("js1")["status"] == "failed"
+    assert db.job_get("js1")["finished_at"]
 
 
 def test_the_post_queue_keeps_only_thirty_days(isolated_db):
@@ -591,6 +701,18 @@ def test_a_card_needs_an_official_site():
     assert job._has_site({"official_url": "https://example.com/"})
     assert not job._has_site({})
     assert not job._has_site({"official_url": "  "})
+
+
+def test_a_card_needs_a_crypto_anchor():
+    """官网正文没有加密内容、也拿不出链上证据的卡片不建（prismshrimp, 2026-10-30）."""
+    from app.monitors.core import job
+
+    assert job._credible({"pages": ["<p>Mint an NFT with your Agent ID</p>"]}, {})
+    assert job._credible({"pages": ["Ask me things"]},
+                         {"token": "0x" + "9" * 40, "agent_gated": True})
+    assert job._credible({"pages": ["Ask me things"], "mint_total": "1000"},
+                         {"agent_gated": True})
+    assert not job._credible({"pages": ["<p>Ask me things anonymously</p>"]}, {})
 
 
 def test_a_plain_http_site_is_upgraded_when_https_answers():
@@ -654,3 +776,430 @@ def test_a_site_number_below_the_chain_reading_is_ignored(monkeypatch, isolated_
     assert job._refresh_card(BINANCE_AGENT_ID, card) == "changed"
     assert captured["fields"]["mint"]["done"] == 8867
     assert captured["fields"]["mint"]["source"] == "chain"
+
+
+def test_a_profile_site_is_not_downgraded_when_the_profile_cannot_be_read():
+    """资料页认领过的站，不因为某一轮读不到资料页就退回帖子里的链接（danta pixel）."""
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+
+    before = {"dantapixelnft": {
+        "slug": "dantapixelnft", "official_url": "https://dantapixel.deed.page/",
+        "sources": [], "fields": {"site_source": "profile"}}}
+    project = {"title": "danta.ai", "handle": "dantapixelnft",
+               "official_account": "dantapixelnft", "summary": "danta pixel",
+               "source": "https://x.com/a/status/1",
+               "official_url": "https://danta.ai/",
+               "sources": [{"kind": "official_site", "label": "官网",
+                            "url": "https://danta.ai/"}]}
+    card = job._card(BINANCE_AGENT_ID, project, "scan", before)
+    assert card["official_url"] == "https://dantapixel.deed.page/"
+    assert card["fields"]["site_source"] == "profile"
+
+def test_agent_gate_reads_the_registry_out_of_bytecode(monkeypatch):
+    from app.monitors.core import chain
+
+    ca = "0x" + "a" * 40
+    gated = "0x" + "00" * 40 + chain.AGENT_ID_REGISTRY[2:] + "00" * 20
+    monkeypatch.setattr(chain, "_code", lambda address, **kw: gated)
+    assert chain.agent_gate(ca) is True
+
+    monkeypatch.setattr(chain, "_code", lambda address, **kw: "0x" + "00" * 200)
+    assert chain.agent_gate(ca) is False
+
+    monkeypatch.setattr(chain, "_code", lambda address, **kw: "0x")
+    assert chain.agent_gate(ca) is None
+
+
+def test_a_proxy_is_followed_to_its_implementation(monkeypatch):
+    from app.monitors.core import chain
+
+    proxy = "0x" + "a" * 40
+    impl = "0x" + "b" * 40
+
+    def rpc(method, params, **kw):
+        if method == "eth_getStorageAt":
+            return "0x" + "0" * 24 + impl[2:]
+        if method == "eth_getCode":
+            return "0x60806040"
+        return None
+
+    monkeypatch.setattr(chain, "_rpc", rpc)
+    assert chain.implementation(proxy) == impl
+
+
+def test_mint_logs_count_only_zero_sender_transfers(monkeypatch):
+    from app.monitors.core import chain
+
+    ca = "0x" + "c" * 40
+    wallet = "0x" + "d" * 40
+    latest = 1_000_000
+    transfer = lambda sender, receiver, block: {
+        "topics": [chain.TRANSFER, "0x" + sender.rjust(64, "0"),
+                   "0x" + receiver.rjust(64, "0")],
+        "blockNumber": hex(block), "transactionHash": "0x" + "e" * 64}
+
+    def rpc(method, params, **kw):
+        if method == "eth_blockNumber":
+            return hex(latest)
+        if method == "eth_getLogs":
+            start = int(params[0]["fromBlock"], 16)
+            if start > latest - 50_000:
+                return [transfer("0" * 40, wallet[2:], latest - 10),
+                        transfer("0" * 40, "f" * 40, latest - 20),
+                        transfer("1" * 40, wallet[2:], latest - 30)]
+            return []
+        return None
+
+    monkeypatch.setattr(chain, "_rpc", rpc)
+    logs = chain.mint_logs(ca, deep=True)
+    assert logs["mint_logs"] == 2, "a normal transfer is not a mint"
+    assert logs["mint_wallets"] == 2
+    assert logs["mint_30m"] == 2
+
+
+def test_the_same_project_is_absorbed_not_duplicated():
+    from app.monitors.core import job
+
+    head = {"slug": "head", "title": "$JAGENT Mint", "first_seen": "2026-10-30T00:00:00+08:00",
+            "official_url": "https://jager.live/",
+            "fields": {"onchain": {"code_fp": "100:abc", "contract": "0xabc",
+                                   "token": "0xtoken"}}}
+    before = {"head": head}
+    # Same token.
+    assert job._same_project({"code_fp": "100:abc", "token": "0xtoken"},
+                             "new", "Different", before)["slug"] == "head"
+    # Same contract address (case-insensitive).
+    assert job._same_project({"code_fp": "100:abc", "contract": "0xABC"},
+                             "new", "Different", before)["slug"] == "head"
+    # The same contract is enough even when the probe could not fingerprint it.
+    assert job._same_project({"contract": "0xABC"},
+                             "new", "Different", before)["slug"] == "head"
+    # Same name after normalisation.
+    assert job._same_project({"code_fp": "100:abc"}, "new", "$JAGENT  MINT",
+                             before)["slug"] == "head"
+    # Same template, different project: keep both, never absorb.
+    assert job._same_project({"code_fp": "100:abc", "contract": "0xother",
+                              "token": "0xother"}, "new", "Other", before) == {}
+    # One launchpad hosts many projects: a shared site is not one project.
+    launch = {"slug": "launch", "title": "Basilurk",
+              "first_seen": "2026-10-30T00:00:00+08:00",
+              "official_url": "https://xiaomei.bid/",
+              "fields": {"onchain": {"code_fp": "200:def", "contract": "0x1"}}}
+    assert job._same_project({"code_fp": "200:def", "contract": "0x2"},
+                             "new", "Aquarune", {"launch": launch}) == {}
+
+
+def test_chain_progress_never_moves_backwards():
+    from app.monitors.core import job
+
+    fields = {"mint": {"done": 10, "total": 20, "source": "chain", "state": "live"}}
+    assert job._merge_chain(fields, {"minted": 8}) is False
+    assert fields["mint"]["done"] == 10
+    assert job._merge_chain(fields, {"minted": 12}) is True
+    assert fields["mint"]["done"] == 12
+
+
+def test_agent_id_support_counts_without_a_gate():
+    from app.monitors.core import job
+
+    project = {
+        "title": "MultiScreenAI",
+        "summary": "A multi-model agent tool.",
+        "facts": [],
+        "pages": ["Binance Agent ID support for AI agents on BNB Chain."],
+    }
+    info = {"contract": "0x" + "a" * 40, "agent_gated": False, "agent_callers": 0.0}
+    assert job._credible(project, info) is True
+
+
+def test_a_crypto_project_without_an_agent_id_relation_is_not_credible():
+    from app.monitors.core import job
+
+    project = {"title": "Acme", "summary": "mint a thing", "facts": [],
+               "pages": ["Mint an NFT on BNB Chain."]}
+    info = {"contract": "0x" + "a" * 40, "agent_gated": False, "agent_callers": 0.0}
+    assert job._credible(project, info) is False
+
+
+def test_a_compiler_metadata_tail_does_not_make_a_new_template():
+    from app.monitors.core import chain
+
+    body = "6080604052" + "00" * 100 + "a264697066735822" + "11" * 40
+    same = "6080604052" + "00" * 100 + "a264697066735822" + "22" * 40
+    assert chain.fingerprint_code("0x" + body) == chain.fingerprint_code("0x" + same)
+    assert chain.fingerprint_code("0x" + body) != chain.fingerprint_code("0x" + "00" * 200)
+
+
+def test_the_registry_and_the_zero_address_are_never_a_project_contract():
+    from app.monitors.core import chain
+
+    registry = chain.AGENT_ID_REGISTRY
+    zero = "0x" + "0" * 40
+    assert chain.first_address("registry " + registry, "zero " + zero) == ""
+    real = "0x" + "b" * 40
+    assert chain.first_address(registry + " then " + real) == real
+
+
+def test_a_card_pointing_at_the_registry_is_not_probed(monkeypatch):
+    from app.monitors.core import job
+
+    def boom(*args, **kwargs):
+        raise AssertionError("an infrastructure address must not be probed")
+
+    monkeypatch.setattr(job.chain, "probe", boom)
+    card = {"fields": {"onchain": {"contract": job.chain.AGENT_ID_REGISTRY}}}
+    assert job._probe_card(card) == {}
+
+
+def test_absorb_keeps_the_identity_and_moves_progress_forward():
+    from app.monitors.core import job
+
+    head = {"slug": "head", "title": "$JAGENT Mint",
+            "first_seen": "2026-10-30T00:00:00+08:00",
+            "updated_at": "2026-10-30T00:00:00+08:00",
+            "price": "2 U", "deadline": None, "summary": "short",
+            "sources": [{"kind": "official_site", "url": "https://jager.live/"}],
+            "trust": "community", "trust_basis": "x",
+            "fields": {"onchain": {"contract": "0xabc", "code_fp": "100:abc",
+                                   "token": "0xtoken"},
+                       "mint": {"done": 10, "total": 100, "source": "chain"}}}
+    card = {"slug": "new", "title": "Other",
+            "first_seen": "2026-10-31T00:00:00+08:00",
+            "updated_at": "2026-10-31T00:00:00+08:00",
+            "price": "1 U", "deadline": "2026-11-01", "summary": "a much longer summary",
+            "source_url": "https://x.com/new/status/1",
+            "trust": "official", "trust_basis": "site",
+            "sources": [{"kind": "official_account", "url": "https://x.com/jager"}],
+            "fields": {"onchain": {"contract": "0xabc", "code_fp": "100:abc",
+                                   "token": "0xtoken", "minted": 15},
+                       "mint": {"done": 15, "total": 100, "source": "chain"}}}
+    out = job._absorb(head, card)
+    assert out["slug"] == "head"
+    assert out["title"] == "$JAGENT Mint"
+    assert out["first_seen"] == head["first_seen"]
+    assert out["fields"]["mint"]["done"] == 15
+    assert out["price"] == "1 U"
+    assert out["deadline"] == "2026-11-01"
+    assert out["summary"] == "a much longer summary"
+    assert out["trust"] == "official"
+    assert {row["url"] for row in out["sources"]} == {
+        "https://jager.live/", "https://x.com/jager", "https://x.com/new/status/1"}
+
+
+def test_each_chain_reads_its_own_node(monkeypatch):
+    from app import config
+    from app.monitors.core import chain
+
+    monkeypatch.setattr(config, "load_chains",
+                        lambda: {"robinhood": {"rpc": "https://rh.example"}})
+    assert chain.chain_id("Robinhood") == "robinhood"
+    assert chain.chain_id("未判定") == "bsc"
+    assert chain.chain_id("Base") == ""
+    assert chain._nodes("robinhood") == ("https://rh.example",)
+    assert chain._nodes("base") == ()
+    assert chain._nodes("bsc") == chain.BSC_RPCS
+
+
+def test_a_confirmed_empty_address_is_not_a_contract(monkeypatch):
+    from app.monitors.core import chain
+
+    monkeypatch.setattr(chain, "_code", lambda ca, **kw: "0x")
+    assert chain.probe("0x" + "a" * 40) == {}
+
+
+def test_probe_first_never_takes_an_address_without_code(monkeypatch):
+    from app.monitors.core import job
+
+    first, second = "0x" + "1" * 40, "0x" + "2" * 40
+    monkeypatch.setattr(job.chain, "mint_only", lambda ca, chain="bsc": {})
+    monkeypatch.setattr(job.chain, "has_code",
+                        lambda ca, chain="bsc": ca == second)
+    assert job._probe_first([first, second], "BSC")["contract"] == second
+
+    monkeypatch.setattr(job.chain, "has_code", lambda ca, chain="bsc": False)
+    assert job._probe_first([first, second], "BSC") == {}
+
+
+def test_a_card_whose_address_has_no_code_loses_the_contract(monkeypatch):
+    from app.monitors.core import job
+
+    ca = "0x" + "a" * 40
+    card = {"chain": "BSC",
+            "fields": {"onchain": {"contract": ca, "minted": 5},
+                       "mint": {"done": 5, "source": "chain"}}}
+    fields = dict(card["fields"])
+    monkeypatch.setattr(job.chain, "has_code", lambda ca, chain="bsc": False)
+    assert job._dead_contract(fields, card) is True
+    assert fields["onchain"] == {}
+    assert "mint" not in fields
+
+
+def test_an_unanswered_node_keeps_the_contract(monkeypatch):
+    from app.monitors.core import job
+
+    ca = "0x" + "a" * 40
+    card = {"chain": "BSC", "fields": {"onchain": {"contract": ca, "minted": 5}}}
+    fields = dict(card["fields"])
+    monkeypatch.setattr(job.chain, "has_code", lambda ca, chain="bsc": None)
+    assert job._dead_contract(fields, card) is False
+    assert fields["onchain"]["contract"] == ca
+
+
+def test_the_zero_address_is_dropped_without_asking_a_node(monkeypatch):
+    from app.monitors.core import job
+
+    def boom(*args, **kwargs):
+        raise AssertionError("an infrastructure address needs no node")
+
+    monkeypatch.setattr(job.chain, "has_code", boom)
+    card = {"chain": "BSC",
+            "fields": {"onchain": {"contract": "0x" + "0" * 40}}}
+    fields = dict(card["fields"])
+    assert job._dead_contract(fields, card) is True
+    assert fields["onchain"] == {}
+
+
+def test_a_wei_scale_mint_reading_is_a_token_amount():
+    from app.monitors.core import chain
+
+    assert chain._token_amount(7245 * 10**18, 18) == 7245
+    assert chain._token_amount(21813, 18) == 21813
+    assert chain._token_amount(5000, None) == 5000
+
+
+def _mint_row(receiver: str, tx: str = "0x" + "e" * 64) -> dict:
+    from app.monitors.core import chain
+
+    return {"topics": [chain.TRANSFER, chain.ZERO_TOPIC,
+                       "0x" + receiver[2:].rjust(64, "0")],
+            "blockNumber": "0x3e8", "transactionHash": tx}
+
+
+def test_agent_evidence_reads_the_recipients_first(monkeypatch):
+    """A backend-signed mint has one sender; the users are the recipients."""
+    from app.monitors.core import chain
+
+    receivers = ["0x" + str(i) * 40 for i in range(1, 7)]
+    rows = [_mint_row(receiver) for receiver in receivers]
+    monkeypatch.setattr(chain, "_mint_rows", lambda *a, **kw: (rows, True, 2000))
+    monkeypatch.setattr(chain, "_rpc", lambda *a, **kw: (_ for _ in ()).throw(
+        AssertionError("no transaction lookup when recipients are enough")))
+    holders = set(receivers[:4])
+    monkeypatch.setattr(chain, "_uint", lambda ca, data, **kw: int(any(
+        data.endswith(address[2:].rjust(64, "0")) for address in holders)))
+
+    evidence = chain.agent_evidence("0x" + "a" * 40)
+    assert evidence["agent_side"] == "recipients"
+    assert evidence["agent_samples"] == 6
+    assert evidence["agent_callers"] == 0.67
+    assert evidence["agent_source"] == "callers"
+
+
+def test_agent_evidence_falls_back_to_the_senders(monkeypatch):
+    from app.monitors.core import chain
+
+    rows = [_mint_row("0x" + "1" * 40, "0x" + str(i) * 64) for i in range(1, 7)]
+    monkeypatch.setattr(chain, "_mint_rows", lambda *a, **kw: (rows, True, 2000))
+    senders = ["0x" + str(i) * 40 for i in range(2, 8)]
+    monkeypatch.setattr(chain, "_rpc", lambda method, params, **kw: {
+        "from": senders[int(params[0][-1], 16) - 1]})
+    monkeypatch.setattr(chain, "_uint", lambda ca, data, **kw: int(any(
+        data.endswith(address[2:].rjust(64, "0")) for address in senders[:4])))
+
+    evidence = chain.agent_evidence("0x" + "a" * 40)
+    assert evidence["agent_side"] == "senders"
+    assert evidence["agent_samples"] == 6
+    assert evidence["agent_callers"] == 0.67
+
+
+def test_the_agent_backfill_spends_three_cards_a_sweep(isolated_db, monkeypatch):
+    from types import SimpleNamespace
+    from app.monitors.core import job
+
+    for index in range(5):
+        db.monitor_card_put("m1", _card(
+            slug="c%d" % index, title="C%d" % index,
+            first_seen="2026-10-0%dT00:00:00+08:00" % (index + 1),
+            fields={"onchain": {"contract": "0x" + str(index + 1) * 40}}))
+    monkeypatch.setattr(job.chain, "agent_evidence", lambda ca, **kw: {
+        "agent_source": "callers", "agent_callers": 1.0, "agent_side": "recipients",
+        "agent_samples": 6, "agent_checked_at": "2026-10-31T12:00:00+08:00"})
+
+    monitor = SimpleNamespace(id="m1")
+    assert job._agent_backfill(monitor, db.monitor_cards("m1")) == 3
+    rows = {row["slug"]: row for row in db.monitor_cards("m1")}
+    done = sorted(slug for slug, row in rows.items()
+                  if (row["fields"].get("onchain") or {}).get("agent_source") == "callers")
+    assert done == ["c0", "c1", "c2"]
+
+
+def test_a_checked_card_waits_for_the_backoff():
+    from datetime import datetime, timedelta
+    from app.monitors.core import job
+
+    now = datetime.now().astimezone()
+    def card(checked):
+        return {"fields": {"onchain": {"contract": "0x" + "a" * 40,
+                                       "agent_checked_at": checked}}}
+    assert job._agent_evidence_missing(card(now.isoformat(timespec="seconds"))) is False
+    old = (now - timedelta(days=40)).isoformat(timespec="seconds")
+    assert job._agent_evidence_missing(card(old)) is True
+
+
+def test_the_trace_known_set_is_not_shadowed():
+    """The absorb helper is not allowed to take the trace stage's `_known()` name."""
+    from app.monitors.core import job
+
+    assert isinstance(job._known(), set)
+
+
+def test_a_share_card_recovers_its_token_from_the_page(monkeypatch):
+    from app.monitors.core import job
+
+    token = "0x" + "a" * 40
+    quote = sorted(job.QUOTE_TOKENS)[0]
+    seen = {}
+
+    def token_first(*addresses, limit=10, chain="bsc"):
+        seen["addresses"] = addresses
+        return {"token": token, "token_symbol": "TKN", "token_decimals": 18}
+
+    monkeypatch.setattr(job.chain, "token_first", token_first)
+    monkeypatch.setattr(job.chain, "probe", lambda ca, **kw: {
+        "token": ca, "holders": 10, "perms": ["mintable"], "minted": 999})
+
+    fields = {"type": "share", "onchain": {}}
+    page = "pay with %s or receive %s" % (quote, token)
+    assert job._find_token(fields, page, "bsc") is True
+    assert fields["onchain"]["token"] == token
+    assert fields["onchain"]["holders"] == 10
+    assert fields["onchain"]["perms"] == ["mintable"]
+    # The sale's own mint numbers must not be overwritten by the token's supply.
+    assert "minted" not in fields["onchain"]
+    assert quote not in seen["addresses"]
+
+
+def test_a_card_with_a_token_is_left_alone(monkeypatch):
+    from app.monitors.core import job
+
+    token = "0x" + "a" * 40
+    monkeypatch.setattr(job.chain, "token_first",
+                        lambda *args, **kw: (_ for _ in ()).throw(
+                            AssertionError("no second lookup")))
+    fields = {"type": "share", "onchain": {"token": token}}
+    assert job._find_token(fields, "token " + token, "bsc") is False
+
+
+def test_the_domain_reads_the_project_not_the_post():
+    from app.monitors.core import job
+
+    assert job._domain_of({
+        "summary": "NEO Noir 是数字时尚品牌，制作并销售 VRoid 用服装纹理；在 BOOTH 购买其付费商品参与。",
+        "pages": ["neonoir - BOOTH shop, VRoid clothing textures"]}) == "other"
+    assert job._domain_of({
+        "summary": "MultiScreenAI 是同时调用 300 多个模型的多面板工具。",
+        "pages": ["Binance Agent ID support. AI agents on BNB Chain."]}) in ("crypto", "ai_agent")
+    assert job._domain_of({
+        "summary": "SCRAPBEASTS 是浏览器射击游戏，付费铸造获得金币。",
+        "pages": []}) == "crypto"

@@ -14,6 +14,9 @@ dependencies = [
   # reformatting them. ruamel.yaml is pyyaml's round-trip half.
   "ruamel.yaml>=0.18",
   "httpx>=0.27",
+  # The public fetcher pins the checked DNS answer at the httpcore network boundary.
+  # httpx already installs it, but this module imports it directly.
+  "httpcore>=1.0",
   # GMGN fingerprints TLS: httpx gets 403, a Chrome-impersonating client gets 200.
   # Measured 2026-09-24, see api/app/sources/SOURCES.md.
   "curl-cffi>=0.7",

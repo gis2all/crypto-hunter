@@ -8,10 +8,12 @@ starts without costing every later token the same wait.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
 
+from app.sources import browser as browser_mod
 from app.sources.browser import Renderer, _record, _same_site
 
 
@@ -154,3 +156,80 @@ def test_closing_stops_the_browser_and_the_thread_it_runs_on():
     renderer.close()  # closing twice is not an error
     assert renderer.page("https://b.xyz") != "", "a later page starts a new browser"
     renderer.close()
+
+
+def test_the_public_render_wrapper_refuses_loopback_without_opening_a_page():
+    class MustNotRun:
+        def page(self, url):
+            raise AssertionError("private URL reached the browser")
+
+    previous = browser_mod._default
+    browser_mod._default = MustNotRun()
+    try:
+        assert browser_mod.render("http://127.0.0.1:8787/") == ""
+    finally:
+        browser_mod._default = previous
+
+
+def test_the_browser_route_is_fulfilled_by_the_checked_session():
+    class Page:
+        pass
+
+    class Request:
+        method = "GET"
+        url = "https://example.com/"
+        headers = {"accept": "text/html"}
+        post_data_buffer = None
+        frame = type("Frame", (), {"page": Page()})()
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            return browser_mod.http.PublicResponse(
+                status=200,
+                headers={"content-type": "text/html; charset=utf-8"},
+                content=b"<html><head></head><body>ok</body></html>",
+                text="<html><head></head><body>ok</body></html>",
+                url=url,
+            )
+
+    class Route:
+        def __init__(self):
+            self.request = Request()
+            self.result = None
+
+        async def abort(self, reason):
+            self.result = ("abort", reason)
+
+        async def fulfill(self, **kwargs):
+            self.result = ("fulfill", kwargs)
+
+        async def continue_(self):
+            raise AssertionError("Chromium must not dial the request itself")
+
+    chromium = browser_mod.Chromium(settle=0, timeout=1)
+    session = Session()
+    page = Request.frame.page
+    chromium._sessions[id(page)] = session
+    route = Route()
+    asyncio.run(chromium._serve_public_request(route))
+    assert session.calls and session.calls[0][0:2] == ("GET", "https://example.com/")
+    assert route.result[0] == "fulfill"
+    assert b'<base href="https://example.com/">' in route.result[1]["body"]
+    assert route.result[1]["headers"]["content-type"] == "text/html; charset=utf-8"
+
+
+def test_a_websocket_is_closed_without_connecting_to_a_server():
+    class Socket:
+        def __init__(self):
+            self.closed = None
+
+        async def close(self, **kwargs):
+            self.closed = kwargs
+
+    socket = Socket()
+    asyncio.run(browser_mod.Chromium(settle=0, timeout=1)._block_websocket(socket))
+    assert socket.closed == {"code": 1008, "reason": "public fetch policy"}

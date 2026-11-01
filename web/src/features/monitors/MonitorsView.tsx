@@ -318,7 +318,6 @@ function AgentIdCard({ card, full }: { card: MonitorCard; full: boolean }) {
   const start = String(card.fields?.start ?? "");
   // 发射台和任务没有可买的东西：只留项目说明，不摆铸造价 / 进度。
   const sells = kind !== "launchpad" && kind !== "task";
-  const sources = (card.sources ?? []) as { kind: string; label: string; url: string }[];
   // `onchain` 是链上那一组；早期写的行把它放在 `chain` 上过，读的时候兼容一下。
   const stored = (card.fields?.onchain ?? card.fields?.chain ?? null) as unknown;
   const info = (stored && typeof stored === "object"
@@ -327,6 +326,10 @@ function AgentIdCard({ card, full }: { card: MonitorCard; full: boolean }) {
     done?: number | null; total?: number | null; unit?: string;
     token_total?: number | null; source?: string; state?: string;
   } | null;
+  const gated = info?.agent_gated === true;
+  const callers = typeof info?.agent_callers === "number" ? info.agent_callers : null;
+  const callerGated = !gated && callers != null && callers >= 0.35;
+  const samples = typeof info?.agent_samples === "number" ? info.agent_samples : null;
   // 官网写着「还没开卖 / 白名单阶段」时，已铸造就是 0 —— 这是读到的状态，不是猜的数。
   const declared = String(mint?.state ?? "");
   const mintDone = mint?.done != null
@@ -345,10 +348,14 @@ function AgentIdCard({ card, full }: { card: MonitorCard; full: boolean }) {
     foot.push({ label: "GMGN", url: `https://gmgn.ai/bsc/token/${token}` });
     foot.push({ label: "Debot", url: `https://debot.ai/token/bsc/${token}` });
   }
-  for (const source of sources) {
-    if (source.kind !== "official_account" && source.kind !== "official_site") continue;
-    if (foot.some((item) => item.url === source.url)) continue;
-    foot.push({ label: source.kind === "official_account" ? "X" : "官网", url: source.url });
+  // One canonical account and one site, not every source the trace ever read. The rest of
+  // `sources` stays as provenance and never becomes a footer link (2026-11-01, user).
+  const account = String(card.official_account || "").replace(/^@/, "").trim();
+  if (account) {
+    foot.push({ label: "X", url: `https://x.com/${account}` });
+  }
+  if (card.official_url) {
+    foot.push({ label: "官网", url: card.official_url });
   }
   // 后端可能把从官网抄来的份数存成 "6,624" 这种字符串；能转成数字就按数字印。
   const count = (value: unknown) => {
@@ -444,6 +451,23 @@ function AgentIdCard({ card, full }: { card: MonitorCard; full: boolean }) {
             <span className="chip">{KIND[kind]}</span>
           </span>
         ) : null}
+        {gated ? (
+          <span className="srow-v chips">
+            <span className={pillClass("ok")} title="合约字节码引用了 SPACE ID Agent ID 登记合约">
+              Agent ID 专属
+            </span>
+          </span>
+        ) : null}
+        {callerGated ? (
+          <span className="srow-v chips">
+            <span
+              className={pillClass("ok")}
+              title={`抽样的 ${samples ?? "若干"} 个铸造地址中，${Math.round((callers ?? 0) * 100)}% 持有 Agent ID`}
+            >
+              Agent ID 持有者铸造
+            </span>
+          </span>
+        ) : null}
       </div>
       <div className="opp-time">
         <span>发现 {shortStamp(card.first_seen)}</span>
@@ -473,6 +497,11 @@ function AgentIdCard({ card, full }: { card: MonitorCard; full: boolean }) {
               {pct != null ? `（${pct.toFixed(1)}%）` : ""}
               {mint.unit ? ` ${mint.unit}` : ""}
             </b>
+            {info?.mint_wallets != null && Number(info.mint_wallets) > 0 ? (
+              <span title="链上最近 1 万个区块内，铸造过的不同地址数">
+                · 近期 {Number(info.mint_wallets)} 个地址
+              </span>
+            ) : null}
           </div>
           {pct != null ? <i className="mon-bar"><u style={{ width: pct.toFixed(1) + "%" }} /></i> : null}
         </div>
@@ -558,7 +587,7 @@ export function MonitorsView() {
           interval_hours: Number(draft.interval_hours) || 0,
           start_hour: Number(draft.start_hour) || 0,
           start_minute: Number(draft.start_minute) || 0,
-          // 查询只写在 config/monitors/<id>.yaml 里：页面不发送，保存也就不会覆盖它。
+          // 查询只写在 monitors/<id>/settings.yaml 里：页面不发送，保存也就不会覆盖它。
           window_hours: Number(draft.window_hours) || 0,
           slice_hours: Number(draft.slice_hours) || 0,
           min_score: Number(draft.min_score) || 0,
@@ -755,7 +784,7 @@ export function MonitorsView() {
                   <div className="pgroup">
                     <div className="pgroup-h">
                       <b>采集与过闸</b>
-                      <NoteHelp text={"查询窗口：往后读多少小时。\n切片长度：每次 X 调用覆盖多少小时，窗口按它切开。\n过闸下限分：低于这个分数的帖子不进模型。\nX 查询本身写在 config/monitors/<id>.yaml 里，不在这个页面。"} />
+                      <NoteHelp text={"查询窗口：往后读多少小时。\n切片长度：每次 X 调用覆盖多少小时，窗口按它切开。\n过闸下限分：低于这个分数的帖子不进模型。\nX 查询本身写在 monitors/<id>/settings.yaml 里，不在这个页面。"} />
                     </div>
                     <div className="prows">
                       <div className="prow">

@@ -17,6 +17,7 @@ Two rules come with the loader, and the page has to keep them:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -164,6 +165,11 @@ def x_sessions() -> list[dict[str, Any]]:
         live = {row["label"]: row for row in session_pool().snapshot()}
     except Exception:  # the page must draw even if the pool cannot read the file
         live = {}
+    try:
+        from .store import db
+        tests = db.runtime_prefix("x.test.")
+    except Exception:  # a page must draw even when the ledger cannot be read
+        tests = {}
     out: list[dict[str, Any]] = []
     for row in _session_rows(_load()):
         reading = live.get(row["label"])
@@ -172,10 +178,21 @@ def x_sessions() -> list[dict[str, Any]]:
             state = "disabled"
         elif reading is not None and reading["cooling"]:
             state = "cooling"
+        test = tests.get("x.test." + row["label"])
+        if test and test.get("key_hash") != session_fingerprint(row["auth_token"], row["ct0"]):
+            test = None
+        if test:
+            test = {key: test[key] for key in ("ok", "note", "at") if key in test}
         out.append({"label": row["label"], "enabled": row["enabled"],
                     "mask_auth": masked(row["auth_token"]), "mask_ct0": masked(row["ct0"]),
-                    "state": state})
+                    "state": state, "last_test": test})
     return out
+
+
+def session_fingerprint(auth_token: str, ct0: str) -> str:
+    """Identify the cookie pair a probe answered for, without storing either secret."""
+    raw = (str(auth_token or "") + "\0" + str(ct0 or "")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def first_session() -> dict[str, Any] | None:

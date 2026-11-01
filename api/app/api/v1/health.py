@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from ... import __version__, config, llm
+from ... import __version__, config, llm, service_health
 from ...store import db
 from .schemas import HealthOut
 
@@ -36,5 +36,7 @@ def health() -> HealthOut:
         web_dist=config.WEB_DIST.is_dir(),
         llm=llm.configured(),
         llm_model=llm.settings()["model"] if llm.configured() else "",
+        llm_state=service_health.llm_health(),
+        x_state=service_health.x_health(),
         chains=[c["id"] for c in config.enabled_chains()],
     )

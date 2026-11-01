@@ -1,6 +1,6 @@
 # 监控
 
-一个监控 = 一个长期问题（「哪些项目现在接受 Binance Agent ID」），不是单个项目。每个监控
+一个监控 = 一个长期问题（「哪些 AI / 加密项目与 Binance Agent ID 有真实关系」），不是单个项目。每个监控
 自己抓、自己一套卡、自己一页、自己的节奏；两个监控之间不共享任何东西，同一个项目在两个
 监控里各出一张卡是正常结果（user, 2026-10-29）。
 
@@ -10,7 +10,7 @@
 | 注册表 | `registry.py` | `Monitor` 类型 + 扫描 `monitors/*/monitor.py` 的发现逻辑；`package()` / `prompt_dir()` 给引擎定位项目文件。 |
 | 引擎 | `core/` | `job.py` 扫描、`chain.py` 链上、`schedule.py` 时钟、`settings.py` 设定。公共代码，不随项目走；新项目不复制。 |
 | 查询 | `<id>/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退 `monitor.py` 的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
-| 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写的 `summary.md`。读的时候才打开，改完下一轮生效。 |
+| 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写 + 项目领域判定的 `summary.md`。读的时候才打开，改完下一轮生效。 |
 | 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个监控一个文件，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退 `monitor.py` 默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
 | 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡 → 官网刷新。可中止。 |
 | 时钟 | `core/schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
@@ -29,7 +29,7 @@
 下一轮重试。队列只保留 30 天（每轮落库后按 `first_seen` 清理，计数 `pruned`），它是工作集不是档案。
 
 **抽取是分批的**：过闸帖子按 `max_posts`（100）切批，一轮最多 5 批（500 条），四个批次并发跑模型；
-每批最多 20 条项目，合并去重（同一 handle 只留一条，空字段补齐、facts 并集）后**整轮最多 20 张新卡**
+合并去重（同一 handle 只留一条，空字段补齐、facts 并集）后**整轮最多 20 张新卡**
 ——宁缺毋滥。扫描计数里多记 `batches` 和 `posts_sent`。
 
 **官网刷新是每轮的最后一段**（`refresh`）：按每张卡自己的 `official_url` 重读官网，只更新铸造进度、
@@ -45,7 +45,22 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 / `tokenContract()` / `paymentToken()` 指向代币（JAGENT 的 `totalMinted()` 合约就是这样指到
 `0x8e64…ae15`）。地址要同时答上 `symbol()`、`decimals()`、`totalSupply()`，且 `supportsInterface
 (0x80ac58cd)` 不为真，才算代币 —— 官网印的地址同样要过这一关，过不了就当没有。GMGN / Debot
-只挂验证过的代币；NFT 和铸造合约没有对应页面（2026-10-30, user）。
+只挂验证过的代币；NFT 和铸造合约没有对应页面（2026-10-30, user）。登记合约与零地址本身不算项目
+合约，收集地址时直接跳过。
+
+**链上证据**（2026-10-31，借鉴 agentid-sniper）：
+
+- **按卡自己的链读**：BSC 走 `bsc-dataseed` / `publicnode` / `bsc-rpc.publicnode` 三节点轮换；Robinhood / Arc 读 `config/chains/<id>.yaml` 的 `rpc`；Solana 不是 EVM，不跑 `eth_getCode`。不再拿 BSC 节点去判一条 Robinhood 的地址。
+- **地址必须有代码**：`eth_getCode` 分三态 —— `None`（节点没答）/ `"0x"`（确认没有代码）/ 正常 hex。新建卡只在 `has_code(...) is True` 的候选里选合约；刷新时确认空码（含零地址 / 登记合约）才丢掉 `contract` 及派生读数，节点没答则原样保留，下一轮再试。
+- **代理合约**：字节码很短时先读 EIP-1967 实现槽 / Beacon，再探实现合约；卡上仍印原地址。
+- **Agent ID 关系**：项目官网 / 官方账号正文要出现 `Agent ID` / `Agentic Wallet`；或链上有硬锚（BSC 字节码登记合约 / `9f92d0dd`，或铸造地址里 ≥35% 持有 Agent ID）。“支持 / 集成”也算关系，不要求它是参与门槛。没有这层关系，普通加密合约只算同名帖里的另一个项目，记 `skipped_no_anchor`。硬锚只决定卡上的「Agent ID 专属 / 持有者铸造」chip 和链上证据，不是准入门槛。
+- **Agent ID 硬锚**：只在 BSC 上判。字节码里出现登记合约 `0x60b9…022f` 或 `9f92d0dd` 就记 `agent_gated = true`；没有的话按下面「Agent ID 证据链」取样（收款人优先，不足再发送人），≥35% 直接认定。中间比例只记录，不单独拦卡；任务 / 发射台不参与这一条。其它链不带这个字段。
+- **Agent ID 证据链**：字节码 → 铸造收款人（≥5 个才取样）→ 发送人（收款人不足时兜底）→ 浅扫没结论再深扫 60 万块。结果落卡：`agent_source`（`bytecode` / `callers` / `none`）、`agent_callers`、`agent_side`、`agent_samples`、`agent_checked_at`、`agent_window`。已判定的卡不再重扫；没有结论的卡每轮补 3 张，30 天退避（`_agent_backfill`）。
+- **铸造进度**：721 的 `totalSupply()` 优先；没有 getter 时按 5 万块一段往回扫 `Transfer(0x0 → wallet)`（含 ERC-1155 的 `TransferSingle` / `TransferBatch`），扫到空段才算总数；扫满 12 段仍没到部署点就只留热度，不给总数。
+- **热度**：最近 1 万个区块内铸造过的不同地址数，卡面写「近期 N 个地址」；同时留 `mint_30m` / `mint_30m_wallets`。
+- **标题只认官网**：有官网的 `<title>` / `og:title` 就用它，模型名只做没有官网标题时的兜底。模型标题第一次遇到可用官网标题时让位；之后官网标题冻结，要再连续两轮不同才改（`site_title` / `site_title_pending`）。slug 依次用 handle → 合约地址 → 标题，模型改名不会换 slug（2026-11-01, user）。
+- **一个项目一张卡**：`code_fp = 长度 + 首尾 120 字节`；指纹相同且合约地址 / 代币地址 / 明确名称任一相同，就并入 `first_seen` 最早的那张（进度只向前，新帖 URL 追加到 `sources`），不再插入第二行。只有指纹相同、三项都不同的是同模板的不同项目，各自保留。**共用一个官网不算**：一个发射台会挂几十个项目（xiaomei.bid）。
+- **每轮都重探链上**：`refresh` 即使官网没变也会重读合约，进度只向前；本轮刚写入的卡跳过。
 
 ## 卡片类型
 
@@ -59,6 +74,12 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 | `launchpad` | 发射台 | 标题 / facts / 摘要，或官网 `<title>` / `og:title` 出现 launchpad / 发射台 / 发射平台 / 发币平台 / 发行平台 / 打新平台 | 只有说明 |
 | `task` | 任务 / 积分 | `mint_kind` / `asset_type = task`，或摘要出现 quest / 签到 / 打卡 / 积分 / 任务 | 只有说明 |
 | `unknown` | — | 都不命中 | 有什么显示什么 |
+
+建卡前还要判**项目自己的领域**：摘要重写那一次调用同时返回 `domain`（`crypto` / `ai_agent` / `other`），只有前两种才建卡，`other` 记 `skipped_no_domain`；模型没给时用 `_domain_of` 的词表兜底。品牌拿 Agent ID 做一次推广 mint 不算 AI/加密项目（neonoir，2026-11-01, user）。
+
+页脚只放规范入口：一个 X（`official_account`）和一个官网（`official_url`）；`sources` 只做溯源，不把每个候选账号 / 文档都铺成链接（2026-11-01, user）。
+
+没有代币的份额 / 铭文卡：刷新时复用已经渲染的官网页找验证过的 ERC-20（排除 USDT / USDC / BUSD / WBNB / FDUSD / DAI），找到就把 `token` 和安全读数补进卡；找不到就继续空着，不拿铸造合约冒充代币。
 
 顺序：铭文（标题 / facts）→ 单位份额 → 发射台 → 任务（`mint_kind` / `asset_type`）→ 单位物件（NFT）
 → 链上 ERC-721 → 验证过的 ERC-20 → 模型给的 `asset_type` → 任务动词 → NFT 字样 / profile card
@@ -77,6 +98,10 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 - **官网原文只用于** `profile card` / `collectible` 这一档；前 2000 字存进 `fields.page_excerpt`，回填时
   直接复用，不必再抓一次站。
 - **没有官网不建卡**：只有社区号、没有站的项目直接跳过，扫描计数记 `skipped_no_site`（Polka Agents）。
+- **卡片必须是加密 / AI / Agent 项目**：先过 `domain`（crypto / ai_agent），`other` 记
+  `skipped_no_domain`；再要求官网 / 官方账号正文写明 Agent ID 关系，或链上有硬锚。项目的官方正文还须
+  有加密锚点（Agent ID / Agentic / wallet / mint / NFT / token / contract / 0x / BNB / 链上…）或链上
+  证据（合约、代币、铸造总量）；模型摘要不算证据，不满足记 `skipped_no_anchor`（prismshrimp 的匿名提问页）。
 - **摘要重写不覆盖空话**：模型写回「官网原文未提供 / 无法确认项目内容 / 未说明参与」时丢弃，保留原摘要；
   官网链接在 https 可用时统一升级。
 
@@ -84,9 +109,13 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 下面只剩 NFT 的未开始 / 铸造中 / 已结束），发射台与任务单列「不适用」。排序是 发现时间 / 截止时间 +
 从新到旧 / 从旧到新，没有截止的卡在两个方向下都排最后。
 
-**标题**取官网 `<title>` / `og:title`（去掉 `|`、`—` 这类站点后缀），且必须和模型给的名字有共同词，
-否则退回模型标题——营销标语（"Weave ideas into markets."）和 Cloudflare 挑战页（"Attention
-Required!"）都不是项目名。模型每轮换叫法（JAGENT → JAGENT Mint Pass），站点名不会。
+**标题**取官网 `<title>` / `og:title`（去掉 `|`、`—` 这类站点后缀，并拒绝 Cloudflare
+挑战页、营销标语和 X 资料页标题）；官网标题还必须与模型标题、handle 或官方账号至少共享一个
+拉丁词（纯中文标题没有可比较的拉丁词，直接接受）。官网标题是唯一权威，模型名只在官网没有可用
+标题时兜底。模型标题第一次
+遇到可用官网标题时让位，之后官网标题冻结、要再连续两轮不同才改一次（`site_title` /
+`site_title_pending`）；slug 依次用 handle → 合约地址 → 标题，模型每轮换叫法（JAGENT →
+JAGENT Mint Pass）也不会换 slug（2026-11-01, user）。
 
 **状态**：发射台 / 任务不参与铸造状态，筛选里单列「不适用」；其余按进度 → `card.status` → 未判定。
 补字段时 `未判定` / `unknown` / 空白都算缺失，模型写下的占位符不会挡住补价格。
@@ -124,8 +153,9 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 
 常规溯源落 `C` 之后才补**二次 X 搜索 + 网页搜索**：帖子里既没有 @ 也没有链接时，这是唯一能跟的线。
 不做成每次都搜，是因为搜索会花 X 调用、也会把限流引到后面的资料页上，让本来能判 A 的卡一起掉 C。
-单个项目 120 秒超时（`CH_TRACE_LEAD_TIMEOUT`），超时计一次失败、继续下一个；落 C 的项目连同
-「有没有找到官网 / 读到几页 / 二次搜索跑没跑」一起写进扫描计数，运行面板的「跳过 N 个 · 看原因」里能展开。
+单个项目 120 秒硬超时（`CH_TRACE_LEAD_TIMEOUT`）：它在可终止的子进程中运行，到点先
+`terminate`、必要时 `kill`，超时计一次失败、继续下一个；落 C 的项目连同「有没有找到官网 /
+读到几页 / 二次搜索跑没跑」一起写进扫描计数，运行面板的「跳过 N 个 · 看原因」里能展开。
 
 ## 两个开关
 
@@ -136,7 +166,7 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 ## 加一个监控
 
 1. 新建 `monitors/<id>/`，在 `monitor.py` 里写 `MONITOR = Monitor(...)`（默认查询、卡片字段、节奏）；注册表会自动发现它。
-2. 在 `<id>/prompts/` 放三份提示词：`<id>.md`（只输出什么 JSON）、`fill.md`（补价格 / 进度 / 截止）、`summary.md`（按官网重写摘要）。
+2. 在 `<id>/prompts/` 放三份提示词：`<id>.md`（只输出什么 JSON）、`fill.md`（补价格 / 进度 / 截止）、`summary.md`（按官网重写摘要并判 `domain`）。
 3. 在 `<id>/settings.yaml` 按默认值写查询、开关、节奏、采集参数（不写也行，第一次读取会自动生成）。
 4. `web/src/features/monitors/MonitorsView.tsx` 的 `CARDS` 里注册这个监控的卡片组件。
 

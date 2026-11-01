@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import re
 import threading
 import time
@@ -1647,7 +1648,7 @@ def test_the_trace_stage_records_a_lead_and_adds_an_a_account(isolated_db, monke
         "basis": "官网与官方号互证", "version": trace.TRACE_VERSION, "searched": True,
         "pages": ["Spout Finance is a lending protocol on Base"]})
 
-    counters = trace.run()
+    counters = trace.run(process_isolated=False)
     assert counters["traced"]["A"] == 1 and counters["added"] == ["spoutfi"]
     assert "spoutfi" in {row["target"] for row in db.opportunity_sources()}
     active = {row["target"] for row in db.opportunity_sources_enabled()}
@@ -1673,7 +1674,7 @@ def test_a_c_lead_lands_in_the_pool_with_its_reason(isolated_db, monkeypatch):
     monkeypatch.setattr(trace, "trace_lead", lambda lead, **kw: {
         "level": "C", "trust": "unjudged", "account": "", "site": "",
         "basis": "未找到官方来源", "version": trace.TRACE_VERSION, "searched": True, "pages": []})
-    trace.run()
+    trace.run(process_isolated=False)
     _fake_llm(monkeypatch)
     job.drive(job.start())
     item = db.opportunity_items()[0]
@@ -1758,10 +1759,44 @@ def test_the_stage_is_capped_and_deduped(isolated_db, monkeypatch):
     monkeypatch.setattr(trace, "trace_lead", lambda lead, **kw: calls.append(lead) or {
         "level": "C", "trust": "unjudged", "account": "", "site": "", "basis": "未找到官方来源",
         "version": trace.TRACE_VERSION, "searched": True, "pages": []})
-    counters = trace.run(limit=8)
+    counters = trace.run(limit=8, process_isolated=False)
     assert len(calls) == 2, "三条同一个项目只溯一次"
     assert calls[0]["name"] == "Same Project", "分组给出的项目名要传给溯源"
     assert counters["skipped"] >= 2
+
+
+def test_a_hung_trace_worker_is_killed_at_the_hard_deadline():
+    """A timed-out thread cannot be stopped; the production path must use a process."""
+    ctx = multiprocessing.get_context("spawn")
+    worker = ctx.Process(target=time.sleep, args=(30,))
+    worker.start()
+    started = time.monotonic()
+    try:
+        trace._terminate_process(worker, timeout=0.2)
+    finally:
+        if worker.is_alive():
+            worker.kill()
+            worker.join(5)
+    assert not worker.is_alive()
+    assert time.monotonic() - started < 5
+
+
+def test_the_production_trace_path_round_trips_through_an_isolated_process(
+        isolated_db):
+    _query_source()
+    _classified_lead("t-process")
+
+    counters = trace.run(known={"stranger"}, process_isolated=True, lead_timeout=10)
+
+    assert counters["traced"]["A"] == 1
+    conn = db.connect()
+    try:
+        level = conn.execute(
+            "SELECT trace_level FROM opportunity_posts WHERE tweet_id = 't-process'"
+        ).fetchone()["trace_level"]
+    finally:
+        conn.close()
+    assert level == "A"
 
 
 def test_the_official_pages_are_attached_to_the_material(isolated_db, monkeypatch):

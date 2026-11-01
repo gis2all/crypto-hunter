@@ -1,15 +1,17 @@
 import { Bot, Save, ScrollText, Search, Settings, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { errorText, getSystemModels, probeXSession, testSystem } from "../../api/client";
-import type { SettingsField, SystemModels, SystemTest, SystemX } from "../../api/client";
-import { useSaveSystem, useSystemForm } from "../../api/hooks";
+import type { Health, SettingsField, SystemModels, SystemTest, SystemX } from "../../api/client";
+import { useHealth, useSaveSystem, useSystemForm } from "../../api/hooks";
 import type { XSessionDraft } from "../../api/client";
 import { Icon } from "../../components/Icon";
 import { Pick } from "../../components/Pick";
 import { NoteHelp } from "../settings/NoteHelp";
 import { Widget, stringValue, type FieldValue } from "../settings/Widget";
+import { clearSystemBlock, systemBlock } from "./focus";
 
 /** One glyph per block, so the three readings are told apart before the words are read. */
 const BLOCK_ICON: Record<string, LucideIcon> = {
@@ -17,6 +19,22 @@ const BLOCK_ICON: Record<string, LucideIcon> = {
   x: Search,
   log: ScrollText,
 };
+
+/** The same reading the rail shows, repeated beside the block it is about. */
+function BlockState({ state }: { state?: Health["llm_state"] }) {
+  if (!state || state.level === "ok") {
+    return null;
+  }
+  return (
+    <span
+      className={"pill " + (state.level === "down" ? "pill-danger" : "pill-warn")}
+      title={state.detail || state.label}
+      style={{ marginLeft: "auto", alignSelf: "center" }}
+    >
+      {state.label}
+    </span>
+  );
+}
 
 /** 系统设置: this machine's own wiring - which gateway answers the writing stage, which X session
  *  carries a search, how loud the log is.
@@ -32,16 +50,35 @@ const BLOCK_ICON: Record<string, LucideIcon> = {
  */
 export function SystemView() {
   const query = useSystemForm();
+  const qc = useQueryClient();
+  const health = useHealth();
   const save = useSaveSystem();
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
   const data = query.data;
   /** X 会话列表：和上面的行一起进同一个 draft，走右上角的「保存并生效」。 */
   const [sessions, setSessions] = useState<SessionDraft[]>([]);
+  // The rail's status row opens this page and asks for one block. The request survives until
+  //  the block is in the DOM: on a cold load the query answers after the first render.
+  useEffect(() => {
+    const jump = () => {
+      const id = systemBlock();
+      if (!id) return;
+      const element = document.getElementById(id);
+      if (!element) return;
+      clearSystemBlock();
+      element.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    window.addEventListener("ch:system-focus", jump);
+    jump();
+    return () => window.removeEventListener("ch:system-focus", jump);
+  }, [data]);
+
   useEffect(() => {
     if (!data) return;
     setSessions((data.sessions ?? []).map((row) => ({
       label: row.label, was_label: row.label, auth_token: "", ct0: "", enabled: row.enabled,
       mask_auth: row.mask_auth, mask_ct0: row.mask_ct0, state: row.state ?? "",
+      last_test: row.last_test ?? null,
     })));
   }, [data]);
 
@@ -103,6 +140,10 @@ export function SystemView() {
           setChoices((was) => ({ ...was, [answer.apply_to]: answer.models }));
         }
         setProbe({ group: groupKey, ok: answer.ok, note: "note" in answer ? answer.note : "" });
+        // A passing test is the freshest reading the rail can have.
+        if (action === "test" && answer.ok) {
+          qc.invalidateQueries({ queryKey: ["health"] });
+        }
       })
       .catch((err) => setProbe({ group: groupKey, ok: false, note: errorText(err) }))
       .finally(() => setBusy(null));
@@ -163,6 +204,8 @@ export function SystemView() {
             <div className="blk-t">
               <Icon as={BLOCK_ICON[block.key]} size={14} />
               <b>{block.title}</b>
+              <BlockState state={block.key === "llm" ? health.data?.llm_state
+                : block.key === "x" ? health.data?.x_state : undefined} />
             </div>
             <div className={"blk-cols cols" + block.columns} data-blk={block.key}>
               {block.groups.map((group) => (
@@ -179,7 +222,14 @@ export function SystemView() {
                             会话 {index + 1}
                             {row.state === "disabled" ? <span className="dim">已停用</span>
                               : row.state === "cooling" ? <span className="dim">冷却中</span>
-                                : null}
+                                : row.last_test ? (
+                                  <span className="dim" title={row.last_test.note}>
+                                    {row.last_test.ok ? "上次测试正常" : "上次测试失败"}
+                                    {row.last_test.at
+                                      ? " · " + row.last_test.at.slice(5, 16).replace("T", " ")
+                                      : ""}
+                                  </span>
+                                ) : null}
                           </label>
                           <span className="spacer" />
                           <button type="button" className="btn sec"

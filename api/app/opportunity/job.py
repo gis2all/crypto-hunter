@@ -201,11 +201,7 @@ def run(job: dict, say) -> None:
         tell=lambda done, total: _tick(job, "trace", done, total),
         known={str(row["target"]).lstrip("@").lower() for row in sources
                if row["kind"] == "official"},
-        cancel=_flag(job["id"]),
-        # 帖里既没有账号也没有链接时的那次搜索（user 补的那一步）。一片就够：问的是"现在谁在
-        # 说这个名字"，而每一次调用都算进扫描的调用预算（`trace.run` 自己记）。
-        search=scanner.look_up,
-        web_search=chainsearch.search)
+        cancel=_flag(job["id"]))
 
     say("extract")
     counters["extract"] = extract.run(

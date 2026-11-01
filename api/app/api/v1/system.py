@@ -8,10 +8,12 @@ taken over says so instead of pretending a save would change it (see `system_set
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Any, Mapping
 
 from fastapi import APIRouter, HTTPException
@@ -20,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from ... import config, logging_setup, system_settings
 from ...llm import client as llm
+from ...store import db
 from ...search.engines.xsearch import PROBE_TIMEOUT, XEngine
 from . import forms
 from .schemas import (SystemFormOut, SystemModelsOut, SystemTestOut, SystemXOut,
@@ -97,6 +100,10 @@ def put_system(body: SystemIn) -> dict:
             system_settings.save_x_sessions([row.model_dump() for row in body.sessions])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # A new endpoint / key / model makes every older call a reading of different wiring.
+    if {"llm.base_url", "llm.api_key", "llm.api_key_fallback", "llm.model",
+            "llm.extra_headers"}.intersection(body.patch):
+        db.runtime_set("llm.saved", {"at": _stamp()})
     return _form()
 
 
@@ -142,6 +149,7 @@ def post_test(body: SystemIn) -> dict:
         lines.append({"label": "", "ok": True, "note": "未探测 %d 个 Key" % left,
                       "status": None, "latency_ms": None, "chars": None,
                       "finish_reason": ""})
+    _record_llm_test(lines, current)
     return {"ok": all(line["ok"] for line in lines), "lines": lines}
 
 
@@ -151,9 +159,10 @@ def post_x(body: SystemIn) -> dict:
 
     The same rule as the gateway's probes - the rows as they stand on screen, not the file - and
     the same reason: an operator who had to save a cookie before finding out whether it works
-    would be storing it in order to test it. Nothing is written, and nothing is recorded: a
-    search spends a rate budget a round needs, so this asks the one cheap question that tells a
-    session from two strings that look like one.
+    would be storing it in order to test it. The answer goes to `runtime_state`, not to the
+    config file and not to `llm_calls`: a 401 has to stay visible after a restart, when the
+    pool's own memory is gone. A search spends a rate budget a round needs, so this asks the one
+    cheap question that tells a session from two strings that look like one.
     """
     try:
         values = system_settings.effective(body.patch)
@@ -173,16 +182,56 @@ def post_x(body: SystemIn) -> dict:
         good = sum(1 for line in readings if line["ok"])
         note = ("%d 个会话都正常" % good if good == len(readings)
                 else "%d/%d 个会话正常" % (good, len(readings)))
+        _record_x_tests(readings)
         return {"ok": good == len(readings), "note": note, "lines": readings}
     token, ct0 = values.get("x.auth_token", ""), values.get("x.ct0", "")
+    label = "main"
     if not (token and ct0):
         # 会话列表接管之后，旧的两个键是空的；按钮测的是第一条会话。
         row = system_settings.first_session()
         token, ct0 = (row or {}).get("auth_token", ""), (row or {}).get("ct0", "")
+        label = str((row or {}).get("label") or "main")
     engine = XEngine(token=token, ct0=ct0,
                      cli=cli, timeout=PROBE_TIMEOUT)
     reading = engine.probe()
+    _record_x_tests([{"label": label, "ok": reading["ok"], "note": reading["note"],
+                      "key_hash": system_settings.session_fingerprint(token, ct0)}])
     return {"ok": reading["ok"], "note": reading["note"]}
+
+
+def _stamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _key_hash(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _record_llm_test(lines: list[dict], current: dict) -> None:
+    """Keep what the button just learned: a fresh key must be able to clear an old 429."""
+    real = [line for line in lines if str(line.get("label") or "").strip()]
+    primary = real[0] if real else None
+    failed = next((line for line in real if not line.get("ok")), None)
+    db.runtime_set("llm.test", {
+        "ok": bool(primary and primary.get("ok")),
+        "base_url": str(current.get("base_url") or ""),
+        "model": str(current.get("model") or ""),
+        "key_hash": _key_hash(str(current.get("api_key") or "")),
+        "note": str((failed or primary or {}).get("note") or ""),
+        "at": _stamp(),
+    })
+
+
+def _record_x_tests(lines: list[dict]) -> None:
+    """Keep what the button just learned: a 401 must still be visible after a restart."""
+    stamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    for line in lines:
+        label = str(line.get("label") or "").strip()
+        if label:
+            db.runtime_set("x.test." + label, {"ok": bool(line.get("ok")),
+                                               "note": str(line.get("note") or ""),
+                                               "key_hash": str(line.get("key_hash") or ""),
+                                               "at": stamp})
 
 
 def _probe_session(row: dict, cli: str | None) -> dict:
@@ -190,7 +239,8 @@ def _probe_session(row: dict, cli: str | None) -> dict:
     engine = XEngine(token=row["auth_token"], ct0=row["ct0"], cli=cli, timeout=PROBE_TIMEOUT)
     reading = engine.probe()
     return {"label": row["label"], "ok": reading["ok"], "note": reading["note"],
-            "status": None, "latency_ms": None, "chars": None}
+            "status": None, "latency_ms": None, "chars": None,
+            "key_hash": system_settings.session_fingerprint(row["auth_token"], row["ct0"])}
 
 
 def _key_label(index: int) -> str:

@@ -19,10 +19,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import httpx
-
 from ...llm import client as llm
 from ...opportunity import rules, trace as trace_mod, watchlist, xread
+from ...sources import http
 from ...store import db
 from . import chain, settings
 from ..registry import Monitor, MONITORS, prompt_dir
@@ -229,6 +228,11 @@ def _title_ok(text: str, names: list[str]) -> bool:
     low = text.lower()
     if not (1 < len(text) <= 60) or any(noise in low for noise in _TITLE_NOISE):
         return False
+    # A sentence is a tagline, not a name; an X profile title is not the project's own name.
+    if text.rstrip().endswith((".", "!", "?")):
+        return False
+    if re.search(r"/\s*x\s*$", low) or low.endswith(" on x"):
+        return False
     words = set(re.findall(r"[a-z0-9]{3,}", low))
     if not words or not names:
         return True
@@ -240,9 +244,8 @@ def _title_ok(text: str, names: list[str]) -> bool:
 
 def _probe_https(url: str) -> bool:
     try:
-        reply = httpx.head(url, follow_redirects=True, timeout=8,
-                            headers={"User-Agent": "Mozilla/5.0"})
-        return reply.status_code < 400
+        return http.head(url, headers={"User-Agent": "Mozilla/5.0"},
+                         timeout=8, tries=1) < 400
     except Exception:  # noqa: BLE001 - an https that will not answer keeps the http link
         return False
 
@@ -312,18 +315,20 @@ def _merge(batches: list[list[dict]]) -> list[dict]:
     return out
 
 
-def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int]:
+def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int, list[int]]:
     """Read the gated posts in batches, merging what the model returns per batch.
 
-    The third value is how many batches failed: the caller keeps those posts in the queue
-    instead of retiring them.
+    The third value is how many batches failed; the fourth names the batches that were
+    successfully read. The caller retires those successful batches and leaves only failed
+    ones in the queue.
     """
     limit = monitor.max_posts * MAX_BATCHES
     chunks = [posts[index:index + monitor.max_posts]
               for index in range(0, min(len(posts), limit), monitor.max_posts)]
     if not chunks:
-        return [], 0, 0
+        return [], 0, 0, []
     batches: list[list[dict]] = [[] for _ in chunks]
+    successful: list[int] = []
     failed = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_extract_batch, monitor, chunk): index
@@ -332,10 +337,23 @@ def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int]
             index = futures[future]
             try:
                 batches[index] = future.result()
+                successful.append(index)
             except Exception:  # noqa: BLE001 - one unreadable batch must not drop the sweep
                 failed += 1
                 log.exception("monitor: batch %s failed", index)
-    return _merge(batches)[:ROUND_PROJECTS], len(chunks), failed
+    return _merge(batches)[:ROUND_PROJECTS], len(chunks), failed, sorted(successful)
+
+
+def _retire_batches(monitor_id: str, pending: list[dict], successful: list[int],
+                    size: int) -> int:
+    """Retire exactly the posts belonging to batches the model successfully read."""
+    retired = 0
+    for index in successful:
+        chunk = pending[index * size:(index + 1) * size]
+        retired += db.monitor_posts_mark(
+            monitor_id, [str(row.get("tweet_id") or "") for row in chunk]
+        )
+    return retired
 
 
 FILL_FIELDS = ("mint_done", "mint_total", "mint_unit", "token_total", "price", "deadline",
@@ -397,31 +415,38 @@ def _fill(monitor: Monitor, project: dict) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-SUMMARY_VERSION = "monitor-summary-v1"
+SUMMARY_VERSION = "monitor-summary-v2"
 SUMMARY_CHARS = 4000
 #: 页面只渲染出一个壳时，模型会把「没读到内容」当成摘要写回来。这样的话不能覆盖原摘要
 #: （Nemotron / ChyAI 就因此被写成「官网原文未提供」，2026-10-30）。
 _EMPTY_SUMMARY = ("官网原文未提供", "无法确认项目内容", "未提供", "未说明参与方式", "未说明参与")
 
 
-def _rewrite(monitor: Monitor, project: dict) -> str:
-    """Rewrite the card's summary from the official page, not from the KOL post.
+def _rewrite(monitor: Monitor, project: dict) -> dict:
+    """Rewrite the summary from the official page and classify the project's own domain.
 
     The extraction reads posts, and a post can call a token sale a "runes project" (BNBS).
     Once the trace has the official page, the summary is written again from that page so the
-    card describes what is actually sold (2026-10-30, user).
+    card describes what is actually sold (2026-10-30, user). The same call also answers
+    whether the project itself is crypto / an AI-agent product / something else, which is
+    what keeps a fashion brand using Agent ID for one mint out of the monitor (2026-11-01).
     """
     text = chain.plain("\n".join(str(page) for page in project.get("pages") or []))[:SUMMARY_CHARS]
     if not text.strip():
-        return ""
+        return {}
     messages = [{"role": "system", "content": _read_prompt_file(monitor, "summary.md")},
                 {"role": "user", "content": text}]
     value = llm.complete_json(messages, purpose="monitor_summary",
                               prompt_version=SUMMARY_VERSION)
     summary = str((value or {}).get("summary") or "").strip()
     if any(marker in summary for marker in _EMPTY_SUMMARY):
-        return ""
-    return summary
+        summary = ""
+    domain = str((value or {}).get("domain") or "").strip().lower()
+    if domain not in ("crypto", "ai_agent", "other"):
+        domain = ""
+    if not summary and not domain:
+        return {}
+    return {"summary": summary, "domain": domain}
 
 
 def _known() -> set[str]:
@@ -457,25 +482,68 @@ def _trace_one(project: dict, known: set[str]) -> dict:
                                 web_search=chainsearch.search)
 
 
-def _probe_first(candidates: list[str]) -> dict:
+def _probe_first(candidates: list[str], chain_name: str = "") -> dict:
     """Probe the page's contracts until one answers with a minted count.
 
-    A page lists several addresses (token, mint pass, forge, emitter); only one of them has the
-    counter. Trying them in order is cheaper than guessing which is which (2026-10-30).
+    A candidate only becomes the card's contract when the chain says something is deployed at
+    that address: a node that did not answer is left for the next sweep, and an address with no
+    code is not stored as if it were the project (2026-10-31).
     """
-    info: dict = {}
+    chain_key = chain.chain_id(chain_name)
+    if not chain_key:
+        return {}
+    winner = ""
     for ca in candidates[:6]:
-        info = chain.probe(ca)
-        if info.get("minted") is not None:
+        if chain.mint_only(ca, chain=chain_key).get("minted") is not None:
+            winner = ca
             break
+    if not winner:
+        for ca in candidates[:6]:
+            if chain.has_code(ca, chain=chain_key) is True:
+                winner = ca
+                break
+    if not winner:
+        return {}
+    info: dict = chain.probe(winner, chain=chain_key)
     if not info.get("token"):
-        # 铸造合约自己不指向代币时（JAGENT 的 `token()` 指向另一个 ERC-20），到页面上的其它
-        # 地址里找；验证不过就当没有（2026-10-30, user）。
-        extra = chain.token_first(*candidates)
+        extra = chain.token_first(*candidates, chain=chain_key)
         if extra:
             info.update(extra)
+    if chain_key != "bsc":
+        # The Agent ID registry is a BSC contract; its absence elsewhere says nothing.
+        return info
+    gate = info.get("agent_gated")
+    if gate is True:
+        info["agent_source"] = "bytecode"
+        info["agent_checked_at"] = _stamp()
+    # Backend-signed mints have no registry in bytecode; the wallets that minted are the other
+    # side of the proof. Shallow first, then the 600k-block window when it cannot tell
+    # (2026-10-31).
+    if gate is False and info.get("contract"):
+        contract = str(info["contract"])
+        evidence = chain.agent_evidence(contract)
+        if evidence.get("agent_samples", 0) < 5:
+            deeper = chain.agent_evidence(contract, deep=True)
+            if deeper.get("agent_samples", 0) >= evidence.get("agent_samples", 0):
+                evidence = deeper
+        info.update(evidence)
+        if evidence.get("agent_source") == "callers":
+            return info
+    # A sale contract often does not embed the registry while its mint pass does. Check every
+    # address on the page before saying this card is not Agent ID gated.
+    if gate is not True:
+        for ca in candidates[:6]:
+            if ca == info.get("contract"):
+                continue
+            if chain.agent_gate(ca):
+                gate = True
+                break
+    if gate is not None:
+        info["agent_gated"] = gate
+        if gate:
+            info["agent_source"] = "bytecode"
+            info["agent_checked_at"] = _stamp()
     return info
-
 
 RUG_DROP = 0.8
 
@@ -569,6 +637,10 @@ def _type(info: dict, project: dict) -> str:
         return "nft"
     if info.get("nft") is True:
         return "nft"
+    # 摘要写明是 NFT、且有按枚铸造的总量时，压过「旁边有个 ERC-20」：Moribundus 发的是 NFT，
+    # 奖励币 SOUL 只是附带；只是提到「NFT 空投」的份额项目不受影响。
+    if _hit(lead, NFT_TEXT_WORDS) and _int(project.get("mint_total")):
+        return "nft"
     if info.get("token"):
         return "share"
     if hint in ("nft", "share", "inscription", "launchpad"):
@@ -595,6 +667,57 @@ def _has_site(project: dict) -> bool:
     return bool(str(project.get("official_url") or "").strip())
 
 
+CRYPTO_ANCHORS = ("agent id", "agentid", "agentic", "wallet", "mint", "nft", "token",
+                  "contract", "onchain", "0x", "bnb", "bsc", "铸造", "链上")
+AGENT_ID_ANCHORS = ("agent id", "agentid", "agent_id", "agentic wallet", "agentic wallets")
+
+
+#: The project's own product, from its own page. A shared mint gate does not make a
+#: fashion brand an AI project (neonoir, 2026-11-01, user).
+CRYPTO_WORDS = re.compile(
+    r"\b(?:nft|token|coin|chain|blockchain|onchain|on-chain|mint|wallet|defi|dex|"
+    r"launchpad|iao|airdrop|staking|dao|bsc|bnb|web3|crypto)\b"
+    r"|链上|代币|铸造|钱包|空投|公链|合约|质押|挖矿|发射台|铭文|符文", re.I)
+AI_WORDS = re.compile(
+    r"\b(?:ai|agent|agentic|llm|mcp|autonomous)\b|智能体|人工智能", re.I)
+
+
+def _domain_of(project: dict) -> str:
+    """crypto / ai_agent / other, read from the official page and the rewritten summary."""
+    text = chain.plain(" ".join(str(page) for page in project.get("pages") or []))
+    text = (str(project.get("summary") or "") + " " + text).lower()
+    if not text.strip():
+        return "other"
+    if CRYPTO_WORDS.search(text):
+        return "crypto"
+    if AI_WORDS.search(text):
+        return "ai_agent"
+    return "other"
+
+
+def _credible(project: dict, info: dict) -> bool:
+    """Is this card about one of the monitor's projects?
+
+    The summary is written by the model and can call an artist's anonymous Q&A page a "Prism
+    Pass NFT" (prismshrimp, 2026-10-30). The official pages need an Agent ID relation and a
+    crypto anchor, unless the chain itself proves the relation. Summary text is never evidence.
+    """
+    text = chain.plain(" ".join(str(page) for page in project.get("pages") or [])).lower()
+    # The monitor asks for projects with a real Agent ID relation. A support / integration
+    # notice is enough; a generic crypto contract is not (2026-11-01, user).
+    relation = any(anchor in text for anchor in AGENT_ID_ANCHORS)
+    share = info.get("agent_callers")
+    relation = relation or info.get("agent_gated") is True
+    relation = relation or (isinstance(share, (int, float)) and share >= 0.35)
+    if not relation:
+        return False
+    if info.get("contract") or info.get("token") or project.get("contract"):
+        return True
+    if _int(info.get("mint_total")) or _int(project.get("mint_total")):
+        return True
+    return any(anchor in text for anchor in CRYPTO_ANCHORS)
+
+
 REFRESH_WORKERS = 4
 
 
@@ -615,31 +738,204 @@ def _fingerprint(text: str) -> str:
     return hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]
 
 
-def _refresh_card(monitor: Monitor, card: dict) -> str:
-    """Re-read one card's site and write back progress / price / deadline.
+def _probe_card(card: dict) -> dict:
+    """Re-read the contract a card already points at; an unanswered node keeps the old values."""
+    onchain = (card.get("fields") or {}).get("onchain") or {}
+    ca = str(onchain.get("contract") or "").strip()
+    # A card built before the address filter can point at the registry or the zero address;
+    # probing those would print someone else's numbers on this card (2026-10-31).
+    if not ca or ca in chain.INFRA:
+        return {}
+    chain_key = chain.chain_id(str(card.get("chain") or ""))
+    if not chain_key:
+        return {}
+    proxy = str(onchain.get("proxy") or "")
+    try:
+        return chain.probe(ca, chain=chain_key, verify_code=False, read=proxy)
+    except Exception:  # noqa: BLE001 - a chain gap must not fail the refresh worker
+        log.exception("monitor: chain refresh failed for %s", ca)
+        return {}
 
-    Only the readings move: title, type, summary and trust are left to the X sweep, so a failed
-    render can never rewrite what the card *is*. An unchanged page costs one render, no model
-    call (2026-10-30, user).
+
+def _dead_contract(fields: dict, card: dict) -> bool:
+    """Drop a stored address the chain itself says is empty.
+
+    A node that did not answer is not evidence: `has_code` returns None there and the card is
+    left alone for the next sweep. A confirmed `"0x"` is. Cards made before the address filter
+    can still carry the zero address or the registry; those are dropped too (2026-10-31).
     """
+    onchain = dict(fields.get("onchain") or {})
+    ca = str(onchain.get("contract") or "").strip().lower()
+    if not ca:
+        return False
+    chain_key = chain.chain_id(str(card.get("chain") or ""))
+    if ca in chain.INFRA:
+        dead = True
+    elif not chain_key:
+        return False
+    else:
+        dead = chain.has_code(ca, chain=chain_key) is False
+    if not dead:
+        return False
+    fields["onchain"] = {}
+    fields.pop("mint", None)
+    log.info("monitor: %s has no contract on %s; dropped", ca, chain_key or "this chain")
+    return True
+
+
+def _merge_chain(fields: dict, info: dict) -> bool:
+    """Fold a fresh probe into a card. Progress only moves forward, never backwards."""
+    if not info:
+        return False
+    onchain = dict(fields.get("onchain") or {})
+    changed = False
+    if info.get("pools") == 0:
+        for key in ("pool", "pool_liquidity_usd", "lp_state", "lp_locked_pct",
+                    "lp_burnt_pct", "lp_locked"):
+            if key in onchain:
+                onchain.pop(key, None)
+                changed = True
+    for key, value in info.items():
+        if value is None or key in ("minted", "mint_total"):
+            continue
+        if onchain.get(key) != value:
+            onchain[key] = value
+            changed = True
+    mint = dict(fields.get("mint") or {})
+    old_done = _int(mint.get("done"))
+    old_total = _int(mint.get("total"))
+    done, total = _int(info.get("minted")), _int(info.get("mint_total"))
+    if done is not None and (old_done is None or done >= old_done):
+        if done != old_done:
+            mint["done"] = done
+            changed = True
+    if total is not None and (old_total is None or total >= old_total):
+        if total != old_total:
+            mint["total"] = total
+            changed = True
+    if mint.get("done") is not None and mint.get("total"):
+        state = "sold_out" if int(mint["done"]) >= int(mint["total"]) else "live"
+        if mint.get("state") != state:
+            mint["state"] = state
+            changed = True
+    if info.get("minted") is not None or info.get("mint_logs") is not None:
+        if mint.get("source") != "chain":
+            mint["source"] = "chain"
+            changed = True
+    if mint:
+        fields["mint"] = mint
+    fields["onchain"] = onchain
+    return changed
+
+
+#: Quote tokens a page prints as payment. They are never the project's own token.
+QUOTE_TOKENS = frozenset({
+    "0x55d398326f99059ff775485246999027b3197955",  # USDT
+    "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",  # USDC
+    "0xe9e7cea3dedca5984780bafc599bd69add087d56",  # BUSD
+    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",  # WBNB
+    "0xc5f0f7b66764f6ec8c8dff7ba683102295e16409",  # FDUSD
+    "0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3",  # DAI
+})
+#: The readings a token probe may add to a share card; its mint numbers belong to the sale.
+TOKEN_READINGS = ("kind", "token_total", "decimals", "holders", "top10", "pools", "pool",
+                  "pool_liquidity_usd", "lp_state", "lp_locked_pct", "lp_burnt_pct",
+                  "lp_locked", "perms", "honeypot", "buy_tax", "sell_tax", "mint_public")
+
+
+def _find_token(fields: dict, page: str, chain_key: str) -> bool:
+    """Look for the project's token on a page that only ever named the mint contract.
+
+    The page is already rendered for the site check; this reuses it. Quote tokens are
+    skipped, and a token already on the card is never replaced (2026-11-01, user).
+    """
+    if not chain_key or fields.get("type") not in ("share", "inscription"):
+        return False
+    onchain = dict(fields.get("onchain") or {})
+    if onchain.get("token"):
+        return False
+    addresses = []
+    for found in re.findall(r"0x[0-9a-fA-F]{40}", page or ""):
+        address = found.lower()
+        if address in chain.INFRA or address in QUOTE_TOKENS or address in addresses:
+            continue
+        addresses.append(address)
+        if len(addresses) >= 10:
+            break
+    if not addresses:
+        return False
+    facts = chain.token_first(*addresses, limit=10, chain=chain_key)
+    token = str(facts.get("token") or "")
+    if not token:
+        return False
+    onchain.update(facts)
+    try:
+        security = chain.probe(token, chain=chain_key)
+    except Exception:  # noqa: BLE001 - a token page with no safety sheet is still a token
+        security = {}
+    for key in TOKEN_READINGS:
+        if key in security and security[key] is not None:
+            onchain[key] = security[key]
+    fields["onchain"] = onchain
+    log.info("monitor: found token %s on the card's own site", token)
+    return True
+
+
+def _refresh_card(monitor: Monitor, card: dict) -> str:
+    """Re-read one card's chain facts and site, then write back progress / price / deadline.
+
+    Only readings move: title, type, summary and trust are left to the X sweep. An unchanged
+    page costs one render, no model call (2026-10-30, user). The chain is re-probed every sweep
+    even when the page did not move, because mint progress lives there (2026-10-31).
+    """
+    fields = dict(card.get("fields") or {})
+    if _dead_contract(fields, card):
+        moved = True
+    else:
+        moved = _merge_chain(fields, _probe_card(card))
+    onchain = dict(fields.get("onchain") or {})
+    ca = str(onchain.get("contract") or "").strip()
+    chain_key = chain.chain_id(str(card.get("chain") or ""))
+    if ca and chain_key and not onchain.get("code_fp"):
+        # Backfill the template identity once for cards written before 2026-10-31; the dedupe
+        # pass cannot group a card that has no fingerprint yet.
+        try:
+            identity = chain.identify(str(onchain.get("proxy") or ca), chain=chain_key)
+        except Exception:  # noqa: BLE001 - a missing fingerprint is not a refresh failure
+            identity = {}
+        if identity:
+            onchain.update(identity)
+            fields["onchain"] = onchain
+            moved = True
     url = str(card.get("official_url") or "").strip()
     if not url:
+        if moved:
+            db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields)
+            return "changed"
         return "skip"
     from ...sources import browser
 
     try:
         page = browser.render(url) or ""
     except Exception:  # noqa: BLE001 - a site that will not answer keeps the card as it was
+        if moved:
+            db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields)
+            return "changed"
         return "skip"
     if len(page) < 200:
+        if moved:
+            db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields)
+            return "changed"
         return "skip"
     text = chain.plain(page)
-    fields = dict(card.get("fields") or {})
     digest = _fingerprint(text)
+    # A share card written before its token was known can still recover it from this page.
+    if _find_token(fields, page, chain_key):
+        moved = True
     if fields.get("site_hash") == digest:
         fields["site_checked_at"] = _stamp()
         db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields)
-        return "unchanged"
+        return "changed" if moved else "unchanged"
     mint = dict(fields.get("mint") or {})
 
     parsed = chain.parse_mint(text)
@@ -697,6 +993,57 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
     return "changed"
 
 
+#: How many unresolved cards one sweep may spend chain calls on. The queue is the library,
+#: not the sweep's new cards: three a round drains a few dozen cards in a fortnight without
+#: turning one refresh into an audit (2026-10-31, user).
+AGENT_BACKFILL = 3
+AGENT_RECHECK_DAYS = 30
+
+
+def _agent_evidence_missing(card: dict) -> bool:
+    onchain = (card.get("fields") or {}).get("onchain") or {}
+    if not onchain.get("contract") or onchain.get("agent_gated") is True:
+        return False
+    if onchain.get("agent_source") in ("bytecode", "callers"):
+        return False
+    checked = str(onchain.get("agent_checked_at") or "")
+    if not checked:
+        return True
+    try:
+        at = datetime.fromisoformat(checked)
+    except ValueError:
+        return True
+    return datetime.now().astimezone() - at >= timedelta(days=AGENT_RECHECK_DAYS)
+
+
+def _agent_backfill(monitor: Monitor, cards: list[dict]) -> int:
+    """Spend this sweep's evidence budget on the oldest unresolved BSC cards.
+
+    A card whose mints cannot be sampled is stamped with `agent_checked_at`; the backoff
+    keeps the same dead end from being re-read every hour (2026-10-31).
+    """
+    todo = [card for card in cards
+            if _agent_evidence_missing(card)
+            and chain.chain_id(str(card.get("chain") or "")) == "bsc"]
+    todo.sort(key=lambda card: str(card.get("first_seen") or ""))
+    done = 0
+    for card in todo[:AGENT_BACKFILL]:
+        onchain = (card.get("fields") or {}).get("onchain") or {}
+        ca = str(onchain.get("contract") or "")
+        evidence = chain.agent_evidence(ca)
+        if evidence.get("agent_samples", 0) < 5:
+            deeper = chain.agent_evidence(ca, deep=True)
+            if deeper.get("agent_samples", 0) >= evidence.get("agent_samples", 0):
+                evidence = deeper
+        fields = dict(card.get("fields") or {})
+        merged = dict(fields.get("onchain") or {})
+        merged.update(evidence)
+        fields["onchain"] = merged
+        db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields, touch=False)
+        done += 1
+    return done
+
+
 def _rug(prev: dict, now: dict) -> dict:
     """Did the pool go away since the last sweep? Only two rounds can answer that.
 
@@ -724,20 +1071,203 @@ def _rug(prev: dict, now: dict) -> dict:
     return {"state": "live"} if pool else {}
 
 
+def _same_title(left: str, right: str) -> bool:
+    a, b = str(left or "").strip().lower(), str(right or "").strip().lower()
+    if len(a) >= 4 and a == b:
+        return True
+
+    def norm(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+    norm_a = norm(a)
+    return len(norm_a) >= 4 and norm_a == norm(b)
+
+
+def _same_project(info: dict, slug: str, title: str,
+                  before: dict[str, dict] | None) -> dict:
+    """The earliest card that is the same project, not merely the same template.
+
+    The fingerprint alone can match two projects built from one template, so it only counts
+    when a second signal agrees: the contract, the token, or a specific name. A shared site
+    host is not enough - one launchpad hosts dozens of projects. The new card is absorbed
+    into this row at write time; the sweep never inserts a second row for one project
+    (2026-10-31, user).
+    """
+    fingerprint = str((info or {}).get("code_fp") or "")
+    contract = str((info or {}).get("contract") or "").lower()
+    token = str((info or {}).get("token") or "").lower()
+    if (not fingerprint and not contract) or not before:
+        return {}
+    rows = []
+    for key, row in before.items():
+        if key == slug:
+            continue
+        other = ((row.get("fields") or {}).get("onchain") or {})
+        same_contract = bool(contract) and \
+            str(other.get("contract") or "").lower() == contract
+        same_fp = bool(fingerprint) and str(other.get("code_fp") or "") == fingerprint
+        if not (same_fp or same_contract):
+            continue
+        same = (same_contract
+                or (token and str(other.get("token") or "").lower() == token)
+                or _same_title(title, row.get("title")))
+        if same:
+            rows.append(row)
+    if not rows:
+        return {}
+    return min(rows, key=lambda row: str(row.get("first_seen") or ""))
+
+
+def _settle_title(row: dict, head: dict | None, site_title: str) -> None:
+    """Keep a card's name stable; the official site may rename it only after two rounds."""
+    fields = dict(row.get("fields") or {})
+    if head is None:
+        if site_title:
+            row["title"] = site_title
+            fields["site_title"] = site_title
+            fields["title_source"] = "site"
+        else:
+            fields["title_source"] = "model"
+        fields.pop("site_title_pending", None)
+        row["fields"] = fields
+        return
+    old = dict(head.get("fields") or {})
+    accepted = str(old.get("site_title") or "")
+    pending = str(old.get("site_title_pending") or "")
+    if not site_title:
+        row["title"] = str(head.get("title") or row.get("title") or "")
+        fields["title_source"] = old.get("title_source") or ("site" if accepted else "model")
+        if accepted:
+            fields["site_title"] = accepted
+        if pending:
+            fields["site_title_pending"] = pending
+        row["fields"] = fields
+        return
+    if not accepted:
+        # A card created before this rule, or from a model name: the site name wins once.
+        row["title"] = site_title
+        fields["site_title"] = site_title
+        fields["title_source"] = "site"
+        fields.pop("site_title_pending", None)
+    elif site_title == accepted:
+        row["title"] = str(head.get("title") or accepted)
+        fields["site_title"] = accepted
+        fields["title_source"] = "site"
+        fields.pop("site_title_pending", None)
+    elif pending == site_title:
+        # Seen on two consecutive sweeps: a real rename.
+        row["title"] = site_title
+        fields["site_title"] = site_title
+        fields["title_source"] = "site"
+        fields.pop("site_title_pending", None)
+    else:
+        row["title"] = str(head.get("title") or accepted)
+        fields["site_title"] = accepted
+        fields["title_source"] = "site"
+        fields["site_title_pending"] = site_title
+    row["fields"] = fields
+
+
+def _known_value(value) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and text not in ("未判定", "unknown", "N/A", "-")
+
+
+def _later_mint(old, new) -> dict:
+    old, new = dict(old or {}), dict(new or {})
+    if not old:
+        return new
+    if not new:
+        return old
+    out = {**old, **new}
+    done = [value for value in (_int(old.get("done")), _int(new.get("done")))
+            if value is not None]
+    if done:
+        out["done"] = max(done)
+    total = _int(new.get("total"))
+    if total is None:
+        total = _int(old.get("total"))
+    if total is not None:
+        out["total"] = total
+    if out.get("done") is not None and out.get("total"):
+        out["state"] = "sold_out" if out["done"] >= out["total"] else "live"
+    return out
+
+
+def _absorb(head: dict, card: dict) -> dict:
+    """Fold a newly found event into the project's existing card, keeping its identity."""
+    out = dict(head)
+    fields = dict(head.get("fields") or {})
+    new_fields = dict(card.get("fields") or {})
+    info = dict(new_fields.get("onchain") or {})
+    _merge_chain(fields, info)
+    for key, value in new_fields.items():
+        if key in ("onchain", "mint", "dup_of",
+                   "site_title", "site_title_pending", "title_source") \
+                or value in (None, "", {}):
+            continue
+        if key == "page_excerpt":
+            if len(str(value)) > len(str(fields.get(key) or "")):
+                fields[key] = value
+            continue
+        fields[key] = value
+    fields["mint"] = _later_mint(fields.get("mint"), new_fields.get("mint"))
+    out["fields"] = fields
+    sources = [row for row in (head.get("sources") or []) if isinstance(row, dict)]
+    seen = {str(row.get("url") or "") for row in sources}
+    for row in card.get("sources") or []:
+        if isinstance(row, dict) and str(row.get("url") or "") not in seen:
+            sources.append(row)
+            seen.add(str(row.get("url") or ""))
+    post = str(card.get("source_url") or "")
+    if post and post not in seen:
+        sources.append({"kind": "post", "label": "来源帖", "url": post})
+    out["sources"] = sources
+    if _known_value(card.get("price")):
+        out["price"] = card["price"]
+    if card.get("deadline"):
+        out["deadline"] = card["deadline"]
+    if len(str(card.get("summary") or "")) > len(str(head.get("summary") or "")):
+        out["summary"] = card["summary"]
+    rank = {"unjudged": 0, "community": 1, "official": 2}
+    if rank.get(str(card.get("trust")), 0) > rank.get(str(head.get("trust")), 0):
+        out["trust"] = card.get("trust")
+        out["trust_basis"] = card.get("trust_basis")
+    out["updated_at"] = card.get("updated_at")
+    return out
+
+
 def _card(monitor: Monitor, project: dict, scan_id: str,
           before: dict[str, dict] | None = None) -> dict:
     # 官网标题优先：模型每轮会换叫法，站点名不会（JAGENT → JAGENT Mint Pass）。
     # 前提是和模型给的名字有共同词，否则营销标语 / Cloudflare 页会被当成项目名。
     model_title = str(project.get("title") or "").strip()
-    title = _site_title(
+    # The official page is the authority; the model's name is only the fallback when the site
+    # has no usable title (2026-11-01, user).
+    site_title = _site_title(
         project.get("pages") or [],
         [model_title, str(project.get("handle") or ""),
-         str(project.get("official_account") or "")]) or model_title
+         str(project.get("official_account") or "")],
+    )
+    title = site_title or model_title
     # 账号优先：模型每轮给的项目名会变（"Tiny Farming" / "Tiny Farming Farmer NFT"），
     # 按名字做 slug 会让同一个项目每轮多一张卡；handle 稳定得多（2026-10-29）。
+    # A stable identity: the handle first, then the contract; the name is the last resort.
     slug = _slug(str(project.get("handle") or project.get("official_account") or "")
-                 .lstrip("@") or title)
+                 .lstrip("@") or str(project.get("contract") or "") or title)
     previous = (before or {}).get(slug)
+    prev_fields = (previous or {}).get("fields") or {}
+    # 资料页认领过的站只在资料页又读到时才允许换：某轮读不到资料页，不能把它降级回帖子里的
+    # 链接（danta pixel 从 dantapixel.deed.page 掉回 danta.ai，2026-10-30）。
+    sticky = bool(previous and prev_fields.get("site_source") == "profile"
+                  and not project.get("site_from_profile"))
+    if sticky:
+        prev_url = str(previous.get("official_url") or "").strip()
+        if prev_url:
+            project["official_url"] = prev_url
+            for source in project.get("sources") or []:
+                if isinstance(source, dict) and source.get("kind") == "official_site":
+                    source["url"] = prev_url
     # 模型偶尔漏填 chain，而摘要里明明写着「Robinhood Chain 上的 launchpad」：从卡自己的文字
     # 里认一次，认不出才是未判定（2026-10-30）。
     chain_name = str(project.get("chain") or "").strip()
@@ -752,6 +1282,9 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
         chain_name = "BSC"
     fields: dict = {key: str(project.get(key) or "未判定") for key in monitor.fields}
     fields["chain"] = chain_name
+    fields["site_source"] = ("profile" if project.get("site_from_profile") or sticky
+                             else "trace")
+    fields["domain"] = str(project.get("domain") or "other")
     # 类型判定读过官网正文，留一段摘录：回填或事后复查时不必再抓一次站
     # （agentsea 全程只说 profile card，2026-10-30）。
     pages = chain.plain("\n".join(str(page) for page in project.get("pages") or []))
@@ -772,6 +1305,7 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
         # 自己的「链名」字段，会被覆盖（2026-10-30）。
         fields["onchain"] = project["chain_info"]
     info = project.get("chain_info") or {}
+    head = _same_project(info, slug, title, before)
     _mint_capability(info)
     fields["type"] = str(project.get("type") or _type(info, project))
     rug = _rug(((previous or {}).get("fields") or {}).get("onchain") or {}, info)
@@ -823,11 +1357,14 @@ def _card(monitor: Monitor, project: dict, scan_id: str,
         "trust_basis": project.get("trust_basis") or None,
         "sources": sources,
         "fields": fields,
+        "_absorb": str(head.get("slug") or "") if head else "",
+        "_site_title": site_title,
         "version": monitor.version,
         "first_seen": _stamp(),
         "updated_at": _stamp(),
         "scan": scan_id,
     }
+
 
 
 def run(scan: dict, monitor: Monitor) -> None:
@@ -902,10 +1439,14 @@ def run(scan: dict, monitor: Monitor) -> None:
                                                            row.get("tweet_id") or ""),
                     "text": str(row.get("text") or "")[:1200]}
                    for row in pending]
-        projects, batches, failed = _extract(monitor, payload) if payload else ([], 0, 0)
-        if payload and not failed:
-            db.monitor_posts_mark(monitor.id, [str(row.get("tweet_id") or "") for row in pending])
+        projects, batches, failed, successful = (
+            _extract(monitor, payload) if payload else ([], 0, 0, [])
+        )
+        counters["retired"] = _retire_batches(
+            monitor.id, pending, successful, monitor.max_posts
+        ) if payload else 0
         counters["batches"] = batches
+        counters["extract_failed"] = failed
         counters["posts_sent"] = len(payload)
         counters["queue"] = len(pending)
         counters["projects"] = len(projects)
@@ -948,6 +1489,7 @@ def run(scan: dict, monitor: Monitor) -> None:
                 project["pages"] = answer.get("pages") or []
                 # 官网统一走 https（trace 给的是它读到的 scheme，http://danta.ai/）。
                 project["official_url"] = _secure(str(project.get("official_url") or ""))
+                project["site_from_profile"] = bool(answer.get("site_from_profile"))
                 for source in project["sources"]:
                     if isinstance(source, dict) and source.get("kind") == "official_site":
                         source["url"] = _secure(str(source.get("url") or ""))
@@ -1002,14 +1544,21 @@ def run(scan: dict, monitor: Monitor) -> None:
             for future in as_completed(futures):
                 project = futures[future]
                 try:
-                    text = future.result()
+                    answer = future.result()
                 except Exception:  # noqa: BLE001 - a failed rewrite keeps the post summary
                     log.exception("monitor: summary rewrite failed")
                     continue
-                if text:
-                    project["summary"] = text
+                if answer.get("summary"):
+                    project["summary"] = answer["summary"]
                     rewritten += 1
+                if answer.get("domain"):
+                    project["domain"] = answer["domain"]
         counters["rewritten"] = rewritten
+        # A project the model could not classify (or no page to read) still gets the cheap
+        # keyword reading; only an explicit "other" keeps a card out (2026-11-01).
+        for project in traced:
+            if not project.get("domain"):
+                project["domain"] = _domain_of(project)
 
         # 正则先于模型：`9,004 / 444,000` 这种写法页面里有，就不该被总结掉。
         for project in traced:
@@ -1044,7 +1593,7 @@ def run(scan: dict, monitor: Monitor) -> None:
                 for addr in re.findall(r"0x[0-9a-fA-F]{40}",
                                        "\n".join(str(page) for page in project.get("pages") or [])):
                     addr = addr.lower()
-                    if addr not in candidates:
+                    if addr not in candidates and addr not in chain.INFRA:
                         candidates.append(addr)
                         if len(candidates) >= 8:
                             break
@@ -1055,12 +1604,13 @@ def run(scan: dict, monitor: Monitor) -> None:
                         raw = trace_mod.read_site(str(project["official_url"]), raw=True)
                         for addr in re.findall(r"0x[0-9a-fA-F]{40}", raw):
                             addr = addr.lower()
-                            if addr not in candidates:
+                            if addr not in candidates and addr not in chain.INFRA:
                                 candidates.append(addr)
                     except Exception:  # noqa: BLE001
                         pass
                 if candidates:
-                    futures[pool.submit(_probe_first, candidates)] = project
+                    futures[pool.submit(_probe_first, candidates,
+                                        str(project.get("chain") or ""))] = project
             for future in as_completed(futures):
                 project = futures[future]
                 try:
@@ -1072,25 +1622,54 @@ def run(scan: dict, monitor: Monitor) -> None:
 
         _save(scan, stage="store", starts=starts)
         written = 0
+        merged = 0
         touched: set[str] = set()
         # 上一轮的链上那组用来判撤池：池子在不在、流动性掉了多少（2026-10-30）。
         before = {row["slug"]: row for row in db.monitor_cards(monitor.id)}
         no_site = 0
+        no_anchor = 0
+        no_domain = 0
         for project in traced:
+            # 项目自己的正文必须在加密 / AI / Agent 领域里；品牌拿 Agent ID 做一次 mint 不算
+            # （neonoir，2026-11-01, user）。
+            if str(project.get("domain") or "") == "other":
+                no_domain += 1
+                continue
             # 一张卡必须有官网：只有社区号、没有站的项目不建卡（Polka Agents，2026-10-30, user）。
             if not _has_site(project):
                 no_site += 1
+                continue
+            # 官网正文得有加密锚点，或拿得出链上证据；模型摘要不算证据（prismshrimp）。
+            if not _credible(project, project.get("chain_info") or {}):
+                no_anchor += 1
                 continue
             project["type"] = _type(project.get("chain_info") or {},
                                     {**project, "summary": project.get("summary_extract") or ""})
             card = _card(monitor, project, scan["id"], before)
             if not card["title"]:
                 continue
+            site_title = str(card.pop("_site_title", "") or "")
+            head = str(card.pop("_absorb", "") or "")
+            if head and head in before:
+                # The same project from another post updates its card; it does not become one.
+                folded = _absorb(before[head], card)
+                _settle_title(folded, before[head], site_title)
+                db.monitor_card_put(monitor.id, folded, scan["id"])
+                before[head] = folded
+                touched.add(head)
+                merged += 1
+                continue
+            _settle_title(card, before.get(card["slug"]), site_title)
             db.monitor_card_put(monitor.id, card, scan["id"])
+            # Two new posts for one project in the same sweep: the second sees the first.
+            before[card["slug"]] = card
             touched.add(card["slug"])
             written += 1
         counters["written"] = written
+        counters["merged"] = merged
         counters["skipped_no_site"] = no_site
+        counters["skipped_no_anchor"] = no_anchor
+        counters["skipped_no_domain"] = no_domain
         _save(scan, stage="refresh", starts=starts)
         # 官网刷新是每轮的一段：本轮刚写的卡跳过；页面没变的卡只记时间，不调模型。
         refreshed = unchanged = skipped = 0
@@ -1114,6 +1693,7 @@ def run(scan: dict, monitor: Monitor) -> None:
         counters["refreshed"] = refreshed
         counters["unchanged"] = unchanged
         counters["refresh_skipped"] = skipped
+        counters["agent_checked"] = _agent_backfill(monitor, db.monitor_cards(monitor.id))
         # 队列是工作集，不是档案：只留 30 天（2026-10-30, user）。
         counters["pruned"] = db.monitor_posts_prune(
             monitor.id, (_now() - timedelta(days=30)).isoformat(timespec="seconds"))

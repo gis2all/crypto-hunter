@@ -3748,6 +3748,12 @@
       "type": "string",
       "title": "Llm Model"
      },
+     "llm_state": {
+      "$ref": "#/components/schemas/ServiceStateOut"
+     },
+     "x_state": {
+      "$ref": "#/components/schemas/ServiceStateOut"
+     },
      "chains": {
       "items": {
        "type": "string"
@@ -3766,6 +3772,8 @@
      "web_dist",
      "llm",
      "llm_model",
+     "llm_state",
+     "x_state",
      "chains"
     ],
     "title": "HealthOut"
@@ -6178,6 +6186,41 @@
     ],
     "title": "SegmentOut"
    },
+   "ServiceStateOut": {
+    "properties": {
+     "level": {
+      "type": "string",
+      "title": "Level"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     },
+     "detail": {
+      "type": "string",
+      "title": "Detail",
+      "default": ""
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "level"
+    ],
+    "title": "ServiceStateOut",
+    "description": "One line of the rail's status strip. `level` is ok / warn / down."
+   },
    "SettingsFormOut": {
     "properties": {
      "chain_id": {
@@ -6666,6 +6709,16 @@
       "type": "string",
       "title": "State",
       "default": ""
+     },
+     "last_test": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/XTestOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "type": "object",
@@ -6674,6 +6727,28 @@
     ],
     "title": "XSessionOut",
     "description": "One X session as the 系统设置 page may see it: a label, a mask, a switch."
+   },
+   "XTestOut": {
+    "properties": {
+     "ok": {
+      "type": "boolean",
+      "title": "Ok",
+      "default": false
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     },
+     "at": {
+      "type": "string",
+      "title": "At",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "XTestOut",
+    "description": "What the test button last heard from one session, kept across restarts."
    }
   }
  }

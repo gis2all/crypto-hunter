@@ -856,6 +856,23 @@ div.pgroup>.pset{margin-top:auto}
 .nav{display:flex;flex-direction:column}
 .nav-foot{margin-top:auto}
 
+/* The rail's health line, directly above 系统设置. Only a reading that is not ok gets a row:
+   a healthy install keeps the rail it already had, and the row is the link to the block that
+   explains it (2026-10-31). */
+.svc-status{display:flex;flex-direction:column;padding:0 0 2px}
+/* Same box as .nav-i: 14px of padding, a 14px marker, a 7px gap - so the sentence starts on
+   the 系统设置 label's own x, and the row reads as part of the same list (2026-10-31). */
+.svc-row{display:flex;align-items:center;gap:7px;width:100%;padding:7px 14px;border:0;
+  background:none;color:var(--fg-2);font:inherit;font-size:12.5px;line-height:1.55;
+  text-align:left;cursor:pointer}
+.svc-row i{display:flex;align-items:center;justify-content:center;width:14px;height:14px;
+  flex:none}
+.svc-row i::before{content:"";width:7px;height:7px;background:var(--warn-fg)}
+.svc-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.svc-row.down{color:var(--danger-fg)}
+.svc-row.down i::before{background:var(--danger-fg)}
+.svc-row:hover{background:var(--surface);color:var(--fg)}
+
 /* The shelf's own strip, standing where the topbar stands so the page does not jump between a
    radar and the shelf. The title carries no count: the cards are the count. The shelf's 来源
    chips and its sort came out of this bar and into the panel beside its cards (2026-10-02,

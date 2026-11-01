@@ -2,7 +2,7 @@
 
 ## 产品定义
 
-两条产品线，互不依赖。**币种筛选**：每条链按生效配置的周期自动跑一轮，从数千个代币里挑出 N 个，各附一份两分钟内可读完的判断。**新机会**：只读 X，把外部正在发生的可参与机会（打新、挖矿、空投、测试网任务等）与新出现的协议、工具整理成卡片。本项目是研究流水线，不是行情终端。交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。
+三条产品线，互不依赖。**币种筛选**：每条链按生效配置的周期自动跑一轮，从数千个代币里挑出 N 个，各附一份两分钟内可读完的判断。**新机会**：只读 X，把外部正在发生的可参与机会（打新、挖矿、空投、测试网任务等）与新出现的协议、工具整理成卡片。**监控**：把一个长期问题单独成一页，只读 X 查询并回到官网、文档与官方 X 核实，持续出卡。本项目是研究流水线，不是行情终端。交易、仓位建议、买卖点、实时行情、信号指标、多用户、回测引擎均不在范围内。
 
 # 2. 技术栈
 
@@ -27,7 +27,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 ## 改动后的验证
 
 - 修改 `.py` 后：`cd api; uv run python -m pytest -q` 必须全绿（不记条数），随后重启 API —— 它是常驻进程，不重启运行的仍是旧代码。
-- 修改前端后：`cd web; npm run build`，退出码为 0（内含 `tsc -b`）。
+- 修改前端后：`cd web; npm test`，再执行 `npm run build`；两者退出码都必须为 0（构建内含 `tsc -b`）。
 - 修改 `prompts/*.md` 后：执行 `pytest tests/test_prompts.py`，prompt 内的 JSON 示例需与 `NewTokenEntry` 一致。
 - 修改数据源解析后：执行 `pytest tests/test_<source>.py`，并清理对应前缀缓存。
 - 长命令（build 与 pytest）应将输出重定向到日志后查看末尾，避免把整屏输出写入上下文。
@@ -66,6 +66,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。
 - `api/app/system_settings.py`：系统设置页那张表，读写 `config/system.yaml` 并写入 `os.environ`；X 会话列表也在这里（增删改、只回指纹、`was_label` 让改名保留原 cookie、逐条探测、合并池子的冷却/停用状态）；每次保存先把旧文件复制成 `system.yaml.bak`。
+- `api/app/service_health.py`：左栏状态条的两条读数——模型取 `llm_calls` 最新记录与匹配当前接线的测试结果（保存新端点会让更早的调用过期），X 取会话池的 `state`，重启后复用仍匹配当前 cookie 指纹的上次测试；只读本机数据，不发网关 / X 请求。见 `api/v1/README.md` · 系统设置。
 - `api/app/logging_setup.py`：本项目 logger 的唯一出口（stderr）＋进程内最近 500 条的环形缓冲；`GET /api/v1/system/log` 与 `/system/logs` 读它。
 - `api/app/lookup.py`：CA 搜索的全部工作，封装为一个可轮询的 job；不在一轮的编排内，也不访问 `runs`。
 - `api/app/out/`：TG 推送的占位模块，`configured()` 返回 `False`。
@@ -87,7 +88,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - 主池：流动性最大的池。
 - `0`：是答案而非缺失 —— 判空用 `is not None` 而非 `if value:`；集合类型的 `[]` 视为「未答」，不赢走字段。
 - 收藏与搜索记录：同一张 `favorites` 行（主键 `(chain_id, ca)`），区别仅在于 `origin` 与 `kept`；链名、配置、轮次只是随行存储的值，不发生任何级联。
-- 星标（新机会）：`opportunities.kept`，读者自己的标记，与 `user_state`（归档 / 删除）**并列**而不是它的第五种取值；它不冻结卡片，归档 / 删除也不摘星。两条产品线的取消收藏都要二次确认（星旁出现「取消收藏」）。
+- 星标（新机会）：`opportunities.kept`，读者自己的标记，与 `user_state`（归档 / 删除）**并列**而不是它的第五种取值；它不冻结卡片，归档 / 删除也不摘星。币种筛选与新机会的取消收藏都要二次确认（星旁出现「取消收藏」）；监控卡没有星标。
 - 市场口径：一个数的最终读法以交易市场为准（DexScreener 的 `liquidity.usd` 与 `h24`），而非榜单或发射台自报的数值。
 
 # 7. 变更入口
@@ -143,8 +144,8 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 
 # 10. 文档约定
 
-- 根 `README.md` 是对外介绍（两条产品线、流程图、运行与配置）；本文件是给维护者的架构与约定。
-- 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/opportunity/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
+- 根 `README.md` 是对外介绍（三条产品线、流程图、运行与配置）；本文件是给维护者的架构与约定。
+- 每个大模块一份 `README.md`：`api/app/sources/`、`api/app/pipeline/`、`api/app/report/`、`api/app/search/`、`api/app/opportunity/`、`api/app/monitors/`、`api/app/store/`、`api/app/api/v1/`、`web/src/features/`、`web/src/styles/`。
 - 链级数据源细节在 `api/app/sources/<chain>/SOURCES.md`；提示词在 `api/app/report/prompts/research.md` 与 `api/app/opportunity/prompts/`。
 - 规则不编号：定位一条规则用模块文档的小节名，`rg` 搜小节名或规则里的关键词即可；跨文档引用写「见 `<模块>/README.md` · 小节名」，同文档内写「见本文件 · 小节名」。
 - 模块引用用短名：`sources/` 到 `api/v1/` 在 `api/app/` 下，`features/` 与 `styles/` 在 `web/src/` 下。

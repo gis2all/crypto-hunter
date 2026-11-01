@@ -21,6 +21,7 @@ from app import config, logging_setup, system_settings
 from app.api.v1 import forms
 from app.llm import client as llm_client
 from app.search.engines.xsearch import PROBE_TIMEOUT
+from app.store import db
 
 #: The file as an operator writes it - comments, empty boxes and all.
 FILE = """\
@@ -377,6 +378,18 @@ def test_a_working_endpoint_says_so_with_its_latency(system_file, client, gatewa
     assert line["chars"] == 4
     assert line["finish_reason"] == "stop"
     assert "毫秒" in line["note"]
+    # The rail reads this answer: a new endpoint must clear the old quota error.
+    recorded = db.runtime_get("llm.test")
+    assert recorded["ok"] is True
+    assert recorded["base_url"] == "https://gateway/v1"
+    assert recorded["model"] == "m"
+
+
+def test_saving_a_new_endpoint_retires_the_old_reading(system_file, client):
+    body = client.put("/api/v1/system",
+                      json={"patch": {"llm.base_url": "https://other/v1"}})
+    assert body.status_code == 200
+    assert db.runtime_get("llm.saved") is not None
 
 
 def test_a_probe_is_not_a_round(system_file, client, gateway, monkeypatch):
@@ -552,6 +565,35 @@ def test_a_working_x_session_says_who_it_is(system_file, client, x_cli):
     assert call["env"]["TWITTER_AUTH_TOKEN"] == "cookie"
     assert call["env"]["TWITTER_CT0"] == "csrf"
     assert call["timeout"] == PROBE_TIMEOUT
+
+
+def test_a_probe_is_remembered_for_the_next_process(system_file, client, x_cli):
+    """The pool forgets a 401 on restart; the answer the button got must not."""
+    _with_session(system_file)
+    x_cli.box.stdout = WHOAMI
+    client.post("/api/v1/system/x", json={"patch": {}})
+    assert db.runtime_get("x.test.main")["ok"] is True
+    assert system_settings.x_sessions()[0]["last_test"]["ok"] is True
+
+
+def test_a_probe_does_not_follow_a_different_cookie(system_file, client, x_cli):
+    """A draft test must not become the saved session's health after the cookie changes."""
+    _with_session(system_file)
+    x_cli.box.stdout = WHOAMI
+    client.post("/api/v1/system/x",
+                json={"patch": {"x.auth_token": "typed", "x.ct0": "typed-csrf"}})
+    assert system_settings.x_sessions()[0]["last_test"] is None
+
+
+def test_every_probed_session_keeps_its_own_answer(system_file, client, x_cli):
+    x_cli.box.stdout = WHOAMI
+    body = client.post("/api/v1/system/x", json={"sessions": [
+        {"label": "one", "auth_token": "a", "ct0": "b", "enabled": True},
+        {"label": "two", "auth_token": "c", "ct0": "d", "enabled": True},
+    ]}).json()
+    assert body["ok"] is True
+    assert db.runtime_get("x.test.one")["ok"] is True
+    assert db.runtime_get("x.test.two")["ok"] is True
 
 
 def test_a_refused_session_repeats_what_the_client_said(system_file, client, x_cli):

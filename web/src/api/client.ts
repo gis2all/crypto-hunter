@@ -295,6 +295,8 @@ export type XSessionDraft = {
   was_label?: string;
   /** The pool's reading as the page last saw it: "" | "cooling" | "disabled". */
   state?: string;
+  /** The last probe this session answered, kept across restarts. */
+  last_test?: { ok?: boolean; note?: string; at?: string } | null;
   auth_token: string;
   ct0: string;
   enabled: boolean;

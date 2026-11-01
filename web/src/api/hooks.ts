@@ -55,6 +55,17 @@ export function useSettingsForm(chainId: string, configId: string) {
   });
 }
 
+/** The rail's status strip. One local read: it never asks the gateway or X anything.
+ *  A minute is enough - a quota that ran out is not a second-by-second event. */
+export function useHealth() {
+  return useQuery({
+    queryKey: ["health"],
+    queryFn: api.getHealth,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
 /** 系统设置's one read. No chain, no set of settings: the rows are this machine's own file. */
 export function useSystemForm() {
   return useQuery({ queryKey: ["system-form"], queryFn: api.getSystemForm });
@@ -72,6 +83,8 @@ export function useSaveSystem() {
       sessions?: api.XSessionDraft[] }) => api.putSystem(patch, sessions),
     onSuccess: (form) => {
       qc.setQueryData(["system-form"], form);
+      // A save can replace the endpoint or the key; the rail's reading is about the old one.
+      qc.invalidateQueries({ queryKey: ["health"] });
     },
   });
 }

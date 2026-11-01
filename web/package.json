@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "tsx --test tests/urls.test.mjs tests/rich.test.tsx",
     "types": "openapi-typescript ../api/openapi.json -o src/api/types.gen.ts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
     "openapi-typescript": "^7.5.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
   }

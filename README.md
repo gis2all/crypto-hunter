@@ -28,7 +28,7 @@ Crypto Hunter 是一个用 AI 发现与筛选优质链上加密项目的研究�
 ```
 cd api; uv run python -m app       # 后端 127.0.0.1:8787，同时托管 web/dist
 cd web; npm install; npm run dev   # 前端开发服务器 5173，/api 代理到 8787
-cd web; npm run build              # 改完前端后构建，生产页面（web/dist）才会更新
+cd web; npm test; npm run build    # 先跑 URL / Rich 组件测试，再构建生产页面
 ```
 
 启动后访问 http://127.0.0.1:8787
@@ -47,10 +47,11 @@ cd web; npm run build              # 改完前端后构建，生产页面（web/
 
 将关注具体一类项目（例如 Binance Agent ID 项目）单独成一页：它只读 X 的查询结果，再回到官网、文档与官方 X 核实，按自己的节奏持续出卡。
 
-- **范围**：只收用 Agent ID 作为参与资格的项目；CEX 营销、纯新闻、招聘、交易赛在免费闸上排除。
+- **范围**：只收 AI / Agent / 加密领域的项目，且与 Agent ID 有真实关系（持有门槛、Agent ID 支持或 Agentic Wallet 集成）；品牌拿 Agent ID 做一次推广 mint、CEX 营销、纯新闻、招聘、交易赛都不收；AI / Agent 工具只要确实接入了 Agent ID 或 Agentic Wallet 就在范围内。
 - **一个监控一个目录**：`api/app/monitors/<id>/` 放 `monitor.py`（名称、查询、卡片字段、默认节奏）、`prompts/` 与 `settings.yaml`；扫描引擎在 `core/`，加新项目就是加目录。
 - **流程**：七段——搜 X → 免费闸 → 分批抽取 → 溯源官方入口 → 读链上 → 落卡 → 刷新官网。帖子只是线索，官网与官方 X 是事实源；**没有官网不建卡**。
-- **卡片**：以Binance Agent ID为例，类型分为 NFT、代币份额、铭文 / 符文、发射台、任务 / 积分；代币份额另带安全读数（貔貅、LP 是否可撤、合约权限）与 GMGN / Debot 入口，NFT 只留铸造价与进度。
+- **卡片**：以 Binance Agent ID 为例，类型分为 NFT、代币份额、铭文 / 符文、发射台、任务 / 积分；验证到 ERC-20 的代币份额才带安全读数（貔貅、LP 是否可撤、合约权限）与 GMGN / Debot 入口，找不到代币就留空，NFT 只留铸造价与进度。
+- **链上核验**：每条卡按自己的链读节点（BSC / Robinhood / Arc），登记合约 / 代理实现 / Transfer 日志进度 / 同合约指纹合并 / 从官网补找代币；进度与热度以链上为准，官网只做补充。
 - **节奏**：每个监控有自己的时钟与开关；查询写在 `<id>/settings.yaml`，窗口、切片、过闸下限与开关节奏可在设定页直接改。每轮最后一段会刷新官网：按卡上的站重读进度与价格，页面没变就不调模型，也不占 X 调用。
 - **页面**：报告按轮次、类型、状态筛选，左侧队列列出排队中的条目；设定页只有开关、运行节奏与采集参数。
 

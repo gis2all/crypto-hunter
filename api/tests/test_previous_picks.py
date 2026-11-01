@@ -72,3 +72,21 @@ def test_the_numbers_the_delta_needs_ride_along(isolated_db):
     assert pick["ca"] == CA.lower()
     assert pick["market_cap_usd"] == 120_000.0
 
+
+def test_a_roster_name_is_read_from_the_round_chain_not_a_same_address_elsewhere(
+        isolated_db):
+    from app.pipeline import run as pipeline_run
+
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO tokens (ca, chain_id, symbol, updated_at) VALUES"
+            " (?, 'arc', 'ARCNAME', '2026-09-01T00:00:00+08:00'),"
+            " (?, 'base', 'BASENAME', '2026-09-01T00:00:00+08:00')",
+            (CA, CA),
+        )
+        names = pipeline_run._roster_symbols(conn, "arc", [CA])
+    finally:
+        conn.close()
+    assert names == {CA: "ARCNAME"}
+

@@ -1,4 +1,5 @@
 import type { Segment } from "../api/client";
+import { safeHttpUrl } from "../lib/urls";
 
 /** Render stored report text.
  *
@@ -11,8 +12,16 @@ export function Rich({ segments }: { segments: Segment[] }) {
       {segments.map((segment, index) => {
         const key = `${index}-${segment.kind}`;
         if (segment.kind === "link" && segment.url) {
+          const href = safeHttpUrl(segment.url);
+          if (!href) return segment.text;
           return (
-            <a key={key} href={segment.url} target="_blank" rel="noreferrer">
+            <a
+              key={key}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              referrerPolicy="no-referrer"
+            >
               {segment.text}
             </a>
           );

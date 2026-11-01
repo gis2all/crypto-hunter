@@ -53,7 +53,9 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 #: 25 rewrote the query catalog once more: X's `-game` only matches the whole word, so
 #: `gamers` / `gameplay` walked back in. The new terms arrive with the tracked seed and the
 #: superseded rows are retired in place, the same shape as 13.
-SCHEMA_VERSION = 28
+#: 29 rekeys tokens by (chain_id, ca): the same EVM address can be deployed on two chains,
+#: and a CA-only key let one chain's symbol and peak overwrite the other's.
+SCHEMA_VERSION = 29
 
 
 def _backfill_opportunity_sources(conn: sqlite3.Connection) -> int:
@@ -340,6 +342,7 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     # cannot hold two sets of settings' judgements about the same token.
     _rekey_lexicon_for_configs(conn)
     _rekey_lexicon_sources_for_configs(conn)
+    _rekey_tokens_for_chain(conn)
     for table, column in _DROPPED_COLUMNS:
         have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
         if column in have:
@@ -493,6 +496,44 @@ def _rekey_lexicon_sources_for_configs(conn: sqlite3.Connection) -> int:
         DROP TABLE lexicon_sources;
         ALTER TABLE lexicon_sources_rekeyed RENAME TO lexicon_sources;
     """)
+    return before
+
+
+def _rekey_tokens_for_chain(conn: sqlite3.Connection) -> int:
+    """Move the token roster from a CA-only key to (chain_id, ca)."""
+    info = {row["name"]: row["pk"] for row in conn.execute("PRAGMA table_info(tokens)")}
+    if not info.get("ca"):
+        return 0
+    if info.get("chain_id") == 1 and info.get("ca") == 2:
+        return 0
+    before = conn.execute("SELECT COUNT(*) AS n FROM tokens").fetchone()["n"]
+    conn.executescript("""
+        DROP TABLE IF EXISTS tokens_rekeyed;
+        CREATE TABLE tokens_rekeyed (
+          ca TEXT NOT NULL,
+          chain_id TEXT NOT NULL,
+          symbol TEXT,
+          decimals INTEGER,
+          launchpad TEXT,
+          created_at TEXT,
+          first_seen_run TEXT,
+          peak_market_cap_usd REAL,
+          peak_market_cap_at TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (chain_id, ca)
+        );
+        INSERT INTO tokens_rekeyed
+          (ca, chain_id, symbol, decimals, launchpad, created_at, first_seen_run,
+           peak_market_cap_usd, peak_market_cap_at, updated_at)
+        SELECT ca, chain_id, symbol, decimals, launchpad, created_at, first_seen_run,
+               peak_market_cap_usd, peak_market_cap_at, updated_at
+          FROM tokens;
+        DROP TABLE tokens;
+        ALTER TABLE tokens_rekeyed RENAME TO tokens;
+    """)
+    after = conn.execute("SELECT COUNT(*) AS n FROM tokens").fetchone()["n"]
+    if after != before:
+        raise RuntimeError("tokens migration changed the row count")
     return before
 
 
@@ -2077,11 +2118,11 @@ def monitor_posts_mark(monitor: str, tweet_ids: list[str], status: str = "used")
 
 
 def reconcile_running_scans(reason: str = "进程重启中断") -> int:
-    """Retire scans a previous process left `running`.
+    """Retire every job a previous process left `running`.
 
     The work lives in a thread inside the API process; a restart kills it and the row would
-    otherwise read as "still scanning" forever - which is exactly what the 01:51 scan did after
-    a restart (2026-10-30).
+    otherwise read as "still running" forever. This covers every pollable job shape, including
+    CA searches whose worker disappeared before the page stopped polling.
     """
     stamp = now_iso()
     conn = connect()
@@ -2092,9 +2133,12 @@ def reconcile_running_scans(reason: str = "进程重启中断") -> int:
         right = conn.execute(
             "UPDATE monitor_scans SET status = 'failed', error = ?, finished_at = ?"
             " WHERE status = 'running'", (reason, stamp)).rowcount
+        jobs = conn.execute(
+            "UPDATE search_jobs SET status = 'failed', error = ?, finished_at = ?"
+            " WHERE status = 'running'", (reason, stamp)).rowcount
     finally:
         conn.close()
-    return left + right
+    return left + right + jobs
 
 
 def monitor_posts_prune(monitor: str, cutoff: str) -> int:
@@ -2110,14 +2154,87 @@ def monitor_posts_prune(monitor: str, cutoff: str) -> int:
 
 
 def monitor_card_patch(monitor: str, slug: str, fields: dict,
-                       price: str | None = None, deadline: str | None = None) -> None:
-    """Refresh one card's readings (progress / price / deadline) from its own site."""
+                       price: str | None = None, deadline: str | None = None,
+                       *, touch: bool = True) -> None:
+    """Refresh one card's readings (progress / price / deadline) from its own site.
+
+    `touch=False` is for bookkeeping flags (the duplicate mark): they must not move a card to
+    the top of the report as if its content had changed (2026-10-31).
+    """
+    conn = connect()
+    try:
+        if touch:
+            conn.execute(
+                "UPDATE monitor_cards SET fields_json = ?,"
+                " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
+                " WHERE monitor = ? AND slug = ?",
+                (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(),
+                 monitor, slug))
+        else:
+            conn.execute(
+                "UPDATE monitor_cards SET fields_json = ?,"
+                " price = COALESCE(?, price), deadline = COALESCE(?, deadline)"
+                " WHERE monitor = ? AND slug = ?",
+                (json.dumps(fields, ensure_ascii=False), price, deadline, monitor, slug))
+    finally:
+        conn.close()
+
+
+def runtime_set(key: str, value: dict) -> None:
+    """Remember one observation (a probe result) across restarts. Config stays in the file."""
     conn = connect()
     try:
         conn.execute(
-            "UPDATE monitor_cards SET fields_json = ?,"
-            " price = COALESCE(?, price), deadline = COALESCE(?, deadline), updated_at = ?"
-            " WHERE monitor = ? AND slug = ?",
-            (json.dumps(fields, ensure_ascii=False), price, deadline, now_iso(), monitor, slug))
+            "INSERT INTO runtime_state (key, value, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value,"
+            " updated_at = excluded.updated_at",
+            (key, json.dumps(value, ensure_ascii=False), now_iso()))
     finally:
         conn.close()
+
+
+def runtime_get(key: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT value FROM runtime_state WHERE key = ?", (key,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        value = json.loads(row[0])
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def runtime_prefix(prefix: str) -> dict[str, dict]:
+    """Every observation under one prefix, in one query: the page asks for all sessions."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT key, value FROM runtime_state WHERE key LIKE ?", (prefix + "%",)).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, dict] = {}
+    for key, value in rows:
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            out[str(key)] = parsed
+    return out
+
+
+def llm_calls_recent(limit: int = 20) -> list[dict]:
+    """The last calls any screen made. The status strip reads them; it never calls a model."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT purpose, model, ok, error, created_at FROM llm_calls"
+            " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [{"purpose": row[0], "model": row[1], "ok": bool(row[2]),
+             "error": row[3] or "", "created_at": row[4] or ""} for row in rows]
