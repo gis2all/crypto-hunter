@@ -70,6 +70,8 @@
 `GET /monitors/{id}/cards`、`GET|PUT /monitors/{id}/settings`、`POST /monitors/{id}/scan`、
 `GET /monitors/{id}/scans/{scan_id}`、`POST /monitors/{id}/scans/{scan_id}/cancel`。
 
-设定不在 `config/`：每个监控一个目录 `api/app/monitors/<id>/`（`monitor.py` + `prompts/` +
-`settings.yaml`），HTTP 层只读写其中的 `settings.yaml`；扫描引擎在 `monitors/core/`（见
+设定不在 `config/`：每个监控一个目录 `api/app/monitors/<id>/`（`monitor.py` + `prompts/`）。
+运行期 `settings.yaml` 由本机生成且被 Git 忽略，HTTP 层只读写这份本地文件；扫描引擎在
+`monitors/core/`。扫描回执的 `counters.llm` 给出本次调用的总数、分用途 Token 和失败数，
+`counters.llm_over_budget` 标记是否超过 `CH_MONITOR_TOKEN_BUDGET`（见
 `api/app/monitors/README.md`）。
