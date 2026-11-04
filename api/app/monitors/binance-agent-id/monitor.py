@@ -29,6 +29,7 @@ MONITOR = Monitor(
     prompt="binance-agent-id.md",
     version="monitor-agentid-v1",
     fields=("chain", "status", "price", "supply", "deadline"),
+    min_score=35,
     notes=(
         "只收 AI / Agent / 加密领域中确实使用或支持 Agent ID 的项目；Binance 官方公告本身不建卡。",
         "价格 / 供应 / 截止只有材料写了才填，没写就是未判定。",

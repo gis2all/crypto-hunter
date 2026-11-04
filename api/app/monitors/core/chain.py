@@ -13,7 +13,8 @@ import logging
 import re
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from functools import lru_cache
 
 import httpx
@@ -125,6 +126,34 @@ MINT_GETTERS = (
 )
 #: Common "how many exist in total" getters. Non-standard, so each is tried and ignored.
 MAX_SELECTORS = ("0xd5abeb01", "0x355274ea", "0x32cb6b0c")
+#: Sale-specific getters. `price()` / `getPrice()` are deliberately absent: on many
+#: contracts they answer something other than the mint price.
+SALE_PRICE_GETTERS = (
+    ("0x6feaf968", "mintPrice()"),
+    ("0x178740ed", "cost()"),
+    ("0xb671629f", "publicSalePrice()"),
+    ("0x7fc1776c", "salePrice()"),
+)
+SALE_START_GETTERS = (
+    ("0x153c9232", "publicSaleStart()"),
+    ("0x0c0e39b5", "mintStart()"),
+    ("0xd6c3b4c7", "saleStart()"),
+    ("0x55b82df7", "startTime()"),
+)
+SALE_END_GETTERS = (
+    ("0xec9b5cb2", "publicSaleEnd()"),
+    ("0x64d66320", "mintEnd()"),
+    ("0x3472aaa0", "saleEnd()"),
+    ("0xb6f739ee", "endTime()"),
+    ("0xc5d6e87f", "deadline()"),
+    ("0xe7e4e238", "endTimestamp()"),
+)
+NATIVE_SYMBOLS = {"bsc": "BNB", "ethereum": "ETH", "base": "ETH",
+                  "robinhood": "ETH", "arc": "USDC"}
+MIN_NATIVE_PRICE = 10**9
+MAX_NATIVE_PRICE = 10**21
+SALE_TIME_MIN = 1_577_836_800  # 2020-01-01
+SALE_TIME_MAX = 4_102_444_800  # 2100-01-01
 AGENT_ID_REGISTRY = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f"
 #: Addresses that show up in posts but are never a project's own contract: the zero address and
 #: the registry every Agent ID project merely points at (2026-10-31).
@@ -159,6 +188,21 @@ _MINT_SINGLE = re.compile(
 _MINT_WORDS = ("minted", "shares", "supply", "confirmed", "progress", "铸造", "已铸", "total")
 #: 每钱包上限、单地址限制这类附近的「x / y」不是铸造进度（BNBS 的 10 shares per wallet）。
 _LIMIT_WORDS = ("per wallet", "per address", "每钱包", "每地址", "limit", "max ", "上限")
+_PRICE = re.compile(
+    r"\b(?:mint\s*price|price|cost|售价|价格)\b\s*[:：]?\s*"
+    r"(免费|free|(?:\d[\d,]*(?:\.\d+)?)\s*(?:ETH|BNB|USDT|USDC|BUSD|DAI|SOL|USD)?)",
+    re.I,
+)
+_DEADLINE = re.compile(
+    r"\b(?:deadline|ends?|closes?|until|sale\s*end|mint\s*end|截止(?:时间)?|结束)\b"
+    r"\s*[:：]?\s*"
+    r"(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?"
+    r"(?:\s*(?:UTC|GMT))?)",
+    re.I,
+)
+_UNIT = re.compile(
+    r"\b\d[\d,]*\s+(shares?|cards?|nfts?|seats?|spots?|份|席位|枚)\b", re.I
+)
 
 
 def plain(value) -> str:
@@ -206,6 +250,58 @@ def parse_mint(text: str) -> dict:
         if done > 0:
             return {"done": done}
     return {}
+
+
+def parse_page_facts(text: str) -> dict:
+    """Deterministic page-owned fields: mint price, deadline, and unit wording."""
+    body = plain(text)
+    out: dict = {}
+    price = _PRICE.search(body)
+    if price:
+        value = re.sub(r"\s+", " ", price.group(1)).strip()
+        out["price"] = "免费" if value.lower() == "free" or value == "免费" else value
+    deadline = _DEADLINE.search(body)
+    if deadline:
+        value = deadline.group(1).replace("/", "-").replace(".", "-")
+        out["deadline"] = re.sub(r"\s+", " ", value).strip()
+    unit = _UNIT.search(body)
+    if unit:
+        out["mint_unit"] = unit.group(1)
+    return out
+
+
+def _native_price(value: int, chain: str) -> str:
+    amount = Decimal(value) / Decimal(10**18)
+    return "%s %s" % (format(amount.normalize(), "f"),
+                      NATIVE_SYMBOLS.get(chain, "native"))
+
+
+def sale_facts(ca: str, chain: str = "bsc") -> dict:
+    """Common sale getters, accepted only after range checks.
+
+    There is no standard mint-price or deadline interface. Values outside a plausible
+    native-price / calendar range are ignored rather than printed as facts.
+    """
+    with _on_chain(chain):
+        ca = str(ca or "").strip().lower()
+        if not _ADDRESS.fullmatch(ca):
+            return {}
+        out: dict = {}
+        for selector, _name in SALE_PRICE_GETTERS:
+            value = _uint(ca, selector)
+            if value is not None and MIN_NATIVE_PRICE <= value <= MAX_NATIVE_PRICE:
+                out["mint_price"] = _native_price(value, chain)
+                break
+        for key, getters in (("sale_start", SALE_START_GETTERS),
+                             ("sale_deadline", SALE_END_GETTERS)):
+            for selector, _name in getters:
+                value = _uint(ca, selector)
+                if value is not None and SALE_TIME_MIN <= value <= SALE_TIME_MAX:
+                    out[key] = datetime.fromtimestamp(value, timezone.utc).isoformat(
+                        timespec="seconds")
+                    break
+        return out
+
 
 #: Chain names worth recognising in prose. Ordered: the specific spellings first, so
 #: "Robinhood Chain" is not read as something else. ASCII names match on word boundaries —

@@ -2238,3 +2238,39 @@ def llm_calls_recent(limit: int = 20) -> list[dict]:
         conn.close()
     return [{"purpose": row[0], "model": row[1], "ok": bool(row[2]),
              "error": row[3] or "", "created_at": row[4] or ""} for row in rows]
+
+
+def llm_usage(run_id: str) -> dict:
+    """Token and failure totals for one pollable job, from the existing call ledger."""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT count(*), coalesce(sum(prompt_tokens), 0),"
+            " coalesce(sum(completion_tokens), 0),"
+            " coalesce(sum(CASE WHEN ok = 0 THEN 1 ELSE 0 END), 0)"
+            " FROM llm_calls WHERE run_id = ?", (run_id,)).fetchone()
+        purposes = conn.execute(
+            "SELECT purpose, count(*), coalesce(sum(prompt_tokens), 0),"
+            " coalesce(sum(completion_tokens), 0),"
+            " coalesce(sum(CASE WHEN ok = 0 THEN 1 ELSE 0 END), 0)"
+            " FROM llm_calls WHERE run_id = ? GROUP BY purpose", (run_id,)).fetchall()
+    finally:
+        conn.close()
+    calls, prompt_tokens, completion_tokens, failed = row
+    by_purpose = {}
+    for purpose, count, prompt, completion, failures in purposes:
+        by_purpose[str(purpose)] = {
+            "calls": int(count),
+            "prompt_tokens": int(prompt),
+            "completion_tokens": int(completion),
+            "total_tokens": int(prompt) + int(completion),
+            "failed": int(failures),
+        }
+    return {
+        "calls": int(calls),
+        "prompt_tokens": int(prompt_tokens),
+        "completion_tokens": int(completion_tokens),
+        "total_tokens": int(prompt_tokens) + int(completion_tokens),
+        "failed": int(failed),
+        "by_purpose": by_purpose,
+    }
