@@ -166,7 +166,7 @@ function draftsFrom(list: Monitor[]): Record<string, Draft> {
       start_minute: String(values.start_minute ?? 15),
       window_hours: String(values.window_hours ?? 24),
       slice_hours: String(values.slice_hours ?? 4),
-      min_score: String(values.min_score ?? 30),
+      min_score: String(values.min_score ?? 35),
     };
   }
   return out;
@@ -186,6 +186,11 @@ function MonitorPanel({ scan, open, onCancel }: {
   const progress = stages.length ? done / stages.length : 0;
   const running = scan?.status === "running";
   const traced = (counters.traced ?? {}) as Record<string, number>;
+  const llm = (counters.llm ?? {}) as { calls?: number; total_tokens?: number };
+  const llmReading = llm.calls
+    ? ` · LLM ${llm.calls} 次 / ${llm.total_tokens ?? 0} tokens`
+      + (counters.llm_over_budget ? " 超预算" : "")
+    : "";
   // 落 C 的项目：找到站点没有、读到几页、二次搜索跑没跑（2026-10-30 诊断用）。
   const skipped = Array.isArray(counters.skipped_items)
     ? (counters.skipped_items as unknown as {
@@ -249,6 +254,7 @@ function MonitorPanel({ scan, open, onCancel }: {
             ? `帖子 ${counters.posts ?? 0} → 过闸 ${counters.gated ?? 0} → 项目 ${counters.projects ?? 0}`
               + ` · 官方 ${traced.A ?? 0} / 未互证 ${traced.B ?? 0}`
               + (counters.skipped ? ` · 跳过 ${counters.skipped}` : "")
+              + llmReading
             : "还没有扫描过"}
       </div>
       {skipped.length ? (
