@@ -6,12 +6,12 @@
 
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
-| 项目目录 | `monitors/<id>/` | 一个监控一个目录：`monitor.py`（`Monitor` 定义）、`prompts/`、`settings.yaml`。加项目 = 加目录，注册表自动发现。 |
+| 项目目录 | `monitors/<id>/` | 一个监控一个目录：`monitor.py`（`Monitor` 定义）与 `prompts/`。运行期 `settings.yaml` 由本机首次读取时生成并忽略提交。加项目 = 加目录，注册表自动发现。 |
 | 注册表 | `registry.py` | `Monitor` 类型 + 扫描 `monitors/*/monitor.py` 的发现逻辑；`package()` / `prompt_dir()` 给引擎定位项目文件。 |
 | 引擎 | `core/` | `job.py` 扫描、`chain.py` 链上、`schedule.py` 时钟、`settings.py` 设定。公共代码，不随项目走；新项目不复制。 |
 | 查询 | `<id>/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退 `monitor.py` 的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
 | 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写 + 项目领域判定的 `summary.md`。读的时候才打开，改完下一轮生效。 |
-| 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个监控一个文件，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退 `monitor.py` 默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
+| 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。运行文件按机器本地保存、**不入库**；默认值只放 `monitor.py`，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
 | 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡 → 官网刷新。可中止。 |
 | 时钟 | `core/schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
 | 接口 | `api/v1/monitors.py` | 列表、卡片、设定、`POST .../scan`、轮询、中止。 |
@@ -167,7 +167,7 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 
 1. 新建 `monitors/<id>/`，在 `monitor.py` 里写 `MONITOR = Monitor(...)`（默认查询、卡片字段、节奏）；注册表会自动发现它。
 2. 在 `<id>/prompts/` 放三份提示词：`<id>.md`（只输出什么 JSON）、`fill.md`（补价格 / 进度 / 截止）、`summary.md`（按官网重写摘要并判 `domain`）。
-3. 在 `<id>/settings.yaml` 按默认值写查询、开关、节奏、采集参数（不写也行，第一次读取会自动生成）。
+3. 不用提交 `<id>/settings.yaml`：第一次读取会按 `monitor.py` 的默认值自动生成本机文件；需要覆盖时直接改这份本地文件。
 4. `web/src/features/monitors/MonitorsView.tsx` 的 `CARDS` 里注册这个监控的卡片组件。
 
 这也正是「每个监控一个定制前端页面」的代价：一次代码改动，而不是一份配置。

@@ -1,7 +1,8 @@
 """Per-monitor settings: the X queries, the switches, the clock and the 采集与过闸 numbers.
 
-Each monitor keeps its own file at `monitors/<id>/settings.yaml`. It is not in `config/`:
-these are the monitor's own parameters, not this machine's system settings (2026-10-30, user).
+Each monitor keeps its own local file at `monitors/<id>/settings.yaml`. It is ignored by Git:
+defaults live in the monitor definition, and the live copy carries this machine's switches and
+overrides. It is not in `config/`: these are the monitor's own parameters, not system settings.
 The file is materialised with every key at its default, so a parameter you cannot see is a
 parameter you cannot change; a missing key still falls back to the registry default.
 """
