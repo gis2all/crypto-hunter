@@ -41,6 +41,9 @@ config/chains/*.yaml
 # opportunity settings: the tracked file is the template, the live copy is local
 config/opportunity.yaml
 
+# monitor settings: defaults live in monitor.py; settings.yaml is generated per machine
+api/app/monitors/*/settings.yaml
+
 # logs and coverage
 log/
 *.log

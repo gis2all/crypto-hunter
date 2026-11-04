@@ -61,7 +61,7 @@ cd web; npm run build                 # 生产：tsc -b 与 vite build，随后�
 - `api/app/report/`：事实表（全仓唯一一份）、卡片、装配、词条、调研编排、提示词。见 `README.md`。
 - `api/app/search/`：挖链（识别、发现、抓取、引擎）与会话池。`x_sessions.py` 把 `x.cookies` 变成 N 条并行 lane（429 冷却、401 停用各自独立），所有 X 调用都从它借会话。见 `README.md`。
 - `api/app/opportunity/`：新机会（外部活动与新项目的发现）：watchlist、扫描 job、1–5 可参与机会（无动作的卡标「仅观察」）、整批分组 / 溯源 / 主题 / 抽取、链注册表自动核验（`chainverify` / `chain_registry`）、晋升门槛、抽取时的卡片级语汇剔除（游戏 / 链游 / AMA / 派对等非机会内容不落库）、读者自己的归档、删除与星标。与一轮的编排无关，不写 `runs`。见 `README.md`。
-- `api/app/monitors/`：监控（每个监控是一个长期问题，自己抓、自己一套卡、自己一页、自己的节奏；两个监控之间不共享卡片）。每个监控一个目录 `monitors/<id>/`（`monitor.py` + `prompts/` + `settings.yaml`），`registry.py` 自动发现；公共引擎在 `monitors/core/`。见 `README.md`。
+- `api/app/monitors/`：监控（每个监控是一个长期问题，自己抓、自己一套卡、自己一页、自己的节奏；两个监控之间不共享卡片）。每个监控一个目录 `monitors/<id>/`（`monitor.py` + `prompts/`），`registry.py` 自动发现；本机运行设置 `settings.yaml` 自动生成且不入库，公共引擎在 `monitors/core/`。LLM 只用于帖子抽取与每项目一次页面调用；链上字段和官网刷新不调模型，所有调用带扫描 ID 和分用途 Token。见 `README.md`。
 - `api/app/store/`：SQLite（`schema.sql` 与 `db.py`）。见 `README.md`。
 - `api/app/llm/`：写手客户端（key 轮换与冷却、两种请求形状、记账）；`list_models` 与 `probe_keys` 只服务系统设置页的两个按钮。
 - `api/app/config.py`：链文件的读与写（路径常量、系统接线、配置的增删改、存档版本、patch 变形）。

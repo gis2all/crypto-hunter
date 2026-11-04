@@ -6,13 +6,13 @@
 
 | 件 | 位置 | 说明 |
 | --- | --- | --- |
-| 项目目录 | `monitors/<id>/` | 一个监控一个目录：`monitor.py`（`Monitor` 定义）、`prompts/`、`settings.yaml`。加项目 = 加目录，注册表自动发现。 |
+| 项目目录 | `monitors/<id>/` | 一个监控一个目录：`monitor.py`（`Monitor` 定义）与 `prompts/`。运行期 `settings.yaml` 由本机首次读取时生成并忽略提交。加项目 = 加目录，注册表自动发现。 |
 | 注册表 | `registry.py` | `Monitor` 类型 + 扫描 `monitors/*/monitor.py` 的发现逻辑；`package()` / `prompt_dir()` 给引擎定位项目文件。 |
 | 引擎 | `core/` | `job.py` 扫描、`chain.py` 链上、`schedule.py` 时钟、`settings.py` 设定。公共代码，不随项目走；新项目不复制。 |
 | 查询 | `<id>/settings.yaml` 里的 `queries` | 每个监控的 X 高级搜索，一条一次搜索，多条各跑一遍；没写就回退 `monitor.py` 的默认值。查询和开关、节奏、采集与过闸在同一个文件里，设置页不编辑它。 |
-| 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；同一个目录里还有补字段的 `fill.md` 和摘要重写 + 项目领域判定的 `summary.md`。读的时候才打开，改完下一轮生效。 |
-| 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。一个监控一个文件，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退 `monitor.py` 默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
-| 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 落卡 → 官网刷新。可中止。 |
+| 提示词 | `<id>/prompts/` | 抽取提示词由 `Monitor.prompt` 指定；`summary.md` 一次完成摘要重写、领域判定和页面独有的价格 / 截止 / 单位。读的时候才打开，改完下一轮生效。 |
+| 设定 | `core/settings.py` + `<id>/settings.yaml` | 启用、计划任务、间隔、起始时 / 分、查询窗口、切片长度、过闸下限分、X 查询。运行文件按机器本地保存、**不入库**；默认值只放 `monitor.py`，第一次读取就把各项按默认值写出来，手改和页面保存写的是同一份；缺的键回退默认，删掉会按默认重建。设定页没有左栏，一列就是每个监控一块（开关 / 运行节奏 / 采集与过闸），顶部一个「保存并生效」写所有块。 |
+| 一次扫描 | `core/job.py` | 搜 X（复用 `opportunity/xread.py` 的切片与节流）→ 免费闸（`opportunity/rules.py`）→ 分批模型调用 → 溯源（复用 `opportunity/trace.py`，落 C 才补二次搜索）→ 链上 → 单次页面模型调用 → 落卡 → 官网刷新。可中止。 |
 | 时钟 | `core/schedule.py` | `anchor + k × interval`，默认 01:15 / 8 小时，与主扫描错开；跑过就记这一格用掉。 |
 | 接口 | `api/v1/monitors.py` | 列表、卡片、设定、`POST .../scan`、轮询、中止。 |
 | 表 | `monitor_cards` / `monitor_scans` / `monitor_posts` | 卡按 `(monitor, slug)` 唯一，重写保留 `first_seen`；扫描是回执；`monitor_posts` 是待读帖子队列（按 `tweet_id` 去重）。 |
@@ -21,23 +21,39 @@
 
 `collect` 搜 X → `gate` 免费闸 → `extract` 模型读成项目 → `trace` 找官方入口 → `chain` 读链上 →
 `store` 落卡 → `refresh` 刷新官网。
-计数写在扫描行上（帖子 / 过闸 / 入队 / 项目 / 批次 / 写入 / 刷新 / 未变 / 清理），页面只轮询那一行。
+计数写在扫描行上（帖子 / 过闸 / 入队 / 项目 / 批次 / 写入 / 刷新 / 未变 / 清理），并带本次扫描的
+LLM 调用数、分用途 Token 和 `CH_MONITOR_TOKEN_BUDGET` 超预算标记。页面只轮询那一行。
 
 **帖子先入队**（`monitor_posts`）：抓到的帖子过闸后按 `tweet_id` 写进队列，`status = pending`；
 抽取只消费 `pending`，读完置 `used`。所以第二轮读的是“9:15 之后的新帖”，而不是把 24 小时再读一遍
 ——这是“多跑几轮真的会更多卡”的前提（2026-10-30, user）。某一批模型调用失败时帖子留在队列里，
 下一轮重试。队列只保留 30 天（每轮落库后按 `first_seen` 清理，计数 `pruned`），它是工作集不是档案。
 
-**抽取是分批的**：过闸帖子按 `max_posts`（100）切批，一轮最多 5 批（500 条），四个批次并发跑模型；
-合并去重（同一 handle 只留一条，空字段补齐、facts 并集）后**整轮最多 20 张新卡**
-——宁缺毋滥。扫描计数里多记 `batches` 和 `posts_sent`。
+**抽取是分批的**：同一作者的相同正文先合一，帖子正文最多 800 字符；过闸帖子按 `max_posts`（100）
+切批，一轮最多 4 批（400 条），四个批次并发跑模型；合并去重（同一 handle 只留一条，空字段补齐、
+facts 并集）后**整轮最多 20 张新卡**——宁缺毋滥。扫描计数里多记 `batches` 和 `posts_sent`。
 
-**官网刷新是每轮的最后一段**（`refresh`）：按每张卡自己的 `official_url` 重读官网，只更新铸造进度、
-价格、截止与 `fields.site_checked_at`；标题、类型、摘要、信任等级都不动——这次抓取失败也不会把卡片
-写坏。本轮刚写入的卡跳过（刚落库时已经读过站）；页面内容与 `fields.site_hash` 相同就只更新时间，
-**不调模型**，只有页面真的变了才解析进度并补价格 / 截止。进度以**模型读整页为主、正则兜底**；
-进度只向前（比上一轮小就丢弃），「每钱包上限 / limit」附近的 `x / y` 不算铸造进度。它不消耗 X 调用，计数记
-`refreshed`（变了）与 `unchanged`（没变）。老卡因此不必等“再有人发帖”才会更新进度。
+**官网刷新是每轮的最后一段**（`refresh`）：链上先重探合约与售卖字段，官网只做规则解析，**任何情况下
+都不调用 LLM**。刷新只更新铸造进度、价格、截止与 `fields.site_checked_at`；标题、类型、摘要、信任等级
+都不动。本轮刚写入的卡跳过；结构化指纹（铸造对、价格、截止、单位）相同就只更新时间。进度以链上为主，
+页面正则只在链上没答时补充，且只向前；「每钱包上限 / limit」附近的 `x / y` 不算铸造进度。计数记
+`refreshed`（变了）与 `unchanged`（没变）。
+
+## LLM 与字段归属
+
+| 字段 | 首选来源 | 页面模型 |
+| --- | --- | --- |
+| `contract` / `mint_done` / `mint_total` / `token_total` | 链上 getter 与 Transfer 日志 | 不问 |
+| `mint_state` | 由链上进度与售卖时间推导 | 不问 |
+| `price` / `deadline` | 常见 sale getter → 页面规则 | 只有前两者都没答时才问 |
+| `mint_unit` | 合约标准给 `NFT` / `token` | 页面给更具体的单位时才覆盖 |
+| `mint_kind` / 摘要 / `domain` | 页面语义 | `monitor_page` 一次调用 |
+
+调用只有两种：帖子分批的 `monitor_extract`，以及有官网页面的新项目每项目一次
+`monitor_page`。两者都把扫描 ID 写进 `llm_calls.run_id`。扫描结束写
+`counters.llm = {calls, prompt_tokens, completion_tokens, total_tokens, failed, by_purpose}`；
+默认预算 200,000 Token，可用 `CH_MONITOR_TOKEN_BUDGET` 调整，超限写
+`counters.llm_over_budget = true` 并记 warning。运行面板显示本轮调用数与总 Token。
 
 **链上**：合约地址来自模型字段、摘要 / 事实或官网正文；页面上常同时印着 mint pass、forge、
 emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第一个答上「已铸造」的当铸造合约。
@@ -47,6 +63,11 @@ emitter 和代币，所以整页地址都收进来，逐个 `eth_call` 试，第
 (0x80ac58cd)` 不为真，才算代币 —— 官网印的地址同样要过这一关，过不了就当没有。GMGN / Debot
 只挂验证过的代币；NFT 和铸造合约没有对应页面（2026-10-30, user）。登记合约与零地址本身不算项目
 合约，收集地址时直接跳过。
+
+**售卖字段先问合约**：`mintPrice` / `cost` / `publicSalePrice` / `salePrice` 与
+`publicSaleEnd` / `mintEnd` / `saleEnd` / `endTime` / `deadline` 等常见 getter 会先读；价格和时间戳
+都要通过合理范围检查，拿不到才用官网规则。链上已给的 mint 进度、总量、代币总量和合约地址不再进入
+页面模型。
 
 **链上证据**（2026-10-31，借鉴 agentid-sniper）：
 
@@ -166,8 +187,8 @@ GoPlus 不给 `lp_holders` 时（BabyJagent），`lp_from_pair()` 直接读池�
 ## 加一个监控
 
 1. 新建 `monitors/<id>/`，在 `monitor.py` 里写 `MONITOR = Monitor(...)`（默认查询、卡片字段、节奏）；注册表会自动发现它。
-2. 在 `<id>/prompts/` 放三份提示词：`<id>.md`（只输出什么 JSON）、`fill.md`（补价格 / 进度 / 截止）、`summary.md`（按官网重写摘要并判 `domain`）。
-3. 在 `<id>/settings.yaml` 按默认值写查询、开关、节奏、采集参数（不写也行，第一次读取会自动生成）。
+2. 在 `<id>/prompts/` 放两份提示词：`<id>.md`（帖子抽取）与 `summary.md`（官网摘要、领域和页面独有的价格 / 截止 / 单位）。
+3. 不用提交 `<id>/settings.yaml`：第一次读取会按 `monitor.py` 的默认值自动生成本机文件；需要覆盖时直接改这份本地文件。
 4. `web/src/features/monitors/MonitorsView.tsx` 的 `CARDS` 里注册这个监控的卡片组件。
 
 这也正是「每个监控一个定制前端页面」的代价：一次代码改动，而不是一份配置。

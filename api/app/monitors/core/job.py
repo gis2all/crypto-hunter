@@ -1,22 +1,24 @@
 """One monitor, one sweep: search, gate, ask the model, write cards.
 
 The sweep is deliberately small. A monitor is a standing question, not a census: the window in
-four-hour slices, one model call over at most `max_posts` gated posts, and cards upserted by
-slug. Nothing is shared with the opportunity pipeline except the X reader, the gate and the
-session pool - which is exactly what keeps a monitor cheap to add.
+four-hour slices, up to four extraction batches of gated posts, and cards upserted by slug.
+Chain-owned fields are read from contracts, page prose is one model call per new project, and
+refresh never calls a model. Nothing is shared with the opportunity pipeline except the X
+reader, the gate and the session pool.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import html as html_lib
 import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from ...llm import client as llm
@@ -63,6 +65,24 @@ def _when(value) -> str:
     if not text or text in ("未判定", "unknown"):
         return ""
     low = text.lower()
+    local_label = bool(re.search(r"\b(?:utc|gmt)\s*\+\s*8\b", low))
+    iso_zone = None if local_label else re.search(
+        r"(\d{4})-(\d{2})-(\d{2})[ t](\d{2}):(\d{2})(?::\d{2})?\s*"
+        r"(z|utc|gmt|[+-]\d{2}:?\d{2})", low)
+    if iso_zone:
+        year, month, day = int(iso_zone.group(1)), int(iso_zone.group(2)), \
+            int(iso_zone.group(3))
+        hour, minute = int(iso_zone.group(4)), int(iso_zone.group(5))
+        zone = iso_zone.group(6)
+        if zone in ("z", "utc", "gmt"):
+            stamp = datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+        else:
+            sign = 1 if zone[0] == "+" else -1
+            digits = zone[1:].replace(":", "")
+            offset = timedelta(hours=int(digits[:2]), minutes=int(digits[2:]))
+            stamp = datetime(year, month, day, hour, minute,
+                             tzinfo=timezone(sign * offset))
+        return stamp.astimezone(TZ).strftime("%Y-%m-%d %H:%M")
     utc = bool(re.search(r"\b(utc|gmt)\b|\d{2}z\b", low)) \
         and not re.search(r"\b(utc|gmt)\s*\+\s*8\b", low)
     match = re.search(r"(\d{4})-(\d{2})-(\d{2})(?:[ t](\d{2}):(\d{2}))?", low)
@@ -166,6 +186,10 @@ def _finish(scan: dict, status: str, error: str | None = None,
     scan["error"] = error
     scan["stage"] = None
     scan["finished_at"] = _stamp()
+    try:
+        _record_llm_usage(scan["counters"], scan["id"])
+    except Exception:  # noqa: BLE001 - missing accounting must not hide the scan result
+        log.exception("monitor: could not record LLM usage for %s", scan["id"])
     db.monitor_scan_put(scan)
     with _lock:
         _cancel.pop(scan["id"], None)
@@ -270,17 +294,19 @@ def _read_prompt(monitor: Monitor) -> str:
 #: One sweep reads at most five batches of `max_posts` posts, and keeps at most 20 projects
 #: across them. 宁缺毋滥: the model sees every gated post, the cards stay a shortlist
 #: (2026-10-30, user).
-MAX_BATCHES = 5
+MAX_BATCHES = 4
 ROUND_PROJECTS = 20
+POST_CHARS = 800
+MONITOR_TOKEN_BUDGET = int(os.environ.get("CH_MONITOR_TOKEN_BUDGET", "200000") or 0)
 
 
-def _extract_batch(monitor: Monitor, posts: list[dict]) -> list[dict]:
+def _extract_batch(monitor: Monitor, posts: list[dict], run_id: str = "") -> list[dict]:
     messages = [
         {"role": "system", "content": _read_prompt(monitor)},
         {"role": "user", "content": json.dumps(posts, ensure_ascii=False)},
     ]
     value = llm.complete_json(messages, purpose="monitor_extract",
-                              prompt_version=monitor.version)
+                              prompt_version=monitor.version, run_id=run_id)
     projects = value.get("projects") if isinstance(value, dict) else None
     return [row for row in (projects or []) if isinstance(row, dict) and row.get("title")]
 
@@ -315,7 +341,8 @@ def _merge(batches: list[list[dict]]) -> list[dict]:
     return out
 
 
-def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int, list[int]]:
+def _extract(monitor: Monitor, posts: list[dict], run_id: str = "") -> tuple[
+        list[dict], int, int, list[int]]:
     """Read the gated posts in batches, merging what the model returns per batch.
 
     The third value is how many batches failed; the fourth names the batches that were
@@ -331,7 +358,7 @@ def _extract(monitor: Monitor, posts: list[dict]) -> tuple[list[dict], int, int,
     successful: list[int] = []
     failed = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(_extract_batch, monitor, chunk): index
+        futures = {pool.submit(_extract_batch, monitor, chunk, run_id): index
                    for index, chunk in enumerate(chunks)}
         for future in as_completed(futures):
             index = futures[future]
@@ -356,14 +383,46 @@ def _retire_batches(monitor_id: str, pending: list[dict], successful: list[int],
     return retired
 
 
-FILL_FIELDS = ("mint_done", "mint_total", "mint_unit", "token_total", "price", "deadline",
-               "contract")
-FILL_VERSION = "monitor-fill-v1"
+def _post_payload(rows: list[dict]) -> list[dict]:
+    """Trim and dedupe identical posts from the same author before buying extraction."""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        author = str(row.get("author") or "")
+        text = str(row.get("text") or "")
+        key = (author.lstrip("@").lower(), " ".join(text.split()).lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "author": "@" + author.lstrip("@"),
+            "at": row.get("created_at"),
+            "url": "https://x.com/%s/status/%s" % (
+                author.lstrip("@"), row.get("tweet_id") or ""),
+            "text": text[:POST_CHARS],
+        })
+    return out
+
+
+def _record_llm_usage(counters: dict, scan_id: str) -> dict:
+    """Attach the ledger totals for one sweep and mark a budget overrun."""
+    usage = db.llm_usage(scan_id)
+    counters["llm"] = usage
+    if MONITOR_TOKEN_BUDGET > 0 and usage["total_tokens"] > MONITOR_TOKEN_BUDGET:
+        counters["llm_over_budget"] = True
+        log.warning("monitor: scan %s used %d LLM tokens (budget %d)",
+                    scan_id, usage["total_tokens"], MONITOR_TOKEN_BUDGET)
+    return usage
+
+
+PAGE_FIELDS = ("mint_unit", "mint_kind", "price", "deadline")
+PAGE_VERSION = "monitor-page-v1"
+PAGE_CHARS = 8000
 #: 页面越长，计数越可能不在开头：按这些词取窗口，而不是把整页截前 6000 字。
 #: 价格常常和进度挤在同一张表里（Phosphor 的 `Price 1 USDT`），只按铸造词取窗口会把它漏掉。
 FILL_WORDS = ("minted", "shares", "supply", "progress", "confirmed",
               "price", "cost", "价格", "售价", "单价",
-              "铸造", "已铸")
+              "铸造", "已铸", "deadline", "ends", "closes", "until", "截止", "结束")
 
 
 def _excerpt(text: str, *, width: int = 400, limit: int = 8) -> str:
@@ -396,57 +455,92 @@ def _blank(value) -> bool:
     return str(value or "").strip().lower() in _BLANK_VALUES
 
 
-def _missing(project: dict) -> bool:
-    return any(_blank(project.get(key)) for key in FILL_FIELDS)
+def _missing_page_fields(project: dict) -> bool:
+    return any(_blank(project.get(key)) for key in PAGE_FIELDS)
 
 
-def _fill(monitor: Monitor, project: dict) -> dict:
-    """The four card fields, read off the pages the trace already fetched.
-
-    The mint page usually says the thing the post does not: "6,624 of 95,669 minted". Reading it
-    for trust and then throwing the numbers away is what left 供应 未判定 (2026-10-30, user).
-    """
-    text = _excerpt("\n\n".join(str(page) for page in project.get("pages") or []))
-    if not text.strip():
-        return {}
-    messages = [{"role": "system", "content": _read_prompt_file(monitor, "fill.md")},
-                {"role": "user", "content": text}]
-    value = llm.complete_json(messages, purpose="monitor_fill", prompt_version=FILL_VERSION)
-    return value if isinstance(value, dict) else {}
+def _field_fingerprint(text: str) -> str:
+    """Hash only the readings a refresh can actually change."""
+    signature = {
+        "mint": chain.parse_mint(text),
+        "facts": chain.parse_page_facts(text),
+    }
+    return _fingerprint(json.dumps(signature, ensure_ascii=False, sort_keys=True))
 
 
-SUMMARY_VERSION = "monitor-summary-v2"
 SUMMARY_CHARS = 4000
-#: 页面只渲染出一个壳时，模型会把「没读到内容」当成摘要写回来。这样的话不能覆盖原摘要
-#: （Nemotron / ChyAI 就因此被写成「官网原文未提供」，2026-10-30）。
 _EMPTY_SUMMARY = ("官网原文未提供", "无法确认项目内容", "未提供", "未说明参与方式", "未说明参与")
 
 
-def _rewrite(monitor: Monitor, project: dict) -> dict:
-    """Rewrite the summary from the official page and classify the project's own domain.
-
-    The extraction reads posts, and a post can call a token sale a "runes project" (BNBS).
-    Once the trace has the official page, the summary is written again from that page so the
-    card describes what is actually sold (2026-10-30, user). The same call also answers
-    whether the project itself is crypto / an AI-agent product / something else, which is
-    what keeps a fashion brand using Agent ID for one mint out of the monitor (2026-11-01).
-    """
-    text = chain.plain("\n".join(str(page) for page in project.get("pages") or []))[:SUMMARY_CHARS]
+def _page_card(monitor: Monitor, project: dict, *, run_id: str = "") -> dict:
+    """One official-page call: prose/domain plus fields the chain cannot own."""
+    body = chain.plain("\n".join(str(page) for page in project.get("pages") or []))
+    if not body.strip():
+        return {}
+    head = body[:SUMMARY_CHARS]
+    excerpt = _excerpt(body)
+    text = (head + "\n---\n" + excerpt).strip()[:PAGE_CHARS]
     if not text.strip():
         return {}
     messages = [{"role": "system", "content": _read_prompt_file(monitor, "summary.md")},
                 {"role": "user", "content": text}]
-    value = llm.complete_json(messages, purpose="monitor_summary",
-                              prompt_version=SUMMARY_VERSION)
+    value = llm.complete_json(
+        messages, purpose="monitor_page", prompt_version=PAGE_VERSION, run_id=run_id
+    )
+    value = value if isinstance(value, dict) else {}
     summary = str((value or {}).get("summary") or "").strip()
     if any(marker in summary for marker in _EMPTY_SUMMARY):
         summary = ""
-    domain = str((value or {}).get("domain") or "").strip().lower()
+    domain = str(value.get("domain") or "").strip().lower()
     if domain not in ("crypto", "ai_agent", "other"):
         domain = ""
-    if not summary and not domain:
-        return {}
-    return {"summary": summary, "domain": domain}
+    out = {"summary": summary, "domain": domain}
+    for key in PAGE_FIELDS:
+        item = str(value.get(key) or "").strip()
+        if item and not _blank(item):
+            out[key] = item[:80] if key in ("price", "deadline") else item[:32]
+    return out
+
+
+def _apply_page_card(project: dict, answer: dict) -> bool:
+    """Apply prose and page-owned fields without touching chain-owned values."""
+    changed = False
+    if answer.get("summary"):
+        project["summary"] = answer["summary"]
+        changed = True
+    if answer.get("domain"):
+        project["domain"] = answer["domain"]
+        changed = True
+    for key in PAGE_FIELDS:
+        value = answer.get(key)
+        generic_unit = key == "mint_unit" and str(project.get(key) or "") in ("NFT", "token")
+        if (_blank(project.get(key)) or generic_unit) and not _blank(value):
+            project[key] = (_when(value) if key == "deadline" else str(value).strip())
+            changed = True
+    return changed
+
+
+def _apply_chain_info(project: dict) -> None:
+    """Put contract-owned facts on the project before the page model is called."""
+    info = project.get("chain_info") or {}
+    if info.get("contract"):
+        project["contract"] = str(info["contract"])
+    if info.get("minted") is not None:
+        project["mint_done"] = info["minted"]
+    if info.get("mint_total") is not None:
+        project["mint_total"] = info["mint_total"]
+    if info.get("token_total") is not None:
+        project["token_total"] = info["token_total"]
+    if info.get("kind") == "erc20":
+        project["mint_unit"] = "token"
+    elif info.get("nft") is True:
+        project["mint_unit"] = "NFT"
+    if not _blank(info.get("mint_price")):
+        project["price"] = str(info["mint_price"]).strip()
+    if info.get("sale_deadline"):
+        deadline = _when(info["sale_deadline"])
+        if deadline:
+            project["deadline"] = deadline
 
 
 def _known() -> set[str]:
@@ -505,6 +599,7 @@ def _probe_first(candidates: list[str], chain_name: str = "") -> dict:
     if not winner:
         return {}
     info: dict = chain.probe(winner, chain=chain_key)
+    info.update(chain.sale_facts(winner, chain=chain_key))
     if not info.get("token"):
         extra = chain.token_first(*candidates, chain=chain_key)
         if extra:
@@ -789,6 +884,14 @@ def _merge_chain(fields: dict, info: dict) -> bool:
         return False
     onchain = dict(fields.get("onchain") or {})
     changed = False
+    if not _blank(info.get("mint_price")) and fields.get("price") != info["mint_price"]:
+        fields["price"] = str(info["mint_price"]).strip()
+        changed = True
+    if info.get("sale_deadline"):
+        deadline = _when(info["sale_deadline"])
+        if deadline and fields.get("deadline") != deadline:
+            fields["deadline"] = deadline
+            changed = True
     if info.get("pools") == 0:
         for key in ("pool", "pool_liquidity_usd", "lp_state", "lp_locked_pct",
                     "lp_burnt_pct", "lp_locked"):
@@ -796,7 +899,8 @@ def _merge_chain(fields: dict, info: dict) -> bool:
                 onchain.pop(key, None)
                 changed = True
     for key, value in info.items():
-        if value is None or key in ("minted", "mint_total"):
+        if value is None or key in ("minted", "mint_total", "sale_start", "sale_deadline",
+                                    "mint_price"):
             continue
         if onchain.get(key) != value:
             onchain[key] = value
@@ -896,6 +1000,11 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
     onchain = dict(fields.get("onchain") or {})
     ca = str(onchain.get("contract") or "").strip()
     chain_key = chain.chain_id(str(card.get("chain") or ""))
+    chain_sale: dict = {}
+    if ca and chain_key and (_blank(fields.get("price")) or _blank(fields.get("deadline"))):
+        chain_sale = chain.sale_facts(ca, chain=chain_key)
+        if _merge_chain(fields, chain_sale):
+            moved = True
     if ca and chain_key and not onchain.get("code_fp"):
         # Backfill the template identity once for cards written before 2026-10-31; the dedupe
         # pass cannot group a card that has no fingerprint yet.
@@ -928,7 +1037,7 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
             return "changed"
         return "skip"
     text = chain.plain(page)
-    digest = _fingerprint(text)
+    digest = _field_fingerprint(text)
     # A share card written before its token was known can still recover it from this page.
     if _find_token(fields, page, chain_key):
         moved = True
@@ -939,15 +1048,18 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
     mint = dict(fields.get("mint") or {})
 
     parsed = chain.parse_mint(text)
-    price = deadline = None
-    try:
-        data = _fill(monitor, {"pages": [page], "price": "", "deadline": "", "contract": "",
-                               "token_total": ""})
-    except Exception:  # noqa: BLE001 - the regex reading above still counts
-        data = {}
+    facts = chain.parse_page_facts(text)
+    price = str(fields.get("price") or "")
+    deadline = str(fields.get("deadline") or "")
+    if not chain_sale.get("mint_price") and not _blank(facts.get("price")):
+        price = str(facts["price"]).strip()
+        fields["price"] = price
+    if not chain_sale.get("sale_deadline") and not _blank(facts.get("deadline")):
+        deadline = _when(facts["deadline"])
+        if deadline:
+            fields["deadline"] = deadline
     old_done = _int(mint.get("done"))
     old_total = _int(mint.get("total"))
-    llm_done, llm_total = _int(data.get("mint_done")), _int(data.get("mint_total"))
     re_done, re_total = _int(parsed.get("done")), _int(parsed.get("total"))
 
     def sane(done: int | None, total: int | None) -> bool:
@@ -962,14 +1074,11 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
             return False
         return True
 
-    # 模型读整页优先（它能分清上限表与进度表），正则只做兜底；两边都不可信就保留原值。
-    done = llm_done if llm_done is not None else re_done
-    total = llm_total if llm_total is not None else re_total
+    # The chain probe has already moved progress forward; page parsing only adds a larger,
+    # internally consistent reading when the node did not expose one.
+    done, total = re_done, re_total
     if not sane(done, total):
-        if sane(re_done, re_total):
-            done, total = re_done, re_total
-        else:
-            done, total = old_done, old_total
+        done, total = old_done, old_total
     if done is not None:
         mint["done"] = done
     if total is not None:
@@ -980,16 +1089,13 @@ def _refresh_card(monitor: Monitor, card: dict) -> str:
             mint["source"] = "site"
     if mint:
         fields["mint"] = mint
-    if not _blank(data.get("price")):
-        price = str(data["price"]).strip()
-        fields["price"] = price
-    if not _blank(data.get("deadline")):
-        deadline = _when(data["deadline"])
-        if deadline:
-            fields["deadline"] = deadline
     fields["site_hash"] = digest
     fields["site_checked_at"] = _stamp()
-    db.monitor_card_patch(monitor.id, str(card.get("slug") or ""), fields, price, deadline)
+    db.monitor_card_patch(
+        monitor.id, str(card.get("slug") or ""), fields,
+        price=None if _blank(price) else price,
+        deadline=None if _blank(deadline) else deadline,
+    )
     return "changed"
 
 
@@ -1433,14 +1539,9 @@ def run(scan: dict, monitor: Monitor) -> None:
 
         _save(scan, stage="extract", starts=starts)
         pending = db.monitor_posts_pending(monitor.id, monitor.max_posts * MAX_BATCHES)
-        payload = [{"author": "@" + str(row.get("author") or ""),
-                    "at": row.get("created_at"),
-                    "url": "https://x.com/%s/status/%s" % (row.get("author") or "",
-                                                           row.get("tweet_id") or ""),
-                    "text": str(row.get("text") or "")[:1200]}
-                   for row in pending]
+        payload = _post_payload(pending)
         projects, batches, failed, successful = (
-            _extract(monitor, payload) if payload else ([], 0, 0, [])
+            _extract(monitor, payload, scan["id"]) if payload else ([], 0, 0, [])
         )
         counters["retired"] = _retire_batches(
             monitor.id, pending, successful, monitor.max_posts
@@ -1513,54 +1614,12 @@ def run(scan: dict, monitor: Monitor) -> None:
         counters["skipped_items"] = skipped_items
         counters["trace_failed"] = trace_failed
 
-        # 官网正文常常写着总量 / 铸造价 / 截止，而帖子没写：抽一次补上缺的那几项。
-        filled = 0
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_fill, monitor, project): project
-                       for project in traced if project.get("pages") and _missing(project)}
-            for future in as_completed(futures):
-                project = futures[future]
-                try:
-                    data = future.result()
-                except Exception:  # noqa: BLE001 - a failed fill is a gap, not a failure
-                    log.exception("monitor: field fill failed")
-                    continue
-                for key in FILL_FIELDS:
-                    if _blank(project.get(key)) and not _blank(data.get(key)):
-                        project[key] = str(data[key]).strip()
-                filled += 1
-        counters["filled"] = filled
-
         # 判定吃抽取阶段（帖子）的摘要，展示文案才用官网重写：先把原摘要留一份
         # （2026-10-30）。
         for project in traced:
             project["summary_extract"] = str(project.get("summary") or "")
 
-        # 摘要按官网重写：帖子（尤其 KOL）会用自己的叫法，官网才是资产形态的准绳。
-        rewritten = 0
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_rewrite, monitor, project): project
-                       for project in traced if project.get("pages")}
-            for future in as_completed(futures):
-                project = futures[future]
-                try:
-                    answer = future.result()
-                except Exception:  # noqa: BLE001 - a failed rewrite keeps the post summary
-                    log.exception("monitor: summary rewrite failed")
-                    continue
-                if answer.get("summary"):
-                    project["summary"] = answer["summary"]
-                    rewritten += 1
-                if answer.get("domain"):
-                    project["domain"] = answer["domain"]
-        counters["rewritten"] = rewritten
-        # A project the model could not classify (or no page to read) still gets the cheap
-        # keyword reading; only an explicit "other" keeps a card out (2026-11-01).
-        for project in traced:
-            if not project.get("domain"):
-                project["domain"] = _domain_of(project)
-
-        # 正则先于模型：`9,004 / 444,000` 这种写法页面里有，就不该被总结掉。
+        # Deterministic readings run before the model. Chain probing below can replace them.
         for project in traced:
             parsed = chain.parse_mint("\n".join(str(page) for page in project.get("pages") or []))
             if parsed:
@@ -1619,6 +1678,34 @@ def run(scan: dict, monitor: Monitor) -> None:
                 except Exception:  # noqa: BLE001 - an unanswered chain is a gap, not a failure
                     log.exception("monitor: chain probe failed")
         counters["probed"] = probed
+
+        # Chain facts now own contract / progress / token supply. One page call only adds
+        # the prose and the fields the chain cannot answer.
+        for project in traced:
+            _apply_chain_info(project)
+        filled = rewritten = 0
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(
+                _page_card, monitor, project, run_id=scan["id"]): project
+                for project in traced if project.get("pages")}
+            for future in as_completed(futures):
+                project = futures[future]
+                try:
+                    answer = future.result()
+                except Exception:  # noqa: BLE001 - a failed page call keeps extracted text
+                    log.exception("monitor: page extraction failed")
+                    continue
+                if any(not _blank(answer.get(key)) for key in PAGE_FIELDS):
+                    filled += 1
+                if answer.get("summary"):
+                    rewritten += 1
+                _apply_page_card(project, answer)
+        counters["page_llm"] = len(futures)
+        counters["filled"] = filled
+        counters["rewritten"] = rewritten
+        for project in traced:
+            if not project.get("domain"):
+                project["domain"] = _domain_of(project)
 
         _save(scan, stage="store", starts=starts)
         written = 0

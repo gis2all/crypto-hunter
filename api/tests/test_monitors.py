@@ -1,7 +1,7 @@
 """监控：一个监控一套卡、一个自己的时钟（2026-10-29, user）。"""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -292,8 +292,8 @@ def test_a_model_named_card_adopts_the_site_name_once():
     assert row["fields"]["site_title"] == "$JAGENT Mint"
 
 
-def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
-    """帖子里的叫法会被官网原文覆盖：摘要重写只吃官网正文（2026-10-30, user）。"""
+def test_the_page_call_rewrites_summary_and_extracts_only_page_fields(monkeypatch):
+    """The official page is read once: prose and page-owned fields share one call."""
     from app.monitors.core import job
     from app.monitors.registry import BINANCE_AGENT_ID
 
@@ -301,18 +301,26 @@ def test_the_summary_is_rewritten_from_the_official_page(monkeypatch):
 
     def fake(messages, **kw):
         seen["text"] = messages[1]["content"]
-        return {"summary": "官网口径：每钱包 10 份，每份 10 万 BNBS。", "domain": "crypto"}
+        seen.update(kw)
+        return {"summary": "官网口径：每钱包 10 份，每份 10 万 BNBS。", "domain": "crypto",
+                "price": "0.02 BNB", "deadline": "2026-11-10", "mint_unit": "shares",
+                "mint_kind": "mint"}
 
     monkeypatch.setattr(job.llm, "complete_json", fake)
-    out = job._rewrite(BINANCE_AGENT_ID,
-                       {"pages": ["<p>Send 0.01 BNB to receive 100,000 BNBS. 10 shares per wallet</p>"]})
+    out = job._page_card(
+        BINANCE_AGENT_ID,
+        {"pages": ["<p>Send 0.01 BNB to receive 100,000 BNBS. 10 shares per wallet</p>"]},
+        run_id="scan-1",
+    )
     assert out["summary"].startswith("官网口径")
     assert out["domain"] == "crypto"
     assert "10 shares per wallet" in seen["text"], "喂给模型的是官网原文"
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": []}) == {}, "没有官网就不重写"
+    assert seen["purpose"] == "monitor_page"
+    assert seen["run_id"] == "scan-1"
+    assert job._page_card(BINANCE_AGENT_ID, {"pages": []}, run_id="scan-1") == {}
 
 
-def test_a_rewrite_that_found_nothing_keeps_the_old_summary(monkeypatch):
+def test_a_page_call_that_found_nothing_keeps_the_old_summary(monkeypatch):
     """页面只有壳时模型会写「官网原文未提供」；这句话不能覆盖原摘要（Nemotron / ChyAI）."""
     from app.monitors.core import job
     from app.monitors.registry import BINANCE_AGENT_ID
@@ -320,11 +328,15 @@ def test_a_rewrite_that_found_nothing_keeps_the_old_summary(monkeypatch):
     monkeypatch.setattr(
         job.llm, "complete_json",
         lambda messages, **kw: {"summary": "官网原文未提供，无法确认项目内容。"})
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>loading</p>"]}).get("summary", "") == ""
+    assert job._page_card(
+        BINANCE_AGENT_ID, {"pages": ["<p>loading</p>"]}, run_id="scan-1"
+    ).get("summary", "") == ""
     monkeypatch.setattr(
         job.llm, "complete_json",
         lambda messages, **kw: {"summary": "HODLER 是像素宇航员项目，官方原文未说明参与方式与门槛。"})
-    assert job._rewrite(BINANCE_AGENT_ID, {"pages": ["<p>hodler</p>"]}).get("summary", "") == ""
+    assert job._page_card(
+        BINANCE_AGENT_ID, {"pages": ["<p>hodler</p>"]}, run_id="scan-1"
+    ).get("summary", "") == ""
 
 
 def test_an_unjudged_field_is_still_missing():
@@ -333,9 +345,56 @@ def test_an_unjudged_field_is_still_missing():
 
     assert job._blank("未判定") and job._blank(" unknown ") and job._blank("")
     assert not job._blank("1 USDT")
-    assert job._missing({"price": "未判定", "mint_done": 6, "mint_total": 10000,
-                         "mint_unit": "cards", "token_total": "", "deadline": "2026-11-01",
-                         "contract": ""})
+    assert job._missing_page_fields({"price": "未判定", "mint_unit": "cards",
+                                     "deadline": "2026-11-01", "mint_kind": "mint"})
+
+
+def test_the_page_prompt_does_not_ask_for_chain_owned_fields():
+    from pathlib import Path
+
+    text = Path("app/monitors/binance-agent-id/prompts/summary.md").read_text(encoding="utf-8")
+    assert '"summary"' in text and '"domain"' in text
+    assert '"price"' in text and '"deadline"' in text
+    assert "mint_done" not in text
+    assert "mint_total" not in text
+    assert "token_total" not in text
+    assert "contract" not in text
+
+
+def test_page_fields_never_overwrite_chain_values():
+    from app.monitors.core import job
+
+    project = {"mint_done": 12, "mint_total": 100, "token_total": 999,
+               "contract": "0x" + "1" * 40, "price": "0.02 BNB"}
+    job._apply_page_card(project, {
+        "price": "9 BNB", "deadline": "2026-11-10", "mint_unit": "NFT",
+        "mint_kind": "mint", "mint_done": 1, "mint_total": 2,
+        "token_total": 3, "contract": "0x" + "2" * 40,
+    })
+    assert project["mint_done"] == 12
+    assert project["mint_total"] == 100
+    assert project["token_total"] == 999
+    assert project["contract"] == "0x" + "1" * 40
+    assert project["price"] == "0.02 BNB"
+    assert project["deadline"] == "2026-11-10"
+    assert project["mint_unit"] == "NFT"
+
+
+def test_post_payload_is_trimmed_and_deduplicated():
+    from app.monitors.core import job
+
+    rows = [
+        {"tweet_id": "1", "author": "a", "created_at": "t1",
+         "text": "same " + "x" * 2000},
+        {"tweet_id": "2", "author": "a", "created_at": "t2",
+         "text": "same " + "x" * 2000},
+        {"tweet_id": "3", "author": "b", "created_at": "t3", "text": "other"},
+    ]
+    payload = job._post_payload(rows)
+    assert len(payload) == 2
+    assert all(len(row["text"]) <= job.POST_CHARS for row in payload)
+    assert job.POST_CHARS <= 800
+    assert job.MAX_BATCHES <= 4
 
 
 def test_mintable_is_a_risk_only_when_someone_owns_the_contract():
@@ -726,17 +785,21 @@ def test_a_plain_http_site_is_upgraded_when_https_answers():
 
 def test_the_collection_knobs_default_to_the_registry(client):
     values = client.get("/api/v1/monitors/binance-agent-id/settings").json()["values"]
-    assert (values["window_hours"], values["slice_hours"], values["min_score"]) == (24, 4, 30)
+    assert (values["window_hours"], values["slice_hours"], values["min_score"]) == (24, 4, 35)
 
 
-def test_the_refresh_fingerprint_ignores_clocks_but_not_counts():
+def test_the_refresh_fingerprint_ignores_clocks_and_unrelated_page_copy():
     from app.monitors.core import job
 
-    one = job._fingerprint("Minted 6 / 10,000 at 21:00:01")
-    same = job._fingerprint("Minted 6 / 10,000 at 21:00:02")
-    moved = job._fingerprint("Minted 7 / 10,000 at 21:00:02")
+    one = job._field_fingerprint("Minted 6 / 10,000 at 21:00:01 Price 0.02 BNB")
+    same = job._field_fingerprint("Minted 6 / 10,000 at 21:00:02 Price 0.02 BNB")
+    moved = job._field_fingerprint("Minted 7 / 10,000 at 21:00:02 Price 0.02 BNB")
+    noisy = job._field_fingerprint(
+        "Minted 6 / 10,000 at 21:00:02 Price 0.02 BNB Latest partner: random"
+    )
     assert one == same, "时钟抖动不算页面变化"
     assert one != moved, "计数变化必须算"
+    assert one == noisy, "无关页脚变化不买模型调用"
 
 
 def test_the_refresh_stage_skips_an_unchanged_page(monkeypatch, isolated_db):
@@ -755,7 +818,7 @@ def test_the_refresh_stage_skips_an_unchanged_page(monkeypatch, isolated_db):
 
     monkeypatch.setattr(job.llm, "complete_json", boom)
     card = {"slug": "acme", "official_url": "https://acme/",
-            "fields": {"site_hash": job._fingerprint(chain.plain(page))}}
+            "fields": {"site_hash": job._field_fingerprint(chain.plain(page))}}
     assert job._refresh_card(BINANCE_AGENT_ID, card) == "unchanged"
 
 
@@ -767,7 +830,8 @@ def test_a_site_number_below_the_chain_reading_is_ignored(monkeypatch, isolated_
 
     page = "<html><body>" + "mint " * 60 + "Minted 4474 / 10,000</body></html>"
     monkeypatch.setattr(browser, "render", lambda url: page)
-    monkeypatch.setattr(job, "_fill", lambda monitor, project: {})
+    monkeypatch.setattr(job, "_probe_card", lambda card: {
+        "minted": 8867, "mint_total": 10000, "contract": "0x" + "1" * 40})
     captured = {}
     monkeypatch.setattr(job.db, "monitor_card_patch",
                         lambda *args, **kwargs: captured.update({"fields": args[2]}))
@@ -776,6 +840,39 @@ def test_a_site_number_below_the_chain_reading_is_ignored(monkeypatch, isolated_
     assert job._refresh_card(BINANCE_AGENT_ID, card) == "changed"
     assert captured["fields"]["mint"]["done"] == 8867
     assert captured["fields"]["mint"]["source"] == "chain"
+
+
+def test_refresh_uses_chain_and_page_rules_without_calling_llm(
+        monkeypatch, isolated_db):
+    from app.monitors.core import job
+    from app.monitors.registry import BINANCE_AGENT_ID
+    from app.sources import browser
+
+    ca = "0x" + "2" * 40
+    page = ("<html><body>" + "agent mint " * 40 +
+            "Minted 12 / 100. Price 0.02 BNB. Ends 2026-11-10 18:00 UTC</body></html>")
+    monkeypatch.setattr(browser, "render", lambda url: page)
+    monkeypatch.setattr(job, "_dead_contract", lambda fields, card: False)
+    monkeypatch.setattr(job, "_probe_card", lambda card: {
+        "contract": ca, "minted": 12, "mint_total": 100})
+
+    def boom(*args, **kwargs):
+        raise AssertionError("refresh must not call the model")
+
+    monkeypatch.setattr(job.llm, "complete_json", boom)
+    captured = {}
+    monkeypatch.setattr(
+        job.db, "monitor_card_patch",
+        lambda *args, **kwargs: captured.update({"fields": args[2], "price": kwargs.get("price"),
+                                                 "deadline": kwargs.get("deadline")}),
+    )
+    card = {"slug": "acme", "official_url": "https://acme/",
+            "fields": {"onchain": {"contract": ca}, "site_hash": "old",
+                       "mint": {"done": 10, "total": 100, "source": "chain"}}}
+    assert job._refresh_card(BINANCE_AGENT_ID, card) == "changed"
+    assert captured["fields"]["mint"]["done"] == 12
+    assert captured["fields"]["price"] == "0.02 BNB"
+    assert captured["deadline"].startswith("2026-11-11")
 
 
 def test_a_profile_site_is_not_downgraded_when_the_profile_cannot_be_read():
@@ -826,6 +923,90 @@ def test_a_proxy_is_followed_to_its_implementation(monkeypatch):
 
     monkeypatch.setattr(chain, "_rpc", rpc)
     assert chain.implementation(proxy) == impl
+
+
+def test_sale_facts_read_common_price_and_deadline_getters(monkeypatch):
+    from app.monitors.core import chain
+
+    ca = "0x" + "a" * 40
+    deadline = datetime(2026, 11, 10, 18, tzinfo=timezone.utc).timestamp()
+    values = {
+        chain.SALE_PRICE_GETTERS[0][0]: 20_000_000_000_000_000,
+        chain.SALE_END_GETTERS[0][0]: int(deadline),
+    }
+    monkeypatch.setattr(
+        chain, "_uint",
+        lambda address, selector, timeout=8.0: values.get(selector),
+    )
+    facts = chain.sale_facts(ca, chain="bsc")
+    assert facts["mint_price"] == "0.02 BNB"
+    assert facts["sale_deadline"].startswith("2026-11-10T18:00:00")
+
+
+def test_sale_facts_discard_implausible_price_and_timestamp(monkeypatch):
+    from app.monitors.core import chain
+
+    values = {
+        chain.SALE_PRICE_GETTERS[0][0]: 1,
+        chain.SALE_END_GETTERS[0][0]: 1,
+    }
+    monkeypatch.setattr(
+        chain, "_uint",
+        lambda address, selector, timeout=8.0: values.get(selector),
+    )
+    assert chain.sale_facts("0x" + "a" * 40, chain="bsc") == {}
+
+
+def test_chain_sale_facts_land_on_the_card_fields():
+    from app.monitors.core import job
+
+    fields = {"onchain": {"contract": "0x" + "a" * 40}}
+    assert job._merge_chain(fields, {
+        "minted": 12, "mint_total": 100,
+        "mint_price": "0.02 BNB",
+        "sale_deadline": "2026-11-10T18:00:00+00:00",
+    })
+    assert fields["price"] == "0.02 BNB"
+    assert fields["deadline"].startswith("2026-11-11 02:00")
+    assert fields["mint"]["done"] == 12
+
+
+def test_llm_usage_totals_one_scan(isolated_db):
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO llm_calls"
+            " (run_id, purpose, prompt_tokens, completion_tokens, ok, created_at)"
+            " VALUES"
+            " ('scan-1', 'monitor_extract', 100, 20, 1, '2026-11-04T10:00:00+08:00'),"
+            " ('scan-1', 'monitor_page', 30, 10, 0, '2026-11-04T10:01:00+08:00'),"
+            " ('scan-2', 'monitor_page', 999, 999, 1, '2026-11-04T10:02:00+08:00')"
+        )
+    finally:
+        conn.close()
+    usage = db.llm_usage("scan-1")
+    assert usage["calls"] == 2
+    assert usage["prompt_tokens"] == 130
+    assert usage["completion_tokens"] == 30
+    assert usage["total_tokens"] == 160
+    assert usage["failed"] == 1
+    assert usage["by_purpose"]["monitor_extract"]["total_tokens"] == 120
+    assert usage["by_purpose"]["monitor_page"]["failed"] == 1
+
+
+def test_scan_budget_marks_an_over_budget_sweep(monkeypatch):
+    from app.monitors.core import job
+
+    monkeypatch.setattr(job, "MONITOR_TOKEN_BUDGET", 100)
+    monkeypatch.setattr(job.db, "llm_usage", lambda scan_id: {
+        "calls": 2, "prompt_tokens": 80, "completion_tokens": 30, "total_tokens": 110,
+        "failed": 0,
+    })
+    counters = {}
+    usage = job._record_llm_usage(counters, "scan-1")
+    assert usage["total_tokens"] == 110
+    assert counters["llm"] == usage
+    assert counters["llm_over_budget"] is True
 
 
 def test_mint_logs_count_only_zero_sender_transfers(monkeypatch):
